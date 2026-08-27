@@ -292,6 +292,41 @@ test("buildReentryCard sorts and limits active sessions, signals, decisions, and
   assert.deepEqual(sessions.map((item) => item.id), originalSessionOrder, "building a card must not reorder state sessions");
 });
 
+test("buildReentryCard treats later insertion as newer when timestamps match", () => {
+  const timestamp = at(-1_000);
+  const crumbs = [
+    { id: "summary-old", projectId: "p1", type: "note", text: "old summary", createdAt: timestamp },
+    { id: "next-old", projectId: "p1", type: "next", text: "old next", createdAt: timestamp },
+    { id: "summary-new", projectId: "p1", type: "decision", text: "new summary", createdAt: timestamp },
+    { id: "next-new", projectId: "p1", type: "next", text: "new next", createdAt: timestamp }
+  ];
+  const checkpoints = [
+    { id: "checkpoint-old", projectId: "p1", summary: "old", nextAction: "old", openLoops: "", returnHint: "old", createdAt: timestamp },
+    { id: "checkpoint-new", projectId: "p1", summary: "new", nextAction: "new", openLoops: "", returnHint: "new", createdAt: timestamp }
+  ];
+  const sessions = [
+    { id: "session-old", projectId: "p1", status: "active", startedAt: timestamp, endedAt: null },
+    { id: "session-new", projectId: "p1", status: "active", startedAt: timestamp, endedAt: null }
+  ];
+  const original = {
+    crumbs: crumbs.map((item) => item.id),
+    checkpoints: checkpoints.map((item) => item.id),
+    sessions: sessions.map((item) => item.id)
+  };
+  const state = makeState({ projects: [makeProject("p1")], crumbs, checkpoints, sessions });
+
+  const card = buildReentryCard(state, "p1", NOW);
+
+  assert.equal(card.checkpoint.id, "checkpoint-new");
+  assert.equal(card.summaryEvidence.id, "checkpoint-new");
+  assert.equal(card.nextActionEvidence.id, "checkpoint-new");
+  assert.equal(card.activeSession.id, "session-new");
+  assert.deepEqual(card.recentTrail.map((item) => item.id), ["next-new", "summary-new", "next-old", "summary-old"]);
+  assert.deepEqual(crumbs.map((item) => item.id), original.crumbs);
+  assert.deepEqual(checkpoints.map((item) => item.id), original.checkpoints);
+  assert.deepEqual(sessions.map((item) => item.id), original.sessions);
+});
+
 test("buildReentryCard exposes at most three pinned crumbs in evidence order", () => {
   const state = makeState({
     projects: [makeProject("p1")],

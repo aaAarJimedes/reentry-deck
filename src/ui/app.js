@@ -614,9 +614,7 @@ export class ReentryApp {
     const state = this.#store.getState();
     const captureProjects = state.projects.filter((item) => item.status !== "archived");
     const pendingArchiveProject = state.projects.find((item) => item.id === this.#pendingArchiveId);
-    const reviewCheckpoint = project
-      ? [...state.checkpoints].filter((item) => item.projectId === project.id).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0]
-      : null;
+    const reviewCheckpoint = project ? buildReentryCard(state, project.id)?.checkpoint : null;
     const captureProjectId = captureProjects.some((item) => item.id === project?.id)
       ? project.id
       : captureProjects.some((item) => item.id === activeSession?.projectId)
@@ -938,7 +936,7 @@ export class ReentryApp {
     if (state.sessions.some((item) => item.status === "active")) throw new Error("已有活动会话，请先为它留下检查点。 ");
     const project = state.projects.find((item) => item.id === data.projectId);
     if (!project || project.status === "archived") throw new Error("项目不可用，无法开始会话。 ");
-    const sourceCheckpoint = state.checkpoints.filter((item) => item.projectId === project.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+    const sourceCheckpoint = buildReentryCard(state, project.id)?.checkpoint;
     const session = createSession(
       { projectId: project.id, intention: data.intention, sourceCheckpointId: sourceCheckpoint?.id ?? null },
       isoAtOrAfter(Date.now(), project.updatedAt, sourceCheckpoint?.createdAt)

@@ -123,10 +123,19 @@ function buildReentryIndex(state) {
   indexRecords(safeCollection(state?.crumbs), crumbs, projects, lastActivity, (item) => item.resolvedAt ?? item.endedAt ?? item.createdAt ?? item.startedAt);
   indexRecords(safeCollection(state?.checkpoints), checkpoints, projects, lastActivity, (item) => item.resolvedAt ?? item.endedAt ?? item.createdAt ?? item.startedAt);
 
-  for (const items of crumbs.values()) items.sort(byNewest);
-  for (const items of checkpoints.values()) items.sort(byNewest);
-  for (const items of sessions.values()) items.sort((a, b) => timeOf(b.startedAt) - timeOf(a.startedAt));
+  sortIndexedRecords(crumbs, (item) => item.createdAt);
+  sortIndexedRecords(checkpoints, (item) => item.createdAt);
+  sortIndexedRecords(sessions, (item) => item.startedAt);
   return { projects, sessions, crumbs, checkpoints, lastActivity };
+}
+
+function sortIndexedRecords(index, dateOf) {
+  for (const [projectId, items] of index) {
+    index.set(projectId, items
+      .map((item, insertionIndex) => ({ item, insertionIndex }))
+      .sort((a, b) => timeOf(dateOf(b.item)) - timeOf(dateOf(a.item)) || b.insertionIndex - a.insertionIndex)
+      .map(({ item }) => item));
+  }
 }
 
 function indexRecords(records, target, projects, lastActivity, activityOf) {
@@ -189,8 +198,4 @@ function newestEvidence(candidates) {
 function timeOf(value) {
   const valueOf = Date.parse(value ?? "");
   return Number.isFinite(valueOf) ? valueOf : 0;
-}
-
-function byNewest(a, b) {
-  return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
 }

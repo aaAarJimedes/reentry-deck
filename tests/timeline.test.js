@@ -61,6 +61,13 @@ describe("buildTimelineWindow", () => {
     assert.deepEqual(buildTimelineWindow(null, "p1"), { items: [], total: 0, shown: 0, remaining: 0, nextLimit: 0 });
   });
 
+  test("shows later insertions first when timestamps match", () => {
+    const timestamp = "2026-08-28T02:00:00.000Z";
+    const crumbs = [crumb("first", "p1", timestamp), crumb("second", "p1", timestamp)];
+
+    assert.deepEqual(buildTimelineWindow(crumbs, "p1").items.map((item) => item.id), ["second", "first"]);
+  });
+
   test("caps DOM-facing output even for very large histories", () => {
     const crumbs = Array.from({ length: 10_000 }, (_, index) => crumb(`c${index}`, "large", String(index)));
     const result = buildTimelineWindow(crumbs, "large");

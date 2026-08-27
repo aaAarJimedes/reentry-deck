@@ -22,8 +22,13 @@ export function buildTimelineWindow(crumbs, projectId, limit = TIMELINE_PAGE_SIZ
     .map((crumb, index) => ({ crumb, index }))
     .filter(({ crumb }) => crumb?.projectId === projectId)
     .sort((left, right) => {
-      const timeDifference = sortableTime(right.crumb?.createdAt) - sortableTime(left.crumb?.createdAt);
-      return timeDifference || left.index - right.index;
+      const leftTime = sortableTime(left.crumb?.createdAt);
+      const rightTime = sortableTime(right.crumb?.createdAt);
+      const timeDifference = rightTime - leftTime;
+      if (timeDifference) return timeDifference;
+      return Number.isFinite(leftTime) && Number.isFinite(rightTime)
+        ? right.index - left.index
+        : left.index - right.index;
     })
     .map(({ crumb }) => crumb);
   const shown = Math.min(safeLimit, ordered.length);
