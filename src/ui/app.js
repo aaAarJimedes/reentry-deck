@@ -93,7 +93,7 @@ export class ReentryApp {
       this.render();
     });
     window.addEventListener("keydown", (event) => this.#onKeydown(event));
-    this.#store.subscribe(() => this.render());
+    this.#store.subscribe((_state, event) => this.render({ preserveDialog: event?.source === "external" }));
 
     this.#timerId = window.setInterval(() => this.#refreshTimers(), 1000);
     this.render();
@@ -103,7 +103,8 @@ export class ReentryApp {
     window.clearInterval(this.#timerId);
   }
 
-  render() {
+  render({ preserveDialog = false } = {}) {
+    const transientDialog = preserveDialog ? this.#captureTransientDialog() : null;
     this.#noticeQueue.push(...this.#store.drainNotices());
     const state = this.#store.getState();
     const reopenImportPreview = Boolean(this.#root.querySelector("#import-preview-dialog")?.open && this.#pendingImport);
@@ -143,12 +144,58 @@ export class ReentryApp {
 
     if (reopenImportPreview && this.#pendingImport) {
       requestAnimationFrame(() => this.#openDialog("import-preview-dialog"));
+    } else if (transientDialog) {
+      requestAnimationFrame(() => this.#restoreTransientDialog(transientDialog));
     }
 
     if (this.#focusSelector) {
       const selector = this.#focusSelector;
       this.#focusSelector = null;
       window.setTimeout(() => this.#root.querySelector(selector)?.focus(), 0);
+    }
+  }
+
+  #captureTransientDialog() {
+    const dialog = this.#root.querySelector("dialog[open]");
+    if (!dialog?.id || dialog.id === "import-preview-dialog") return null;
+    const controls = [...dialog.querySelectorAll("input, select, textarea")]
+      .filter((control) => control.type !== "file" && control.type !== "hidden");
+    const activeIndex = controls.indexOf(document.activeElement);
+    return {
+      id: dialog.id,
+      activeIndex,
+      controls: controls.map((control) => ({
+        tag: control.tagName,
+        type: control.type,
+        value: control.value,
+        checked: control.checked,
+        selectionStart: typeof control.selectionStart === "number" ? control.selectionStart : null,
+        selectionEnd: typeof control.selectionEnd === "number" ? control.selectionEnd : null
+      }))
+    };
+  }
+
+  #restoreTransientDialog(snapshot) {
+    const dialog = this.#root.querySelector(`#${CSS.escape(snapshot.id)}`);
+    if (!dialog) return;
+    const controls = [...dialog.querySelectorAll("input, select, textarea")]
+      .filter((control) => control.type !== "file" && control.type !== "hidden");
+    snapshot.controls.forEach((saved, index) => {
+      const control = controls[index];
+      if (!control || control.tagName !== saved.tag || control.type !== saved.type) return;
+      if (control.type === "checkbox" || control.type === "radio") {
+        control.checked = saved.checked;
+      } else if (control.tagName !== "SELECT" || [...control.options].some((option) => option.value === saved.value)) {
+        control.value = saved.value;
+      }
+    });
+    dialog.showModal();
+    const active = controls[snapshot.activeIndex];
+    if (!active || active.disabled) return;
+    active.focus();
+    const saved = snapshot.controls[snapshot.activeIndex];
+    if (saved?.selectionStart !== null && typeof active.setSelectionRange === "function") {
+      active.setSelectionRange(saved.selectionStart, saved.selectionEnd);
     }
   }
 

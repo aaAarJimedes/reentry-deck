@@ -2,7 +2,7 @@ import { createEmptyState, isoNow, normalizeState, validateImportCandidate, vali
 import { buildImportPreview, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.13.0";
+export const APP_VERSION = "0.14.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {
@@ -51,13 +51,13 @@ export class AppStore {
       this.#rejectedRaw = null;
       this.#hasRejectedRaw = false;
       this.#state = next;
-      this.#emit();
+      this.#emit("external");
       return true;
     } catch (error) {
       this.#rejectedRaw = current;
       this.#hasRejectedRaw = true;
       this.notices.push(`另一个标签页写入的数据无法读取，当前页面未采用它：${error.message}`);
-      this.#emit();
+      this.#emit("external");
       return false;
     }
   }
@@ -196,8 +196,9 @@ export class AppStore {
     }
   }
 
-  #emit() {
-    for (const listener of this.#listeners) listener(this.#state);
+  #emit(source = "local") {
+    const event = Object.freeze({ source });
+    for (const listener of this.#listeners) listener(this.#state, event);
   }
 }
 

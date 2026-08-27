@@ -278,6 +278,8 @@ describe("AppStore updates and persistence", () => {
     const storage = new MemoryStorage();
     const firstTab = new AppStore(storage, T0, null);
     const secondTab = new AppStore(storage, T0, null);
+    const sources = [];
+    secondTab.subscribe((_state, event) => sources.push(event.source));
 
     firstTab.update((draft) => draft.projects.push(createProject({ id: "from-first" }, T1)), T1);
     assert.throws(
@@ -285,9 +287,11 @@ describe("AppStore updates and persistence", () => {
       /另一个标签页刚刚更新了数据/
     );
     assert.deepEqual(secondTab.getState().projects.map((item) => item.id), ["from-first"]);
+    assert.deepEqual(sources, ["external"]);
 
     secondTab.update((draft) => draft.projects.push(createProject({ id: "from-second" }, T2)), T2);
     assert.deepEqual(persisted(storage).projects.map((item) => item.id), ["from-first", "from-second"]);
+    assert.deepEqual(sources, ["external", "local"]);
   });
 
   test("rejects a corrupt external-tab payload without adopting its lossy normalization", () => {
@@ -295,7 +299,11 @@ describe("AppStore updates and persistence", () => {
     storage.setItem(STORAGE_KEY, JSON.stringify(stateWithProject("safe", "Safe")));
     const store = new AppStore(storage, T0, null);
     let emissions = 0;
-    store.subscribe(() => emissions += 1);
+    const sources = [];
+    store.subscribe((_state, event) => {
+      emissions += 1;
+      sources.push(event.source);
+    });
     const corrupt = stateWithProject("external", "External");
     corrupt.crumbs.push({ id: "orphan", projectId: "missing", text: "would be dropped" });
     storage.setItem(STORAGE_KEY, JSON.stringify(corrupt));
@@ -306,6 +314,7 @@ describe("AppStore updates and persistence", () => {
     assert.equal(store.getState().projects[0].id, "safe");
     assert.match(store.notices.at(-1), /另一个标签页写入的数据无法读取/);
     assert.equal(emissions, 1);
+    assert.deepEqual(sources, ["external"]);
 
     assert.equal(store.refreshFromStorage(T2), false);
     assert.equal(emissions, 1);
