@@ -248,6 +248,20 @@ export function validateImportCandidate(value) {
     if (isValidDate(session?.startedAt) && isValidDate(session?.endedAt) && Date.parse(session.endedAt) < Date.parse(session.startedAt)) {
       addImportError(errors, `会话结束时间早于开始时间：${session.id ?? "未知"}`);
     }
+    if (session?.status === "active" && session?.checkpointId) {
+      addImportError(errors, `活动会话不能包含结束检查点：${session.id ?? "未知"}`);
+    }
+    const sourceCheckpoint = checkpointsById.get(session?.sourceCheckpointId);
+    if (sourceCheckpoint && isValidDate(sourceCheckpoint.createdAt) && isValidDate(session?.startedAt) && Date.parse(sourceCheckpoint.createdAt) > Date.parse(session.startedAt)) {
+      addImportError(errors, `会话开始时间早于来源检查点：${session.id ?? "未知"}`);
+    }
+    const endingCheckpoint = checkpointsById.get(session?.checkpointId);
+    if (endingCheckpoint && isValidDate(endingCheckpoint.createdAt) && isValidDate(session?.startedAt) && Date.parse(endingCheckpoint.createdAt) < Date.parse(session.startedAt)) {
+      addImportError(errors, `会话结束检查点早于会话开始：${session.id ?? "未知"}`);
+    }
+    if (endingCheckpoint && isValidDate(endingCheckpoint.createdAt) && isValidDate(session?.endedAt) && Date.parse(endingCheckpoint.createdAt) > Date.parse(session.endedAt)) {
+      addImportError(errors, `会话结束检查点晚于会话结束：${session.id ?? "未知"}`);
+    }
   }
   for (const crumb of value.crumbs) {
     if (typeof crumb?.id !== "string" || !crumb.id) addImportError(errors, "存在无效的面包屑 ID");
@@ -259,6 +273,16 @@ export function validateImportCandidate(value) {
     if (crumb?.pinned !== undefined && typeof crumb.pinned !== "boolean") addImportError(errors, `面包屑置顶状态无效：${crumb.id ?? "未知"}`);
     validateText(errors, crumb, "text", "面包屑内容", IMPORT_LIMITS.crumbText);
     validateDates(errors, crumb, ["createdAt", "resolvedAt"], "面包屑", crumb.id);
+    if (isValidDate(crumb?.createdAt) && isValidDate(crumb?.resolvedAt) && Date.parse(crumb.resolvedAt) < Date.parse(crumb.createdAt)) {
+      addImportError(errors, `面包屑解决时间早于记录时间：${crumb.id ?? "未知"}`);
+    }
+    const crumbSession = sessionsById.get(crumb?.sessionId);
+    if (crumbSession && isValidDate(crumb?.createdAt) && isValidDate(crumbSession.startedAt) && Date.parse(crumb.createdAt) < Date.parse(crumbSession.startedAt)) {
+      addImportError(errors, `面包屑早于所属会话开始：${crumb.id ?? "未知"}`);
+    }
+    if (crumbSession && isValidDate(crumb?.createdAt) && isValidDate(crumbSession.endedAt) && Date.parse(crumb.createdAt) > Date.parse(crumbSession.endedAt)) {
+      addImportError(errors, `面包屑晚于所属会话结束：${crumb.id ?? "未知"}`);
+    }
   }
   for (const checkpoint of value.checkpoints) {
     if (typeof checkpoint?.id !== "string" || !checkpoint.id) addImportError(errors, "存在无效的检查点 ID");
@@ -272,6 +296,14 @@ export function validateImportCandidate(value) {
     validateText(errors, checkpoint, "openLoops", "检查点未决事项", IMPORT_LIMITS.openLoops);
     validateText(errors, checkpoint, "returnHint", "检查点复航提示", IMPORT_LIMITS.returnHint);
     validateDates(errors, checkpoint, ["createdAt"], "检查点", checkpoint.id);
+    const checkpointSession = sessionsById.get(checkpoint?.sessionId);
+    if (checkpointSession?.status === "active") addImportError(errors, `活动会话不能包含结束检查点：${checkpointSession.id ?? "未知"}`);
+    if (checkpointSession && isValidDate(checkpoint?.createdAt) && isValidDate(checkpointSession.startedAt) && Date.parse(checkpoint.createdAt) < Date.parse(checkpointSession.startedAt)) {
+      addImportError(errors, `检查点早于所属会话开始：${checkpoint.id ?? "未知"}`);
+    }
+    if (checkpointSession && isValidDate(checkpoint?.createdAt) && isValidDate(checkpointSession.endedAt) && Date.parse(checkpoint.createdAt) > Date.parse(checkpointSession.endedAt)) {
+      addImportError(errors, `检查点晚于所属会话结束：${checkpoint.id ?? "未知"}`);
+    }
   }
   if (value.ui !== undefined && !isObject(value.ui)) addImportError(errors, "界面状态对象无效");
   if (value.ui?.selectedProjectId !== undefined && value.ui.selectedProjectId !== null && !projectIds.has(value.ui.selectedProjectId)) {

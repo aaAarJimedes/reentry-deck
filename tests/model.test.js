@@ -407,7 +407,8 @@ describe("validateImportCandidate", () => {
       "会话引用了不存在的检查点：s1",
       "会话来源检查点不存在：s1",
       "活动会话不能包含结束时间：s1",
-      "归档项目不能包含活动会话：s1"
+      "归档项目不能包含活动会话：s1",
+      "活动会话不能包含结束检查点：s1"
     ]);
   });
 
@@ -478,6 +479,37 @@ describe("validateImportCandidate", () => {
       changed.meta.updatedAt = ambiguous;
       assert.match(validateImportCandidate(changed).join("；"), /元数据时间无效：工作区.updatedAt/, ambiguous);
     }
+  });
+
+  test("rejects evidence and checkpoints outside their logical session intervals", () => {
+    const start = "2026-08-28T02:00:00.000Z";
+    const end = "2026-08-28T03:00:00.000Z";
+    const state = createEmptyState(NOW);
+    state.projects.push(createProject({ id: "p1" }, NOW));
+    state.checkpoints.push(
+      createCheckpoint({ id: "source-future", projectId: "p1", createdAt: "2026-08-28T04:00:00.000Z" }, NOW),
+      createCheckpoint({ id: "ending-early", projectId: "p1", sessionId: "s1", createdAt: "2026-08-28T01:00:00.000Z" }, NOW),
+      createCheckpoint({ id: "active-ending", projectId: "p1", sessionId: "s2", createdAt: start }, NOW)
+    );
+    state.sessions.push(
+      createSession({ id: "s1", projectId: "p1", status: "completed", startedAt: start, endedAt: end, sourceCheckpointId: "source-future", checkpointId: "ending-early" }, NOW),
+      createSession({ id: "s2", projectId: "p1", status: "active", startedAt: start, checkpointId: "active-ending" }, NOW)
+    );
+    state.crumbs.push(
+      createCrumb({ id: "too-early", projectId: "p1", sessionId: "s1", createdAt: "2026-08-28T01:30:00.000Z" }, NOW),
+      createCrumb({ id: "too-late", projectId: "p1", sessionId: "s1", createdAt: "2026-08-28T03:30:00.000Z" }, NOW),
+      createCrumb({ id: "resolved-backward", projectId: "p1", type: "question", createdAt: end, resolvedAt: start }, NOW)
+    );
+
+    const errors = validateImportCandidate(state).join("；");
+
+    assert.match(errors, /会话开始时间早于来源检查点：s1/);
+    assert.match(errors, /会话结束检查点早于会话开始：s1/);
+    assert.match(errors, /活动会话不能包含结束检查点：s2/);
+    assert.match(errors, /面包屑早于所属会话开始：too-early/);
+    assert.match(errors, /面包屑晚于所属会话结束：too-late/);
+    assert.match(errors, /面包屑解决时间早于记录时间：resolved-backward/);
+    assert.match(errors, /检查点早于所属会话开始：ending-early/);
   });
 
   test("rejects pathological record counts before traversing individual records", () => {
