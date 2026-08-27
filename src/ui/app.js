@@ -6,6 +6,7 @@ import {
   isoNow
 } from "../core/model.js";
 import { prepareQuickCapture } from "../core/capture.js";
+import { readBackupFile } from "../core/backup-file.js";
 import { buildAttentionDeck, buildWeeklyReview } from "../core/insights.js";
 import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
 import { buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
@@ -86,6 +87,8 @@ export class ReentryApp {
   #toasts = [];
   #toastSequence = 0;
   #pendingArchiveId = null;
+  #backupSizeState = null;
+  #backupSizeLabel = "0 B";
 
   constructor(root, store) {
     this.#root = root;
@@ -551,8 +554,7 @@ export class ReentryApp {
   }
 
   #renderSettings(state) {
-    const snapshot = JSON.stringify(this.#store.exportSnapshot());
-    const size = formatBytes(new Blob([snapshot]).size);
+    const size = this.#getBackupSize(state);
     const theme = state.settings.theme;
     return `
       <section class="page-heading"><div><p class="eyebrow">数据保险箱</p><h1>你的工作轨迹，只属于你。</h1><p class="lede">复航台没有账户和云端数据库。请主动导出备份，尤其是在清理浏览器数据之前。</p></div></section>
@@ -565,6 +567,15 @@ export class ReentryApp {
         </div></section>
         <aside class="panel storage-visual">${brandMark()}<strong>本地优先</strong><p>${state.projects.length} 个项目 · ${state.crumbs.length} 条轨迹<br>没有任何数据被发送到外部服务。</p></aside>
       </div>`;
+  }
+
+  #getBackupSize(state) {
+    if (this.#backupSizeState !== state) {
+      const snapshot = JSON.stringify(this.#store.exportSnapshot());
+      this.#backupSizeLabel = formatBytes(new Blob([snapshot]).size);
+      this.#backupSizeState = state;
+    }
+    return this.#backupSizeLabel;
   }
 
   #renderNotFound() {
@@ -1206,8 +1217,7 @@ export class ReentryApp {
 
   async #importData(file, input) {
     try {
-      if (file.size > 25 * 1024 * 1024) throw new Error("备份超过 25 MB，已停止导入以保护页面稳定性。 ");
-      const parsed = JSON.parse(await file.text());
+      const parsed = await readBackupFile(file);
       this.#pendingImport = {
         value: parsed,
         preview: this.#store.previewImport(parsed),
