@@ -880,6 +880,7 @@ export class ReentryApp {
 
   #onKeydown(event) {
     if (event.defaultPrevented) return;
+    if (this.#root.querySelector("dialog[open]")) return;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
       this.#openDialog("search-dialog");

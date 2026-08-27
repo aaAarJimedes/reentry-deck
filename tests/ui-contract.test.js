@@ -105,3 +105,12 @@ test("system color-scheme changes update browser chrome and release their listen
   assert.match(source, /this\.#colorSchemeQuery\?\.removeEventListener\?\.\("change", this\.#colorSchemeListener\)/);
   assert.match(source, /resolveThemeAppearance\(theme, Boolean\(this\.#colorSchemeQuery\?\.matches\)\)/);
 });
+
+test("global keyboard shortcuts do not escape an open modal boundary", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const handler = source.match(/#onKeydown\(event\) \{([\s\S]*?)\n  \}\n\n  #runCommand/u)?.[1] ?? "";
+
+  assert.match(handler, /if \(event\.defaultPrevented\) return;\s+if \(this\.#root\.querySelector\("dialog\[open\]"\)\) return;/u);
+  assert.match(handler, /this\.#restorePrevious\("topbar"\)/);
+  assert.ok(handler.indexOf('querySelector("dialog[open]")') < handler.indexOf("#restorePrevious") || handler.indexOf('querySelector("dialog[open]")') < handler.indexOf("this.#restorePrevious"));
+});
