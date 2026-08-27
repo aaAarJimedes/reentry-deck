@@ -1,5 +1,6 @@
 import {
   IMPORT_LIMITS,
+  compactText,
   containsUnsafeIdControl,
   createCheckpoint,
   createCrumb,
@@ -456,7 +457,7 @@ export class ReentryApp {
       : "尚无检查点";
     return `
       <section class="panel reentry-card" aria-labelledby="reentry-card-heading">
-        <div class="panel-header inline-between"><div><h2 id="reentry-card-heading">60 秒复航卡</h2><p>${card.checkpoint ? (card.checkpoint.captureMode === "quick" ? `快速停靠 · ${formatDateTime(card.checkpoint.createdAt)} · 请先复核` : `来自 ${formatDateTime(card.checkpoint.createdAt)} 的可靠检查点`) : "信息不足时，从三问校准开始"}</p></div><div class="reentry-card-tools"><button class="ghost-button" type="button" data-action="copy-reentry-brief" data-project-id="${attr(card.project.id)}">${icon("copy")} 复制简报</button><span class="soft-pill">${icon("compass")} ${card.completeness}%</span></div></div>
+        <div class="panel-header inline-between"><div><h2 id="reentry-card-heading">60 秒复航卡</h2><p>${card.checkpoint ? (card.checkpoint.captureMode === "quick" ? `快速停靠 · ${formatDateTime(card.checkpoint.createdAt)} · 请先复核` : `来自 ${formatDateTime(card.checkpoint.createdAt)} 的可靠检查点`) : "信息不足时，从三问校准开始"}</p></div><div class="reentry-card-tools"><button class="ghost-button" type="button" data-action="copy-reentry-brief" data-project-id="${attr(card.project.id)}" aria-label="复制复航简报：${attr(controlContext(card.project.title))}">${icon("copy")} 复制简报</button><span class="soft-pill">${icon("compass")} ${card.completeness}%</span></div></div>
         <div class="panel-body">
           ${card.contextGapSessions.length ? `<div class="evidence-warning" role="status">${icon("alert")} 检查点之后还有 ${card.contextGapSessions.length} 段未收拢或中断的会话，完整度已下调；请先核对现场。</div>` : ""}
           ${card.readinessGaps.length ? `<div class="reentry-gaps" role="note"><strong>${icon("compass")} 复航缺口</strong><ul>${card.readinessGaps.map((gap) => `<li>${escapeHTML(gap)}</li>`).join("")}</ul>${card.checkpoint?.captureMode === "quick" ? '<button class="secondary-button" type="button" data-action="review-quick-checkpoint">复核并升级检查点</button>' : ""}</div>` : ""}
@@ -559,7 +560,7 @@ export class ReentryApp {
         <div class="timeline-content">
           <div class="timeline-meta"><span class="crumb-type">${CRUMB_LABELS[crumb.type] ?? "记录"}</span><time datetime="${attr(crumb.createdAt)}">${formatRelative(crumb.createdAt)} · ${formatDateTime(crumb.createdAt)}</time>${crumb.resolvedAt ? `<span class="resolved-pill">已解决 · ${formatRelative(crumb.resolvedAt)}</span>` : ""}${crumb.pinned ? `<span class="pinned-pill" title="已置顶">${icon("pin")} 航标</span>` : ""}</div>
           <p class="timeline-text">${textBlock(crumb.text)}</p>
-          ${interactive ? `<div class="crumb-actions">${signal ? `<button class="crumb-resolution" type="button" data-action="toggle-crumb-resolution" data-resolution-context="timeline" data-crumb-id="${attr(crumb.id)}" aria-pressed="${Boolean(crumb.resolvedAt)}">${crumb.resolvedAt ? "重新打开" : "标记已解决"}</button>` : ""}<button class="crumb-pin" type="button" data-action="toggle-crumb-pin" data-crumb-id="${attr(crumb.id)}" aria-pressed="${Boolean(crumb.pinned)}">${icon("pin")} ${crumb.pinned ? "取消置顶" : "设为航标"}</button></div>` : ""}
+          ${interactive ? `<div class="crumb-actions">${signal ? `<button class="crumb-resolution" type="button" data-action="toggle-crumb-resolution" data-resolution-context="timeline" data-crumb-id="${attr(crumb.id)}" aria-pressed="${Boolean(crumb.resolvedAt)}" aria-label="${crumb.resolvedAt ? "重新打开" : "标记已解决"}：${attr(controlContext(crumb.text))}">${crumb.resolvedAt ? "重新打开" : "标记已解决"}</button>` : ""}<button class="crumb-pin" type="button" data-action="toggle-crumb-pin" data-crumb-id="${attr(crumb.id)}" aria-pressed="${Boolean(crumb.pinned)}" aria-label="${crumb.pinned ? "取消置顶" : "设为航标"}：${attr(controlContext(crumb.text))}">${icon("pin")} ${crumb.pinned ? "取消置顶" : "设为航标"}</button></div>` : ""}
         </div>
       </article>`;
   }
@@ -572,7 +573,7 @@ export class ReentryApp {
 
   #renderEvidenceList(items, emptyText, resolvable = false) {
     if (!items.length) return `<p class="reentry-value muted">${escapeHTML(emptyText)}</p>`;
-    return `<ul class="evidence-list">${items.map((item) => `<li><span>${textBlock(item.text)}</span><small>${escapeHTML(CRUMB_LABELS[item.type] ?? "记录")} · ${formatDateTime(item.createdAt)}</small>${resolvable ? `<button type="button" data-action="toggle-crumb-resolution" data-resolution-context="reentry" data-crumb-id="${attr(item.id)}">标记已解决</button>` : ""}</li>`).join("")}</ul>`;
+    return `<ul class="evidence-list">${items.map((item) => `<li><span>${textBlock(item.text)}</span><small>${escapeHTML(CRUMB_LABELS[item.type] ?? "记录")} · ${formatDateTime(item.createdAt)}</small>${resolvable ? `<button type="button" data-action="toggle-crumb-resolution" data-resolution-context="reentry" data-crumb-id="${attr(item.id)}" aria-label="标记已解决：${attr(controlContext(item.text))}">标记已解决</button>` : ""}</li>`).join("")}</ul>`;
   }
 
   #renderArchive(state) {
@@ -582,7 +583,7 @@ export class ReentryApp {
       <section class="page-heading"><div><p class="eyebrow">归档舱</p><h1>结束的航程，也保留来路。</h1><p class="lede">归档不会删除任何会话、决定或检查点；需要时可以随时恢复。</p></div></section>
       ${projects.length ? `<div class="project-grid" id="project-window-archive" data-project-window="archive">${projectWindow.items.map((project, index) => {
         const card = buildReentryCard(state, project.id);
-        return `<article class="project-card" data-project-window-item="${index}" tabindex="-1" data-color="${attr(project.color)}"><div><div class="project-card-header"><span class="status-pill" data-status="archived">已归档</span><span class="muted">${formatRelative(project.archivedAt ?? project.updatedAt)}</span></div><h3>${escapeHTML(project.title)}</h3><p class="project-description">${escapeHTML(project.description || card.summary)}</p></div><div class="project-card-footer"><span>${state.crumbs.filter((item) => item.projectId === project.id).length} 条轨迹</span><button class="ghost-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}">恢复项目</button></div></article>`;
+        return `<article class="project-card" data-project-window-item="${index}" tabindex="-1" data-color="${attr(project.color)}"><div><div class="project-card-header"><span class="status-pill" data-status="archived">已归档</span><span class="muted">${formatRelative(project.archivedAt ?? project.updatedAt)}</span></div><h3>${escapeHTML(project.title)}</h3><p class="project-description">${escapeHTML(project.description || card.summary)}</p></div><div class="project-card-footer"><span>${state.crumbs.filter((item) => item.projectId === project.id).length} 条轨迹</span><button class="ghost-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}" aria-label="恢复项目：${attr(controlContext(project.title))}">恢复项目</button></div></article>`;
       }).join("")}</div>${this.#renderCollectionMore(projectWindow, "archive", "归档项目")}` : `<section class="empty-state"><div class="empty-illustration" aria-hidden="true"><span></span><span></span><span></span></div><h2>归档舱还是空的</h2><p>完成或暂时不再关注的项目，可以从项目页移到这里。</p><a class="primary-button" href="#/">返回舰桥</a></section>`}`;
   }
 
@@ -597,7 +598,7 @@ export class ReentryApp {
     return `
       <section class="project-header">
         <div><p class="eyebrow">已归档</p><h1>${escapeHTML(project.title)}</h1><p class="lede">${escapeHTML(project.description || card.summary)}</p><div class="project-meta"><span>归档于 ${formatDateTime(project.archivedAt ?? project.updatedAt)}</span><span class="separator">•</span><span>所有历史记录保持只读</span></div></div>
-        <div class="project-header-actions"><button class="primary-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}">恢复到暂泊状态</button></div>
+        <div class="project-header-actions"><button class="primary-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}" aria-label="恢复到暂泊状态：${attr(controlContext(project.title))}">恢复到暂泊状态</button></div>
       </section>
       <section class="panel reentry-card"><div class="panel-header"><h2>最后的复航现场</h2><p>恢复项目后可从这个检查点继续。</p></div><div class="panel-body"><div class="reentry-section"><span class="reentry-label">最后状态</span><p class="reentry-value">${textBlock(card.summary)}</p></div><div class="reentry-section"><span class="reentry-label">下一动作</span><p class="reentry-value next-action">${textBlock(card.nextAction)}</p></div></div></section>
       <section class="panel" style="margin-top:18px"><div class="panel-header inline-between"><div><h2>历史轨迹</h2><p>归档项目不会接受新的会话或记录。</p></div><span class="soft-pill">${timeline.total} 条</span></div><div class="panel-body">${this.#renderTimeline(timeline, project.id, false, "没有历史轨迹。")}</div></section>`;
@@ -620,8 +621,8 @@ export class ReentryApp {
       <section class="page-heading"><div><p class="eyebrow">数据保险箱</p><h1>你的工作轨迹，只属于你。</h1><p class="lede">复航台没有账户和云端数据库。请主动导出备份，尤其是在清理浏览器数据之前。</p></div></section>
       <div class="settings-grid">
         <section class="panel"><div class="panel-header"><h2>外观与数据</h2><p>设置同样只保存在当前浏览器。</p></div><div class="panel-body">
-          <div class="setting-row"><div class="setting-copy"><h3>界面主题</h3><p>跟随系统，或固定使用明亮/深色外观。</p></div><div class="segmented-control" aria-label="界面主题">${[["system", "跟随系统"], ["light", "明亮"], ["dark", "深色"]].map(([value, label]) => `<button type="button" data-action="set-theme" data-theme="${value}" aria-pressed="${theme === value}">${label}</button>`).join("")}</div></div>
-          <div class="setting-row"><div class="setting-copy"><h3>动态效果</h3><p>默认跟随系统辅助功能偏好，也可以在复航台内始终减少动画与平滑滚动。</p></div><div class="segmented-control" aria-label="动态效果">${[["system", "跟随系统"], ["reduce", "减少动效"]].map(([value, label]) => `<button type="button" data-action="set-motion" data-reduced-motion="${value}" aria-pressed="${state.settings.reducedMotion === (value === "reduce")}">${label}</button>`).join("")}</div></div>
+          <div class="setting-row"><div class="setting-copy"><h3>界面主题</h3><p>跟随系统，或固定使用明亮/深色外观。</p></div><div class="segmented-control" role="group" aria-label="界面主题">${[["system", "跟随系统"], ["light", "明亮"], ["dark", "深色"]].map(([value, label]) => `<button type="button" data-action="set-theme" data-theme="${value}" aria-pressed="${theme === value}">${label}</button>`).join("")}</div></div>
+          <div class="setting-row"><div class="setting-copy"><h3>动态效果</h3><p>默认跟随系统辅助功能偏好，也可以在复航台内始终减少动画与平滑滚动。</p></div><div class="segmented-control" role="group" aria-label="动态效果">${[["system", "跟随系统"], ["reduce", "减少动效"]].map(([value, label]) => `<button type="button" data-action="set-motion" data-reduced-motion="${value}" aria-pressed="${state.settings.reducedMotion === (value === "reduce")}">${label}</button>`).join("")}</div></div>
           <div class="setting-row"><div class="setting-copy"><h3>离开提醒阈值</h3><p>项目超过这段时间没有新现场时，关注清单会提示核对。</p></div><label class="field"><span class="sr-only">离开提醒阈值</span><select data-control="stale-days" aria-label="离开提醒阈值">${staleOptions.map((days) => `<option value="${days}" ${days === state.settings.staleAfterDays ? "selected" : ""}>${days} 天</option>`).join("")}</select></label></div>
           <div class="setting-row"><div class="setting-copy"><h3>导出完整备份</h3><p>包含项目、会话、轨迹、检查点和设置。当前约 ${size}。</p></div><button class="secondary-button" type="button" data-action="export-data">${icon("download")} 导出 JSON</button></div>
           <div class="setting-row"><div class="setting-copy"><h3>从备份恢复</h3><p>文件会先在本机校验；有效备份将替换当前工作区。</p></div><button class="secondary-button" type="button" data-action="choose-import">${icon("upload")} 选择文件</button><input class="sr-only" id="import-file" type="file" accept="application/json,.json" data-control="import-file" aria-label="选择 JSON 备份文件" /></div>
@@ -1521,6 +1522,10 @@ function sessionHealthSignature(session, acknowledged, now = Date.now()) {
   if (!session) return "none";
   const health = inspectSession(session, now);
   return `${session.id}|${health.staleReasons.join(",")}|${acknowledged ? "ack" : "pending"}`;
+}
+
+function controlContext(value) {
+  return compactText(String(value ?? "").replace(/\s+/gu, " "), 80) || "未命名内容";
 }
 
 export function parseRoute(hash) {

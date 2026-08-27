@@ -109,7 +109,7 @@ test("reduced motion can follow the system or be forced by a persisted setting",
   ]);
 
   assert.match(source, /document\.documentElement\.dataset\.reducedMotion = state\.settings\.reducedMotion \? "reduce" : "system"/);
-  assert.match(source, /<div class="segmented-control" aria-label="动态效果">/);
+  assert.match(source, /<div class="segmented-control" role="group" aria-label="动态效果">/);
   assert.match(source, /this\.#setReducedMotion\(control\.dataset\.reducedMotion\)/);
   assert.match(source, /state\.settings\.reducedMotion = reduced/);
   assert.match(styles, /:root\[data-reduced-motion="reduce"\] \*::after/);
@@ -137,10 +137,21 @@ test("global keyboard shortcuts do not escape an open modal boundary", async () 
 test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 
-  assert.match(source, /data-action="copy-reentry-brief"[^>]*data-project-id=/u);
+  assert.match(source, /data-action="copy-reentry-brief"[^>]*aria-label="复制复航简报：/u);
   assert.match(source, /if \(action === "copy-reentry-brief"\) this\.#copyReentryBrief/u);
   assert.match(source, /const isCurrentRequest = this\.#clipboardRequestGate\.begin\(\)/u);
   assert.match(source, /await copyPlainText\(buildReentryBrief\(card\)\)/u);
   assert.match(source, /if \(!isCurrentRequest\(\)\) return/u);
   assert.match(source, /this\.#clipboardRequestGate\.invalidate\(\)/u);
+});
+
+test("repeated dynamic controls expose bounded contextual names and labeled groups", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /class="segmented-control" role="group" aria-label="界面主题"/u);
+  assert.match(source, /class="segmented-control" role="group" aria-label="动态效果"/u);
+  assert.match(source, /aria-label="标记已解决：\$\{attr\(controlContext\(item\.text\)\)\}"/u);
+  assert.match(source, /aria-label="\$\{crumb\.pinned \? "取消置顶" : "设为航标"\}：\$\{attr\(controlContext\(crumb\.text\)\)\}"/u);
+  assert.match(source, /aria-label="恢复项目：\$\{attr\(controlContext\(project\.title\)\)\}"/u);
+  assert.match(source, /compactText\(String\(value \?\? ""\)\.replace\(\/\\s\+\/gu, " "\), 80\)/u);
 });
