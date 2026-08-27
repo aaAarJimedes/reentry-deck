@@ -10,8 +10,8 @@
 src/ui/app.js
   页面投影、事件委托、对话框、键盘与焦点
         ↓
-src/core/session.js + reentry.js + search.js + insights.js + import-preview.js + timeline.js
-  会话不变量、应急停靠、复航卡、排序、搜索、链接识别、工作区洞察、导入差异与时间线窗口纯函数
+src/core/session.js + capture.js + reentry.js + search.js + insights.js + import-preview.js + timeline.js
+  会话不变量、应急停靠、快捷捕获、复航卡、排序、搜索、链接识别、工作区洞察、导入差异与时间线窗口纯函数
         ↓
 src/core/model.js
   工厂、归一化、导入前校验和数据枚举
@@ -40,6 +40,7 @@ src/core/store.js
 14. 主数据、跨标签写入、滚动快照和导入文件共用严格校验：引用必须同项目一致，时间与文本必须在安全边界内。
 15. 从损坏主数据恢复后，第一次成功保存不得把损坏原文写入滚动快照；上一份有效恢复点必须继续保留。
 16. 置顶只创建可解释的复航投影，不改变时间线顺序、证据时间或下一步优先级；复航卡最多展示三条。
+17. 快捷捕获只关联目标项目自己的活动会话；没有活动会话时保存为项目级证据，绝不借用其他项目的会话。
 
 ## 数据持久化
 

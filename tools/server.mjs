@@ -14,6 +14,7 @@ export const PUBLIC_FILES = Object.freeze(new Map([
   ["/src/styles.css", "src/styles.css"],
   ["/src/main.js", "src/main.js"],
   ["/src/ui/app.js", "src/ui/app.js"],
+  ["/src/core/capture.js", "src/core/capture.js"],
   ["/src/core/model.js", "src/core/model.js"],
   ["/src/core/import-preview.js", "src/core/import-preview.js"],
   ["/src/core/insights.js", "src/core/insights.js"],

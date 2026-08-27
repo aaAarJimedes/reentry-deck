@@ -895,6 +895,11 @@ h3 { font-size: 17px; }
 .field > span,
 .field-label { color: var(--ink-soft); font-size: 11px; font-weight: 700; }
 .field small { color: var(--ink-soft); }
+.check-row { display: flex; align-items: start; gap: 10px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; }
+.check-row input { width: 17px; height: 17px; min-height: 0; flex: 0 0 auto; margin: 3px 0 0; padding: 0; accent-color: var(--forest-soft); }
+.check-row strong,
+.check-row small { display: block; }
+.check-row small { margin-top: 2px; color: var(--ink-soft); font-size: 10px; }
 
 input,
 select,
@@ -1224,6 +1229,7 @@ dialog::backdrop { background: rgb(10 25 23 / 58%); backdrop-filter: blur(4px); 
   .topbar-eyebrow { display: none; }
   .topbar-title { max-width: 52vw; }
   .topbar-actions .ghost-button span { display: none; }
+  .topbar-actions > .soft-pill { display: none; }
   .search-trigger kbd { display: none; }
   .main-content { min-height: calc(100vh - 60px); padding: 28px 18px 70px; }
   .page-heading,

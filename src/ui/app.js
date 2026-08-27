@@ -5,6 +5,7 @@ import {
   createSession,
   isoNow
 } from "../core/model.js";
+import { prepareQuickCapture } from "../core/capture.js";
 import { buildAttentionDeck, buildWeeklyReview } from "../core/insights.js";
 import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
 import { getProjectResources, searchWorkspace } from "../core/search.js";
@@ -175,11 +176,13 @@ export class ReentryApp {
     const context = project ? "项目现场" : route.name === "archive" ? "历史项目" : route.name === "settings" ? "隐私与迁移" : "本地工作区";
     const title = project?.title ?? routeTitle(route);
     const canUndo = this.#store.hasPreviousSnapshot();
+    const canCapture = this.#store.getState().projects.some((item) => item.status !== "archived");
     return `
       <header class="topbar">
         <div class="topbar-context"><span class="topbar-eyebrow">${escapeHTML(context)}</span><span class="topbar-title">${escapeHTML(title)}</span></div>
         <div class="topbar-actions">
           ${activeSession ? `<span class="soft-pill"><span class="dock-pulse"></span> 会话中</span>` : ""}
+          <button class="ghost-button quick-capture-trigger" type="button" data-action="open-quick-capture" aria-label="跨项目快捷记录" title="跨项目快捷记录（Ctrl/⌘ Shift C）" ${canCapture ? "" : "disabled"}>${icon("trail")}<span>记录</span></button>
           <button class="ghost-button search-trigger" type="button" data-action="open-search" aria-label="搜索所有工作现场">${icon("search")}<span>搜索</span><kbd>Ctrl K</kbd></button>
           <button class="icon-button" type="button" data-action="undo-last" data-undo-context="topbar" aria-label="撤销上一次保存" title="撤销上一次保存（Ctrl/⌘ Z）" ${canUndo ? "" : "disabled"}>${icon("undo")}</button>
           <button class="ghost-button" type="button" data-action="open-new-project">${icon("plus")}<span>新项目</span></button>
@@ -507,6 +510,15 @@ export class ReentryApp {
 
   #renderDialogs(project, activeSession) {
     const colors = { fern: "#2f6b61", amber: "#d99752", clay: "#b9644d", sky: "#568695", plum: "#785e76", slate: "#65736f" };
+    const state = this.#store.getState();
+    const captureProjects = state.projects.filter((item) => item.status !== "archived");
+    const captureProjectId = captureProjects.some((item) => item.id === project?.id)
+      ? project.id
+      : captureProjects.some((item) => item.id === activeSession?.projectId)
+        ? activeSession.projectId
+        : captureProjects.some((item) => item.id === state.ui.selectedProjectId)
+          ? state.ui.selectedProjectId
+          : captureProjects[0]?.id;
     return `
       <dialog id="new-project-dialog" aria-labelledby="new-project-title">
         <div class="dialog-header"><div><h2 id="new-project-title">建立工作现场</h2><p>只需一个清楚的名字；其他信息以后再补也可以。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
@@ -516,6 +528,16 @@ export class ReentryApp {
           <label class="field"><span>已知的第一动作</span><input name="nextAction" maxlength="400" placeholder="例如：打开 figure_03.ipynb，核对配色映射" /></label>
           <fieldset class="field-group" style="border:0;padding:0;margin:0"><legend class="field-label">识别颜色</legend><div class="color-options">${Object.entries(colors).map(([name, color], index) => `<label class="color-choice" title="${COLOR_LABELS[name]}"><input type="radio" name="color" value="${name}" aria-label="${COLOR_LABELS[name]}" ${index === 0 ? "checked" : ""}/><span style="--choice-color:${color}"></span></label>`).join("")}</div></fieldset>
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">建立项目</button></div>
+        </form>
+      </dialog>
+      <dialog id="quick-capture-dialog" aria-labelledby="quick-capture-title">
+        <div class="dialog-header"><div><h2 id="quick-capture-title">跨项目快捷记录</h2><p>不离开当前页面，把刚出现的证据放回正确现场。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
+        <form class="dialog-body" data-form="quick-capture" autocomplete="off">
+          <label class="field"><span class="required">目标项目</span><select name="projectId" required>${captureProjects.map((item) => `<option value="${attr(item.id)}" ${item.id === captureProjectId ? "selected" : ""}>${escapeHTML(item.title)}${activeSession?.projectId === item.id ? " · 会话中" : ""}</option>`).join("")}</select></label>
+          <label class="field"><span class="required">证据类型</span><select name="type">${Object.entries(CRUMB_LABELS).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></label>
+          <label class="field"><span class="required">刚刚发生了什么</span><textarea name="text" maxlength="1200" placeholder="一句话即可；它会保留真实记录时间。" required autofocus></textarea></label>
+          <label class="check-row"><input type="checkbox" name="pinned" /><span><strong>同时设为置顶航标</strong><small>适合长期约束、关键决定或回来时必须先看的线索。</small></span></label>
+          <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">${icon("plus")} 保存轨迹</button></div>
         </form>
       </dialog>
       <dialog id="start-session-dialog" aria-labelledby="start-session-title">
@@ -608,6 +630,7 @@ export class ReentryApp {
     const action = control.dataset.action;
 
     if (action === "open-new-project") this.#openDialog("new-project-dialog");
+    if (action === "open-quick-capture") this.#openDialog("quick-capture-dialog");
     if (action === "open-search") this.#openDialog("search-dialog");
     if (action === "undo-last") this.#restorePrevious(control.dataset.undoContext);
     if (action === "close-dialog") this.#closeDialog(control);
@@ -638,6 +661,7 @@ export class ReentryApp {
       if (form.dataset.form === "new-project") this.#createProject(data, form);
       if (form.dataset.form === "start-session") this.#startSession(data, form);
       if (form.dataset.form === "capture-crumb") this.#captureCrumb(data);
+      if (form.dataset.form === "quick-capture") this.#quickCapture(data, form);
       if (form.dataset.form === "checkpoint") this.#saveCheckpoint(data, form);
       if (form.dataset.form === "edit-project") this.#editProject(data, form);
     } catch (error) {
@@ -671,6 +695,11 @@ export class ReentryApp {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
       this.#openDialog("search-dialog");
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "c") {
+      event.preventDefault();
+      if (this.#store.getState().projects.some((item) => item.status !== "archived")) this.#openDialog("quick-capture-dialog");
       return;
     }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !isTypingTarget(event.target)) {
@@ -764,6 +793,24 @@ export class ReentryApp {
     });
     this.#announce(`${CRUMB_LABELS[crumb.type]}已记录`);
     this.#toast(`${CRUMB_LABELS[crumb.type]}已留在轨迹中。`);
+  }
+
+  #quickCapture(data, form) {
+    const state = this.#store.getState();
+    const { crumb, projectTitle, linkedToActiveSession } = prepareQuickCapture(state, data);
+    this.#focusSelector = '[data-action="open-quick-capture"]';
+    this.#store.update((next) => {
+      next.crumbs.push(crumb);
+      const target = next.projects.find((item) => item.id === crumb.projectId);
+      target.updatedAt = crumb.createdAt;
+      if (crumb.type === "next") {
+        target.nextAction = crumb.text;
+        target.nextActionUpdatedAt = crumb.createdAt;
+      }
+    });
+    form.closest("dialog")?.close();
+    this.#announce(`${projectTitle}的${CRUMB_LABELS[crumb.type]}已记录`);
+    this.#toast(`已保存到“${projectTitle}”${linkedToActiveSession ? "的活动会话" : ""}${crumb.pinned ? "，并设为航标" : ""}。`);
   }
 
   #saveCheckpoint(data, form) {
@@ -1061,11 +1108,19 @@ export class ReentryApp {
     const dialog = this.#root.querySelector(`#${id}`);
     if (!dialog) return;
     if (dialog.open) {
-      dialog.querySelector('[data-control="workspace-search"], [autofocus], input:not([type=hidden]), textarea, button')?.focus();
+      this.#focusDialogControl(dialog);
       return;
     }
     dialog.showModal();
-    requestAnimationFrame(() => dialog.querySelector("[autofocus], input:not([type=hidden]), textarea, button")?.focus());
+    requestAnimationFrame(() => this.#focusDialogControl(dialog));
+  }
+
+  #focusDialogControl(dialog) {
+    const preferred = dialog.querySelector("[autofocus]")
+      ?? dialog.querySelector('[data-control="workspace-search"]')
+      ?? dialog.querySelector("input:not([type=hidden]), textarea, select")
+      ?? dialog.querySelector("button");
+    preferred?.focus();
   }
 
   #refreshTimers() {
