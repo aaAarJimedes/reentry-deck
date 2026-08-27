@@ -60,6 +60,10 @@ export function containsUnsafeTextControl(value) {
   return typeof value === "string" && UNSAFE_TEXT_CONTROL_PATTERN.test(value);
 }
 
+export function containsUnsafeIdControl(value) {
+  return typeof value === "string" && UNSAFE_ID_CONTROL_PATTERN.test(value);
+}
+
 export function createEmptyState(now = Date.now()) {
   const timestamp = isoNow(now);
   return {
@@ -389,7 +393,7 @@ function validateSettings(errors, settings) {
 }
 
 function validateImportId(errors, id, label) {
-  if (id.length > IMPORT_LIMITS.id || UNSAFE_ID_CONTROL_PATTERN.test(id)) addImportError(errors, `${label} ID 过长或包含控制字符`);
+  if (id.length > IMPORT_LIMITS.id || containsUnsafeIdControl(id)) addImportError(errors, `${label} ID 过长或包含控制字符`);
 }
 
 function validateText(errors, record, field, label, maximum) {

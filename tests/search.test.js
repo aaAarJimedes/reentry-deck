@@ -101,6 +101,8 @@ test("extractHttpLinks accepts only clean HTTP resources and removes prose punct
   assert.deepEqual(extractHttpLinks("https://[broken"), []);
   assert.deepEqual(extractHttpLinks(`https://example.com/${"a".repeat(2_049)}`), []);
   assert.deepEqual(extractHttpLinks("https://example.com/\u202Etxt"), []);
+  assert.deepEqual(extractHttpLinks("https://example.com/%C2%85hidden"), []);
+  assert.deepEqual(extractHttpLinks("https://example.com/path\u0085hidden"), []);
   assert.deepEqual(extractHttpLinks("https://example.com", 0), []);
 });
 

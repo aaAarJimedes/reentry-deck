@@ -27,6 +27,8 @@ describe("parseRoute", () => {
       "#/project/id/extra",
       "#/project/%",
       "#/project/%00",
+      "#/project/%C2%85hidden",
+      "#/project/%E2%80%AEhidden",
       `#/project/${"a".repeat(201)}`,
       `#/project/${"%61".repeat(801)}`
     ]) {

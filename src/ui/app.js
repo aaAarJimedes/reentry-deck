@@ -1,5 +1,6 @@
 import {
   IMPORT_LIMITS,
+  containsUnsafeIdControl,
   createCheckpoint,
   createCrumb,
   createProject,
@@ -1477,7 +1478,7 @@ export function parseRoute(hash) {
   if (name === "project" && segments.length === 2 && encodedId && encodedId.length <= 2_400) {
     try {
       const id = decodeURIComponent(encodedId);
-      if (!id || id.length > IMPORT_LIMITS.id || /[\u0000-\u001f\u007f]/.test(id)) return { name: "notFound" };
+      if (!id || id.length > IMPORT_LIMITS.id || containsUnsafeIdControl(id)) return { name: "notFound" };
       return { name: "project", id };
     } catch {
       return { name: "notFound" };
