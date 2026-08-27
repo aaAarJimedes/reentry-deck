@@ -19,6 +19,8 @@ function createHarness() {
   let failRuntimeMatch = false;
   let failRuntimePut = false;
   let stallRuntimeOpen = false;
+  let failCacheKeys = false;
+  const failedCacheDeletes = new Set();
   const timers = new Map();
   let timerSequence = 0;
   let fetchImplementation = async (request) => new Response(`online:${new URL(request.url).pathname}`, { status: 200 });
@@ -54,9 +56,11 @@ function createHarness() {
       return stores.get(name);
     },
     async keys() {
+      if (failCacheKeys) throw new Error("cache listing denied");
       return [...stores.keys()];
     },
     async delete(name) {
+      if (failedCacheDeletes.has(name)) throw new Error("cache deletion denied");
       return stores.delete(name);
     }
   };
@@ -100,6 +104,8 @@ function createHarness() {
     setRuntimeMatchFailure(value) { failRuntimeMatch = value; },
     setRuntimePutFailure(value) { failRuntimePut = value; },
     setRuntimeOpenStall(value) { stallRuntimeOpen = value; },
+    setCacheKeysFailure(value) { failCacheKeys = value; },
+    setCacheDeleteFailure(name) { failedCacheDeletes.add(name); },
     fireTimers() {
       for (const [id, callback] of [...timers]) {
         timers.delete(id);
@@ -171,6 +177,23 @@ describe("service worker lifecycle", () => {
     assert.equal(names.includes("reentry-deck-shell-old"), false);
     assert.equal(names.includes("unrelated-cache"), true);
     assert.equal(names.filter((name) => name.startsWith("reentry-deck-shell-")).length, 1);
+    assert.equal(harness.claimed, true);
+  });
+
+  test("activation claims clients even when old-cache listing or deletion fails", async () => {
+    await lifecyclePromise(harness.handlers.get("install"));
+    await harness.cacheStorage.open("reentry-deck-shell-stuck");
+    harness.setCacheDeleteFailure("reentry-deck-shell-stuck");
+
+    await lifecyclePromise(harness.handlers.get("activate"));
+
+    assert.equal(harness.claimed, true);
+    assert.equal((await harness.cacheStorage.keys()).includes("reentry-deck-shell-stuck"), true);
+
+    harness = createHarness();
+    await lifecyclePromise(harness.handlers.get("install"));
+    harness.setCacheKeysFailure(true);
+    await lifecyclePromise(harness.handlers.get("activate"));
     assert.equal(harness.claimed, true);
   });
 

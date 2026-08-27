@@ -3,7 +3,7 @@
 // The build id provides a clean release boundary. Runtime requests also use a
 // network-first strategy, so a forgotten bump cannot strand online clients on
 // an old shell; the cached release remains the complete offline fallback.
-const BUILD_ID = "2026-08-28.83";
+const BUILD_ID = "2026-08-28.84";
 const CACHE_PREFIX = "reentry-deck-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const NETWORK_TIMEOUT_MS = 4_000;
@@ -119,15 +119,26 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      const cacheNames = await caches.keys();
-      await Promise.all(
-        cacheNames
-          .filter(
-            (cacheName) =>
-              cacheName.startsWith(CACHE_PREFIX) && cacheName !== CACHE_NAME
-          )
-          .map((cacheName) => caches.delete(cacheName))
-      );
+      try {
+        const cacheNames = await caches.keys();
+        await Promise.all(
+          cacheNames
+            .filter(
+              (cacheName) =>
+                cacheName.startsWith(CACHE_PREFIX) && cacheName !== CACHE_NAME
+            )
+            .map(async (cacheName) => {
+              try {
+                await caches.delete(cacheName);
+              } catch {
+                // Cleanup is optional after the new shell installed atomically.
+              }
+            })
+        );
+      } catch {
+        // A temporary CacheStorage denial must not prevent the installed worker
+        // from activating and serving network responses.
+      }
 
       await self.clients.claim();
     })()
