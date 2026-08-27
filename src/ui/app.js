@@ -79,7 +79,7 @@ export class ReentryApp {
   constructor(root, store) {
     this.#root = root;
     this.#store = store;
-    this.#noticeQueue = [...store.notices];
+    this.#noticeQueue = store.drainNotices();
 
     this.#root.addEventListener("click", (event) => this.#onClick(event));
     this.#root.addEventListener("submit", (event) => this.#onSubmit(event));
@@ -104,6 +104,7 @@ export class ReentryApp {
   }
 
   render() {
+    this.#noticeQueue.push(...this.#store.drainNotices());
     const state = this.#store.getState();
     const reopenImportPreview = Boolean(this.#root.querySelector("#import-preview-dialog")?.open && this.#pendingImport);
     if (this.#pendingImport && this.#pendingImport.baseState !== state) {

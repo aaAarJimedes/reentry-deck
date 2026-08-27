@@ -294,6 +294,8 @@ describe("AppStore updates and persistence", () => {
     const storage = new MemoryStorage();
     storage.setItem(STORAGE_KEY, JSON.stringify(stateWithProject("safe", "Safe")));
     const store = new AppStore(storage, T0, null);
+    let emissions = 0;
+    store.subscribe(() => emissions += 1);
     const corrupt = stateWithProject("external", "External");
     corrupt.crumbs.push({ id: "orphan", projectId: "missing", text: "would be dropped" });
     storage.setItem(STORAGE_KEY, JSON.stringify(corrupt));
@@ -303,6 +305,15 @@ describe("AppStore updates and persistence", () => {
     assert.equal(refreshed, false);
     assert.equal(store.getState().projects[0].id, "safe");
     assert.match(store.notices.at(-1), /另一个标签页写入的数据无法读取/);
+    assert.equal(emissions, 1);
+
+    assert.equal(store.refreshFromStorage(T2), false);
+    assert.equal(emissions, 1);
+    assert.equal(store.notices.length, 1);
+    const notices = store.drainNotices();
+    assert.equal(notices.length, 1);
+    assert.match(notices[0], /另一个标签页写入的数据无法读取/);
+    assert.deepEqual(store.drainNotices(), []);
   });
 
   test("a quota failure for the rollback copy does not make successful current writes read-only", () => {

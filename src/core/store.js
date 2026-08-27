@@ -2,7 +2,7 @@ import { createEmptyState, isoNow, normalizeState, validateImportCandidate, vali
 import { buildImportPreview, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.12.0";
+export const APP_VERSION = "0.13.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {
@@ -12,6 +12,8 @@ export class AppStore {
   #listeners = new Set();
   #storageListener = null;
   #skipNextPreviousWrite = false;
+  #rejectedRaw = null;
+  #hasRejectedRaw = false;
 
   constructor(storage = globalThis.localStorage, now = Date.now(), eventTarget = globalThis.window) {
     this.#storage = storage;
@@ -35,17 +37,27 @@ export class AppStore {
     return () => this.#listeners.delete(listener);
   }
 
+  drainNotices() {
+    return this.notices.splice(0);
+  }
+
   refreshFromStorage(now = Date.now()) {
     const current = this.#storage?.getItem(STORAGE_KEY) ?? null;
     if (current === this.#persistedRaw) return false;
+    if (this.#hasRejectedRaw && current === this.#rejectedRaw) return false;
     try {
       const next = current ? parseSavedState(current, now) : createEmptyState(now);
       this.#persistedRaw = current;
+      this.#rejectedRaw = null;
+      this.#hasRejectedRaw = false;
       this.#state = next;
       this.#emit();
       return true;
     } catch (error) {
+      this.#rejectedRaw = current;
+      this.#hasRejectedRaw = true;
       this.notices.push(`另一个标签页写入的数据无法读取，当前页面未采用它：${error.message}`);
+      this.#emit();
       return false;
     }
   }
