@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildReentryCard,
+  buildReentryCards,
   getProjectActivity,
   getProjectStats,
   rankProjectsForReentry
@@ -351,6 +352,38 @@ test("rankProjectsForReentry keeps active work ahead of stale paused work and ex
   assert.ok(ranked.every((card) => card.recommendationScore >= 0 && card.recommendationReason));
   assert.equal(ranked.some((card) => card.project.id === "archived"), false);
   assert.deepEqual(state.projects.map((project) => project.id), projects.map((project) => project.id));
+});
+
+test("buildReentryCards indexes shared collections once while preserving per-project evidence", () => {
+  const projects = Array.from({ length: 1_000 }, (_, index) => makeProject(`p${index}`, {
+    createdAt: at(-index),
+    updatedAt: at(-index),
+    lastOpenedAt: at(-index)
+  }));
+  const crumbs = Array.from({ length: 5_000 }, (_, index) => ({
+    id: `c${index}`,
+    projectId: `p${index % projects.length}`,
+    type: index % 2 ? "note" : "next",
+    text: `evidence ${index}`,
+    createdAt: at(index)
+  }));
+  let crumbFilterCalls = 0;
+  Object.defineProperty(crumbs, "filter", {
+    value(...args) {
+      crumbFilterCalls += 1;
+      return Array.prototype.filter.apply(this, args);
+    }
+  });
+  const data = makeState({ projects, crumbs });
+
+  const cards = buildReentryCards(data, projects.map((project) => project.id), NOW);
+
+  assert.equal(cards.length, 1_000);
+  assert.equal(crumbFilterCalls, 0, "batch projection must not rescan the full crumb collection per project");
+  assert.equal(cards[0].project.id, "p0");
+  assert.equal(cards[0].recentTrail.length, 5);
+  assert.equal(cards[999].project.id, "p999");
+  assert.deepEqual(buildReentryCards(data, ["missing"], NOW), []);
 });
 
 test("resolved questions disappear from open evidence and can be reconstructed from timestamps", () => {

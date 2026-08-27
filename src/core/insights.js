@@ -1,4 +1,4 @@
-import { buildReentryCard } from "./reentry.js";
+import { buildReentryCards } from "./reentry.js";
 import { inspectSession } from "./session.js";
 
 const DAY_MS = 86_400_000;
@@ -34,10 +34,8 @@ export function buildWeeklyReview(state, now = Date.now(), options = {}) {
 
   const recentCrumbs = state.crumbs.filter((crumb) => timeOf(crumb.createdAt) >= windowStart && timeOf(crumb.createdAt) <= now);
   const resolvedSignals = state.crumbs.filter((crumb) => timeOf(crumb.resolvedAt) >= windowStart && timeOf(crumb.resolvedAt) <= now);
-  const cards = state.projects
-    .filter((project) => project.status !== "archived")
-    .map((project) => buildReentryCard(state, project.id, now))
-    .filter(Boolean);
+  const cardProjectIds = state.projects.filter((project) => project.status !== "archived").map((project) => project.id);
+  const cards = buildReentryCards(state, cardProjectIds, now);
   const recoverability = cards.length
     ? Math.round(cards.reduce((sum, card) => sum + card.completeness, 0) / cards.length)
     : 0;
@@ -69,16 +67,16 @@ export function buildAttentionDeck(state, now = Date.now(), options = {}) {
     ? Math.max(1, options.staleAfterDays)
     : Math.max(1, Number(state.settings?.staleAfterDays) || 7);
 
-  return state.projects
-    .filter((project) => project.status !== "archived")
-    .map((project) => attentionForProject(state, project, now, staleAfterDays))
+  const projects = state.projects.filter((project) => project.status !== "archived");
+  const cards = new Map(buildReentryCards(state, projects.map((project) => project.id), now).map((card) => [card.project.id, card]));
+  return projects
+    .map((project) => attentionForProject(project, cards.get(project.id), now, staleAfterDays))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score || timeOf(a.card.lastActivityAt) - timeOf(b.card.lastActivityAt) || a.project.id.localeCompare(b.project.id))
     .slice(0, normalizeLimit(options.limit, 4));
 }
 
-function attentionForProject(state, project, now, staleAfterDays) {
-  const card = buildReentryCard(state, project.id, now);
+function attentionForProject(project, card, now, staleAfterDays) {
   const signals = card.unresolvedSignals;
   const blockers = signals.filter((item) => item.type === "blocker").length;
   const questions = signals.filter((item) => item.type === "question").length;

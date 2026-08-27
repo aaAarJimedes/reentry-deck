@@ -1,31 +1,33 @@
 import { daysSince } from "./time.js";
 
 export function getProjectActivity(state, projectId) {
-  const project = state.projects.find((item) => item.id === projectId);
+  return getIndexedProjectActivity(buildReentryIndex(state), projectId);
+}
+
+function getIndexedProjectActivity(index, projectId) {
+  const project = index.projects.get(projectId);
   if (!project) return null;
-  const relatedDates = [project.updatedAt, project.lastOpenedAt];
-  for (const collection of [state.sessions, state.crumbs, state.checkpoints]) {
-    for (const item of collection) if (item.projectId === projectId) relatedDates.push(item.resolvedAt ?? item.endedAt ?? item.createdAt ?? item.startedAt);
-  }
-  const lastActivityAt = relatedDates
-    .filter(Boolean)
-    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? project.createdAt;
-  return { project, lastActivityAt };
+  return { project, lastActivityAt: index.lastActivity.get(projectId) ?? project.createdAt };
 }
 
 export function buildReentryCard(state, projectId, now = Date.now()) {
-  const activity = getProjectActivity(state, projectId);
+  return buildIndexedReentryCard(buildReentryIndex(state), projectId, now);
+}
+
+export function buildReentryCards(state, projectIds, now = Date.now()) {
+  const index = buildReentryIndex(state);
+  return (Array.isArray(projectIds) ? projectIds : [])
+    .map((projectId) => buildIndexedReentryCard(index, projectId, now))
+    .filter(Boolean);
+}
+
+function buildIndexedReentryCard(index, projectId, now) {
+  const activity = getIndexedProjectActivity(index, projectId);
   if (!activity) return null;
   const project = activity.project;
-  const projectCrumbs = state.crumbs
-    .filter((item) => item.projectId === projectId)
-    .sort(byNewest);
-  const checkpoints = state.checkpoints
-    .filter((item) => item.projectId === projectId)
-    .sort(byNewest);
-  const sessions = state.sessions
-    .filter((item) => item.projectId === projectId)
-    .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
+  const projectCrumbs = index.crumbs.get(projectId) ?? [];
+  const checkpoints = index.checkpoints.get(projectId) ?? [];
+  const sessions = index.sessions.get(projectId) ?? [];
   const checkpoint = checkpoints[0] ?? null;
   const latestNextCrumb = projectCrumbs.find((item) => item.type === "next");
   const latestSummaryCrumb = projectCrumbs.find((item) => ["note", "discovery", "decision"].includes(item.type));
@@ -88,12 +90,53 @@ export function buildReentryCard(state, projectId, now = Date.now()) {
 }
 
 export function rankProjectsForReentry(state, now = Date.now()) {
-  return state.projects
-    .filter((project) => project.status !== "archived")
-    .map((project) => buildReentryCard(state, project.id, now))
+  const projects = state.projects
+    .filter((project) => project.status !== "archived");
+  const index = buildReentryIndex(state);
+  return projects
+    .map((project) => buildIndexedReentryCard(index, project.id, now))
     .filter(Boolean)
     .map((card) => ({ ...card, recommendationScore: reentryScore(card), recommendationReason: reentryReason(card) }))
     .sort((a, b) => b.recommendationScore - a.recommendationScore || timeOf(b.lastActivityAt) - timeOf(a.lastActivityAt));
+}
+
+function buildReentryIndex(state) {
+  const projects = new Map();
+  const sessions = new Map();
+  const crumbs = new Map();
+  const checkpoints = new Map();
+  const lastActivity = new Map();
+
+  for (const project of safeCollection(state?.projects)) {
+    projects.set(project.id, project);
+    lastActivity.set(project.id, newestDate([project.updatedAt, project.lastOpenedAt, project.createdAt]));
+  }
+  indexRecords(safeCollection(state?.sessions), sessions, projects, lastActivity, (item) => item.resolvedAt ?? item.endedAt ?? item.createdAt ?? item.startedAt);
+  indexRecords(safeCollection(state?.crumbs), crumbs, projects, lastActivity, (item) => item.resolvedAt ?? item.endedAt ?? item.createdAt ?? item.startedAt);
+  indexRecords(safeCollection(state?.checkpoints), checkpoints, projects, lastActivity, (item) => item.resolvedAt ?? item.endedAt ?? item.createdAt ?? item.startedAt);
+
+  for (const items of crumbs.values()) items.sort(byNewest);
+  for (const items of checkpoints.values()) items.sort(byNewest);
+  for (const items of sessions.values()) items.sort((a, b) => timeOf(b.startedAt) - timeOf(a.startedAt));
+  return { projects, sessions, crumbs, checkpoints, lastActivity };
+}
+
+function indexRecords(records, target, projects, lastActivity, activityOf) {
+  for (const item of records) {
+    if (!projects.has(item.projectId)) continue;
+    if (!target.has(item.projectId)) target.set(item.projectId, []);
+    target.get(item.projectId).push(item);
+    const candidate = activityOf(item);
+    if (timeOf(candidate) > timeOf(lastActivity.get(item.projectId))) lastActivity.set(item.projectId, candidate);
+  }
+}
+
+function newestDate(values) {
+  return values.filter(Boolean).reduce((newest, value) => timeOf(value) > timeOf(newest) ? value : newest, null);
+}
+
+function safeCollection(value) {
+  return Array.isArray(value) ? value : [];
 }
 
 export function getProjectStats(state, projectId) {
