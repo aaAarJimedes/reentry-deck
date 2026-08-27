@@ -9,6 +9,7 @@ import {
   SCHEMA_VERSION,
   SESSION_CLOSE_REASONS,
   SESSION_STATUSES,
+  compactText,
   createCheckpoint,
   createCrumb,
   createEmptyState,
@@ -56,6 +57,15 @@ describe("model constants and helpers", () => {
     assert.equal(isoAtOrAfter(earlier, NOW_ISO, "invalid", later), later);
     assert.equal(isoAtOrAfter(NOW), NOW_ISO);
     assert.throws(() => isoAtOrAfter("not-a-date"), /无法生成有效时间/);
+  });
+
+  test("compactText trims short text and marks bounded projections without overrunning", () => {
+    assert.equal(compactText("  short  ", 10), "short");
+    assert.equal(compactText("abcdef", 4), "abc…");
+    assert.equal(compactText("ab  cd", 4), "ab…");
+    assert.equal(compactText("abcdef", 1), "…");
+    assert.equal(compactText("abcdef", 0), "");
+    assert.equal(compactText(null, 10), "");
   });
 });
 

@@ -1,4 +1,4 @@
-import { createCheckpoint, isoAtOrAfter } from "./model.js";
+import { IMPORT_LIMITS, compactText, createCheckpoint, isoAtOrAfter } from "./model.js";
 
 export const DEFAULT_SESSION_STALE_AFTER_MS = 12 * 60 * 60 * 1000;
 
@@ -110,15 +110,15 @@ export function deriveQuickDockCheckpointInput(state, sessionId, now = Date.now(
   const summaryCrumb = currentSessionCrumbs.find((crumb) => SUBSTANTIVE_CRUMB_TYPES.has(crumb.type));
   const nextCrumb = currentSessionCrumbs.find((crumb) => crumb.type === "next");
   const openLoopTexts = currentSessionCrumbs
-    .filter((crumb) => OPEN_LOOP_CRUMB_TYPES.has(crumb.type))
+    .filter((crumb) => OPEN_LOOP_CRUMB_TYPES.has(crumb.type) && !crumb.resolvedAt)
     .map((crumb) => cleanText(crumb.text));
 
   return {
     projectId: project.id,
     sessionId: activeSession.id,
-    summary: cleanText(summaryCrumb?.text) || QUICK_DOCK_NOT_RECORDED.summary,
-    nextAction: cleanText(nextCrumb?.text) || cleanText(project.nextAction) || QUICK_DOCK_NOT_RECORDED.nextAction,
-    openLoops: openLoopTexts.join("；") || QUICK_DOCK_NOT_RECORDED.openLoops,
+    summary: compactText(summaryCrumb?.text, IMPORT_LIMITS.checkpointSummary) || QUICK_DOCK_NOT_RECORDED.summary,
+    nextAction: compactText(nextCrumb?.text, IMPORT_LIMITS.nextAction) || compactText(project.nextAction, IMPORT_LIMITS.nextAction) || QUICK_DOCK_NOT_RECORDED.nextAction,
+    openLoops: compactText(openLoopTexts.join("；"), IMPORT_LIMITS.openLoops) || QUICK_DOCK_NOT_RECORDED.openLoops,
     returnHint: QUICK_DOCK_RETURN_HINT,
     captureMode: "quick"
   };
@@ -140,6 +140,10 @@ export function prepareQuickCheckpointReview(state, input = {}, now = Date.now()
   const nextAction = cleanText(input.nextAction);
   if (!summary || summary === QUICK_DOCK_NOT_RECORDED.summary) throw new Error("请补充真实的当前状态摘要。");
   if (!nextAction || nextAction === QUICK_DOCK_NOT_RECORDED.nextAction) throw new Error("请补充可直接执行的下一动作。");
+  requireTextLimit(summary, IMPORT_LIMITS.checkpointSummary, "当前状态摘要");
+  requireTextLimit(nextAction, IMPORT_LIMITS.nextAction, "下一动作");
+  requireTextLimit(input.openLoops, IMPORT_LIMITS.openLoops, "未决事项");
+  requireTextLimit(input.returnHint, IMPORT_LIMITS.returnHint, "恢复提示");
   const checkpoint = createCheckpoint({
     projectId: project.id,
     sessionId: null,
@@ -194,6 +198,10 @@ function toTimestamp(value) {
 
 function cleanText(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function requireTextLimit(value, maximum, label) {
+  if (cleanText(value).length > maximum) throw new Error(`${label}不能超过 ${maximum} 字符。`);
 }
 
 function arrayOf(value) {

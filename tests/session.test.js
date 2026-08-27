@@ -243,6 +243,28 @@ test("deriveQuickDockCheckpointInput uses explicit 未记录 text for every miss
   assert.match(checkpoint.openLoops, /未记录/);
 });
 
+test("deriveQuickDockCheckpointInput bounds projections and omits resolved loops", () => {
+  const state = stateWith({
+    crumbs: [
+      { id: "summary", projectId: "project-current", sessionId: "session-current", type: "note", text: "摘".repeat(1_205), createdAt: iso(NOW - 5_000) },
+      { id: "next", projectId: "project-current", sessionId: "session-current", type: "next", text: "动".repeat(605), createdAt: iso(NOW - 4_000) },
+      { id: "loop-old", projectId: "project-current", sessionId: "session-current", type: "question", text: "问".repeat(500), createdAt: iso(NOW - 3_000) },
+      { id: "loop-new", projectId: "project-current", sessionId: "session-current", type: "blocker", text: "阻".repeat(500), createdAt: iso(NOW - 2_000) },
+      { id: "resolved", projectId: "project-current", sessionId: "session-current", type: "question", text: "已经解决", resolvedAt: iso(NOW - 500), createdAt: iso(NOW - 1_000) }
+    ]
+  });
+
+  const checkpoint = deriveQuickDockCheckpointInput(state, "session-current", NOW);
+
+  assert.equal(checkpoint.summary.length, 1_200);
+  assert.equal(checkpoint.nextAction.length, 600);
+  assert.equal(checkpoint.openLoops.length, 800);
+  assert.ok(checkpoint.summary.endsWith("…"));
+  assert.ok(checkpoint.nextAction.endsWith("…"));
+  assert.ok(checkpoint.openLoops.endsWith("…"));
+  assert.doesNotMatch(checkpoint.openLoops, /已经解决/);
+});
+
 test("prepareQuickCheckpointReview creates a detached reliable project checkpoint", () => {
   const state = stateWith({
     projects: [{ id: "project-current", title: "Focus", status: "active", updatedAt: iso(NOW - HOUR) }],
@@ -314,6 +336,22 @@ test("prepareQuickCheckpointReview rejects stale forms, placeholders, and unavai
     summary: "state",
     nextAction: "next"
   }, NOW), /最新检查点已不是/);
+});
+
+test("prepareQuickCheckpointReview rejects fields beyond persisted checkpoint limits", () => {
+  const quick = {
+    id: "quick",
+    projectId: "project-current",
+    captureMode: "quick",
+    createdAt: iso(NOW - HOUR)
+  };
+  const state = stateWith({ sessions: [], checkpoints: [quick] });
+  const base = { projectId: "project-current", sourceCheckpointId: "quick", summary: "state", nextAction: "next" };
+
+  assert.throws(() => prepareQuickCheckpointReview(state, { ...base, summary: "x".repeat(1_201) }, NOW), /当前状态摘要不能超过 1200 字符/);
+  assert.throws(() => prepareQuickCheckpointReview(state, { ...base, nextAction: "x".repeat(601) }, NOW), /下一动作不能超过 600 字符/);
+  assert.throws(() => prepareQuickCheckpointReview(state, { ...base, openLoops: "x".repeat(801) }, NOW), /未决事项不能超过 800 字符/);
+  assert.throws(() => prepareQuickCheckpointReview(state, { ...base, returnHint: "x".repeat(401) }, NOW), /恢复提示不能超过 400 字符/);
 });
 
 test("newest evidence is deterministic for equal or invalid timestamps", () => {

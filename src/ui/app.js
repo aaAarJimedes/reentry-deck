@@ -6,7 +6,7 @@ import {
   createSession,
   isoAtOrAfter
 } from "../core/model.js";
-import { prepareQuickCapture } from "../core/capture.js";
+import { prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture.js";
 import { readBackupFile } from "../core/backup-file.js";
 import { buildAttentionDeck, buildWeeklyReview } from "../core/insights.js";
 import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
@@ -971,7 +971,7 @@ export class ReentryApp {
       const project = next.projects.find((item) => item.id === session.projectId);
       project.updatedAt = crumb.createdAt;
       if (crumb.type === "next") {
-        project.nextAction = crumb.text;
+        project.nextAction = projectNextActionFromCrumb(crumb);
         project.nextActionUpdatedAt = crumb.createdAt;
       }
     });
@@ -988,7 +988,7 @@ export class ReentryApp {
       const target = next.projects.find((item) => item.id === crumb.projectId);
       target.updatedAt = crumb.createdAt;
       if (crumb.type === "next") {
-        target.nextAction = crumb.text;
+        target.nextAction = projectNextActionFromCrumb(crumb);
         target.nextActionUpdatedAt = crumb.createdAt;
       }
     });

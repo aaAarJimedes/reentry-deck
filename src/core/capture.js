@@ -1,4 +1,8 @@
-import { CRUMB_TYPES, createCrumb, isoAtOrAfter } from "./model.js";
+import { CRUMB_TYPES, IMPORT_LIMITS, compactText, createCrumb, isoAtOrAfter } from "./model.js";
+
+export function projectNextActionFromCrumb(crumb) {
+  return crumb?.type === "next" ? compactText(crumb.text, IMPORT_LIMITS.nextAction) : null;
+}
 
 export function prepareQuickCapture(state, input, now = Date.now()) {
   const project = state?.projects?.find((item) => item.id === input?.projectId && item.status !== "archived");

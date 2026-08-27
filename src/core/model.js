@@ -41,6 +41,14 @@ export function isoAtOrAfter(now = Date.now(), ...anchors) {
   return new Date(timestamp).toISOString();
 }
 
+export function compactText(value, maximum) {
+  const text = cleanText(value);
+  if (!Number.isSafeInteger(maximum) || maximum < 1) return "";
+  if (text.length <= maximum) return text;
+  if (maximum === 1) return "…";
+  return `${text.slice(0, maximum - 1).trimEnd()}…`;
+}
+
 export function createEmptyState(now = Date.now()) {
   const timestamp = isoNow(now);
   return {

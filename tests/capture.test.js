@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { prepareQuickCapture } from "../src/core/capture.js";
-import { createEmptyState, createProject, createSession } from "../src/core/model.js";
+import { prepareQuickCapture, projectNextActionFromCrumb } from "../src/core/capture.js";
+import { IMPORT_LIMITS, createEmptyState, createProject, createSession } from "../src/core/model.js";
 
 const NOW = Date.parse("2026-08-28T04:00:00.000Z");
 
@@ -56,4 +56,15 @@ describe("prepareQuickCapture", () => {
     assert.throws(() => prepareQuickCapture(state, { projectId: "active", type: "mystery", text: "x" }, NOW), /记录类型不可用/);
     assert.throws(() => prepareQuickCapture(state, { projectId: "active", type: "note", text: "   " }, NOW), /先写下一条记录/);
   });
+});
+
+test("projectNextActionFromCrumb preserves full evidence while bounding the project projection", () => {
+  const fullText = "动".repeat(IMPORT_LIMITS.nextAction + 5);
+  const crumb = { type: "next", text: fullText };
+  const projection = projectNextActionFromCrumb(crumb);
+
+  assert.equal(crumb.text, fullText);
+  assert.equal(projection.length, IMPORT_LIMITS.nextAction);
+  assert.ok(projection.endsWith("…"));
+  assert.equal(projectNextActionFromCrumb({ type: "note", text: fullText }), null);
 });
