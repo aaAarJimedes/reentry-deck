@@ -16,6 +16,8 @@ function createHarness() {
   const stores = new Map();
   let claimed = false;
   let failRuntimePut = false;
+  const timers = new Map();
+  let timerSequence = 0;
   let fetchImplementation = async (request) => new Response(`online:${new URL(request.url).pathname}`, { status: 200 });
 
   class MockCache {
@@ -67,8 +69,18 @@ function createHarness() {
     Response,
     Set,
     Promise,
+    AbortController,
+    DOMException,
     caches: cacheStorage,
-    fetch: (request) => fetchImplementation(request),
+    fetch: (request, options) => fetchImplementation(request, options),
+    setTimeout(callback) {
+      const id = ++timerSequence;
+      timers.set(id, callback);
+      return id;
+    },
+    clearTimeout(id) {
+      timers.delete(id);
+    },
     self
   });
 
@@ -78,7 +90,14 @@ function createHarness() {
     cacheStorage,
     get claimed() { return claimed; },
     setFetch(next) { fetchImplementation = next; },
-    setRuntimePutFailure(value) { failRuntimePut = value; }
+    setRuntimePutFailure(value) { failRuntimePut = value; },
+    fireTimers() {
+      for (const [id, callback] of [...timers]) {
+        timers.delete(id);
+        callback();
+      }
+    },
+    get pendingTimers() { return timers.size; }
   };
 }
 
@@ -188,6 +207,29 @@ describe("service worker lifecycle", () => {
 
     assert.equal(response.status, 200);
     assert.equal(await response.text(), "fresh network copy");
+    assert.equal(harness.pendingTimers, 0);
+  });
+
+  test("stalled navigation and shell fetches abort into the complete cache", async () => {
+    await lifecyclePromise(harness.handlers.get("install"));
+    harness.setFetch((_request, { signal } = {}) => new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new DOMException("timed out", "AbortError")), { once: true });
+    }));
+    const fetchHandler = harness.handlers.get("fetch");
+    const navigationPromise = interceptedResponse(fetchHandler, { method: "GET", mode: "navigate", url: scope });
+    for (let attempt = 0; attempt < 5 && harness.pendingTimers === 0; attempt += 1) await Promise.resolve();
+    assert.equal(harness.pendingTimers, 1);
+    harness.fireTimers();
+    const navigation = await navigationPromise;
+    assert.equal(await navigation.text(), "online:/index.html");
+
+    const assetPromise = interceptedResponse(fetchHandler, { method: "GET", mode: "cors", url: `${scope}src/main.js` });
+    for (let attempt = 0; attempt < 5 && harness.pendingTimers === 0; attempt += 1) await Promise.resolve();
+    assert.equal(harness.pendingTimers, 1);
+    harness.fireTimers();
+    const asset = await assetPromise;
+    assert.equal(await asset.text(), "online:/src/main.js");
+    assert.equal(harness.pendingTimers, 0);
   });
 
   test("non-GET and cross-origin requests are not intercepted", async () => {

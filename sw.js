@@ -3,9 +3,10 @@
 // The build id provides a clean release boundary. Runtime requests also use a
 // network-first strategy, so a forgotten bump cannot strand online clients on
 // an old shell; the cached release remains the complete offline fallback.
-const BUILD_ID = "2026-08-28.40";
+const BUILD_ID = "2026-08-28.41";
 const CACHE_PREFIX = "reentry-deck-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
+const NETWORK_TIMEOUT_MS = 4_000;
 
 const SHELL_PATHS = Object.freeze([
   "./",
@@ -43,6 +44,16 @@ function cleanURL(value) {
 
 function isUsableResponse(response) {
   return response.status === 200 && response.type !== "error";
+}
+
+async function fetchWithTimeout(request) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS);
+  try {
+    return await fetch(request, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function precacheShell() {
@@ -87,7 +98,7 @@ self.addEventListener("activate", (event) => {
 async function serveNavigation(request) {
   const cache = await caches.open(CACHE_NAME);
   try {
-    const response = await fetch(request);
+    const response = await fetchWithTimeout(request);
     if (isUsableResponse(response)) {
       try {
         await cache.put(documentURL, response.clone());
@@ -117,7 +128,7 @@ async function serveNavigation(request) {
 async function serveShellAsset(request, canonicalURL) {
   const cache = await caches.open(CACHE_NAME);
   try {
-    const response = await fetch(request);
+    const response = await fetchWithTimeout(request);
     if (isUsableResponse(response)) {
       try {
         await cache.put(canonicalURL, response.clone());
