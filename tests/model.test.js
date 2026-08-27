@@ -365,6 +365,15 @@ describe("validateState", () => {
 
     assert.deepEqual(validateState(state), ["同一时间只能有一个活动会话"]);
   });
+
+  test("rejects an oversized live workspace before traversing its records", () => {
+    const state = createEmptyState(NOW);
+    state.crumbs = new Array(IMPORT_LIMITS.records + 1);
+
+    assert.deepEqual(validateState(state), [
+      `工作区包含 ${IMPORT_LIMITS.records + 1} 条记录，超过 ${IMPORT_LIMITS.records} 条安全上限`
+    ]);
+  });
 });
 
 describe("validateImportCandidate", () => {

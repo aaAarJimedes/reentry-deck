@@ -335,6 +335,19 @@ describe("AppStore updates and persistence", () => {
     assert.equal(emissions, 0);
   });
 
+  test("a local update cannot cross the shared 50,000-record safety boundary", () => {
+    const storage = new MemoryStorage();
+    const store = new AppStore(storage, T0, null);
+    const before = store.getState();
+
+    assert.throws(
+      () => store.update((draft) => { draft.crumbs = new Array(50_001); }, T1),
+      /超过 50000 条安全上限/
+    );
+    assert.strictEqual(store.getState(), before);
+    assert.equal(storage.getItem(STORAGE_KEY), null);
+  });
+
   test("a current-value write failure restores serialized data and does not commit or emit", () => {
     class FailNextCurrentWriteStorage extends MemoryStorage {
       failNextCurrentWrite = false;

@@ -179,8 +179,14 @@ export function validateState(state) {
   if (!Array.isArray(state?.crumbs)) errors.push("面包屑列表无效");
   if (!Array.isArray(state?.checkpoints)) errors.push("检查点列表无效");
 
+  const collections = [state?.projects, state?.sessions, state?.crumbs, state?.checkpoints];
+  const recordCount = collections.reduce((total, collection) => total + (Array.isArray(collection) ? collection.length : 0), 0);
+  if (recordCount > IMPORT_LIMITS.records) {
+    return [`工作区包含 ${recordCount} 条记录，超过 ${IMPORT_LIMITS.records} 条安全上限`];
+  }
+
   const ids = new Set();
-  for (const collection of [state?.projects, state?.sessions, state?.crumbs, state?.checkpoints]) {
+  for (const collection of collections) {
     if (!Array.isArray(collection)) continue;
     for (const item of collection) {
       if (!item?.id) errors.push("存在缺少 ID 的记录");
