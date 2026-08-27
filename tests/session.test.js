@@ -10,7 +10,8 @@ import {
   inspectActiveSessionInvariant,
   inspectSession,
   isActiveSession,
-  isSessionStale
+  isSessionStale,
+  prepareQuickCheckpointReview
 } from "../src/core/session.js";
 
 const HOUR = 60 * 60 * 1000;
@@ -240,6 +241,79 @@ test("deriveQuickDockCheckpointInput uses explicit 未记录 text for every miss
   assert.match(checkpoint.summary, /未记录/);
   assert.match(checkpoint.nextAction, /未记录/);
   assert.match(checkpoint.openLoops, /未记录/);
+});
+
+test("prepareQuickCheckpointReview creates a detached reliable project checkpoint", () => {
+  const state = stateWith({
+    projects: [{ id: "project-current", title: "Focus", status: "active", updatedAt: iso(NOW - HOUR) }],
+    sessions: [],
+    checkpoints: [{
+      id: "quick",
+      projectId: "project-current",
+      sessionId: "old-session",
+      captureMode: "quick",
+      summary: "rough state",
+      nextAction: "rough next",
+      openLoops: "rough loop",
+      returnHint: QUICK_DOCK_RETURN_HINT,
+      createdAt: iso(NOW - HOUR)
+    }]
+  });
+
+  const result = prepareQuickCheckpointReview(state, {
+    projectId: "project-current",
+    sourceCheckpointId: "quick",
+    summary: "  verified state  ",
+    nextAction: "  open the failing test  ",
+    openLoops: "  confirm fixture  ",
+    returnHint: "  tests/session.test.js  "
+  }, NOW);
+
+  assert.equal(result.projectTitle, "Focus");
+  assert.equal(result.sourceCheckpointId, "quick");
+  assert.deepEqual(result.checkpoint, {
+    id: result.checkpoint.id,
+    projectId: "project-current",
+    sessionId: null,
+    summary: "verified state",
+    nextAction: "open the failing test",
+    openLoops: "confirm fixture",
+    returnHint: "tests/session.test.js",
+    captureMode: "manual",
+    createdAt: iso(NOW)
+  });
+  assert.equal(state.checkpoints.length, 1);
+});
+
+test("prepareQuickCheckpointReview rejects stale forms, placeholders, and unavailable targets", () => {
+  const quick = {
+    id: "quick",
+    projectId: "project-current",
+    captureMode: "quick",
+    createdAt: iso(NOW - HOUR)
+  };
+  const state = stateWith({ sessions: [], checkpoints: [quick] });
+  assert.throws(() => prepareQuickCheckpointReview(state, { projectId: "missing", sourceCheckpointId: "quick" }, NOW), /项目不可用/);
+  assert.throws(() => prepareQuickCheckpointReview(state, { projectId: "project-current", sourceCheckpointId: "older" }, NOW), /复核期间发生了变化/);
+  assert.throws(() => prepareQuickCheckpointReview(state, {
+    projectId: "project-current",
+    sourceCheckpointId: "quick",
+    summary: QUICK_DOCK_NOT_RECORDED.summary,
+    nextAction: "next"
+  }, NOW), /真实的当前状态摘要/);
+  assert.throws(() => prepareQuickCheckpointReview(state, {
+    projectId: "project-current",
+    sourceCheckpointId: "quick",
+    summary: "state",
+    nextAction: QUICK_DOCK_NOT_RECORDED.nextAction
+  }, NOW), /可直接执行的下一动作/);
+  const newerManual = { ...quick, id: "manual", captureMode: "manual", createdAt: iso(NOW) };
+  assert.throws(() => prepareQuickCheckpointReview({ ...state, checkpoints: [quick, newerManual] }, {
+    projectId: "project-current",
+    sourceCheckpointId: "quick",
+    summary: "state",
+    nextAction: "next"
+  }, NOW), /最新检查点已不是/);
 });
 
 test("newest evidence is deterministic for equal or invalid timestamps", () => {

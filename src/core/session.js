@@ -1,3 +1,5 @@
+import { createCheckpoint, isoAtOrAfter } from "./model.js";
+
 export const DEFAULT_SESSION_STALE_AFTER_MS = 12 * 60 * 60 * 1000;
 
 export const QUICK_DOCK_NOT_RECORDED = Object.freeze({
@@ -120,6 +122,34 @@ export function deriveQuickDockCheckpointInput(state, sessionId, now = Date.now(
     returnHint: QUICK_DOCK_RETURN_HINT,
     captureMode: "quick"
   };
+}
+
+export function prepareQuickCheckpointReview(state, input = {}, now = Date.now()) {
+  const project = arrayOf(state?.projects).find((item) => item?.id === input.projectId);
+  if (!project || project.status === "archived") throw new Error("项目不可用，无法复核快速检查点。");
+  const latestCheckpoint = newestFirst(
+    arrayOf(state?.checkpoints).filter((item) => item?.projectId === project.id)
+  )[0];
+  if (!latestCheckpoint || latestCheckpoint.captureMode !== "quick") {
+    throw new Error("最新检查点已不是待复核的快速停靠记录。");
+  }
+  if (input.sourceCheckpointId !== latestCheckpoint.id) {
+    throw new Error("快速检查点在复核期间发生了变化，请重新打开表单。");
+  }
+  const summary = cleanText(input.summary);
+  const nextAction = cleanText(input.nextAction);
+  if (!summary || summary === QUICK_DOCK_NOT_RECORDED.summary) throw new Error("请补充真实的当前状态摘要。");
+  if (!nextAction || nextAction === QUICK_DOCK_NOT_RECORDED.nextAction) throw new Error("请补充可直接执行的下一动作。");
+  const checkpoint = createCheckpoint({
+    projectId: project.id,
+    sessionId: null,
+    summary,
+    nextAction,
+    openLoops: cleanText(input.openLoops),
+    returnHint: cleanText(input.returnHint),
+    captureMode: "manual"
+  }, isoAtOrAfter(now, project.updatedAt, latestCheckpoint.createdAt));
+  return { checkpoint, projectTitle: project.title, sourceCheckpointId: latestCheckpoint.id };
 }
 
 function newestFirst(items) {

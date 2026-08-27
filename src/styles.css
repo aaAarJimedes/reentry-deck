@@ -808,6 +808,7 @@ h3 { font-size: 17px; }
 .reentry-gaps strong { display: flex; gap: 7px; align-items: center; font-size: 12px; }
 .reentry-gaps strong svg { width: 15px; }
 .reentry-gaps ul { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 9px 0 0; padding-left: 18px; color: var(--ink-soft); font-size: 11px; }
+.reentry-gaps .secondary-button { margin-top: 12px; }
 .evidence-warning svg { flex: 0 0 auto; }
 .evidence-list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
 .evidence-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 12px; padding: 10px 12px; border-radius: 11px; background: var(--paper-deep); }

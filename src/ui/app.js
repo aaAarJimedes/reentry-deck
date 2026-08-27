@@ -11,7 +11,7 @@ import { readBackupFile } from "../core/backup-file.js";
 import { buildAttentionDeck, buildWeeklyReview } from "../core/insights.js";
 import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
 import { buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
-import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession } from "../core/session.js";
+import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession, prepareQuickCheckpointReview } from "../core/session.js";
 import {
   COLLECTION_PAGE_SIZE,
   TIMELINE_PAGE_SIZE,
@@ -422,7 +422,7 @@ export class ReentryApp {
         <div class="panel-header inline-between"><div><h2 id="reentry-card-heading">60 秒复航卡</h2><p>${card.checkpoint ? (card.checkpoint.captureMode === "quick" ? `快速停靠 · ${formatDateTime(card.checkpoint.createdAt)} · 请先复核` : `来自 ${formatDateTime(card.checkpoint.createdAt)} 的可靠检查点`) : "信息不足时，从三问校准开始"}</p></div><span class="soft-pill">${icon("compass")} ${card.completeness}%</span></div>
         <div class="panel-body">
           ${card.contextGapSessions.length ? `<div class="evidence-warning" role="status">${icon("alert")} 检查点之后还有 ${card.contextGapSessions.length} 段未收拢或中断的会话，完整度已下调；请先核对现场。</div>` : ""}
-          ${card.readinessGaps.length ? `<div class="reentry-gaps" role="note"><strong>${icon("compass")} 复航缺口</strong><ul>${card.readinessGaps.map((gap) => `<li>${escapeHTML(gap)}</li>`).join("")}</ul></div>` : ""}
+          ${card.readinessGaps.length ? `<div class="reentry-gaps" role="note"><strong>${icon("compass")} 复航缺口</strong><ul>${card.readinessGaps.map((gap) => `<li>${escapeHTML(gap)}</li>`).join("")}</ul>${card.checkpoint?.captureMode === "quick" ? '<button class="secondary-button" type="button" data-action="review-quick-checkpoint">复核并升级检查点</button>' : ""}</div>` : ""}
           <div class="reentry-section"><span class="reentry-label">${icon("trail")} 01 · 可靠检查点</span><p class="reentry-value">${textBlock(card.checkpoint?.summary || "还没有可靠检查点；以下内容来自零散证据。")}</p><p class="evidence-source">${escapeHTML(checkpointLabel)}</p></div>
           ${card.pinnedCrumbs.length ? `<div class="reentry-section pinned-evidence"><span class="reentry-label">${icon("pin")} 置顶航标</span>${this.#renderEvidenceList(card.pinnedCrumbs, "")}</div>` : ""}
           <div class="reentry-section"><span class="reentry-label">${icon("spark")} 02 · 检查点后发生了什么</span>${this.#renderEvidenceList(card.changesSinceCheckpoint, "检查点之后没有新的状态、决定或下一步记录。")}</div>
@@ -614,6 +614,9 @@ export class ReentryApp {
     const state = this.#store.getState();
     const captureProjects = state.projects.filter((item) => item.status !== "archived");
     const pendingArchiveProject = state.projects.find((item) => item.id === this.#pendingArchiveId);
+    const reviewCheckpoint = project
+      ? [...state.checkpoints].filter((item) => item.projectId === project.id).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0]
+      : null;
     const captureProjectId = captureProjects.some((item) => item.id === project?.id)
       ? project.id
       : captureProjects.some((item) => item.id === activeSession?.projectId)
@@ -660,6 +663,19 @@ export class ReentryApp {
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">继续工作</button><button class="primary-button" type="submit">${icon("check")} 保存并结束会话</button></div>
         </form>
       </dialog>
+      ${reviewCheckpoint?.captureMode === "quick" ? `
+      <dialog id="quick-review-dialog" aria-labelledby="quick-review-title" aria-describedby="quick-review-description">
+        <div class="dialog-header"><div><h2 id="quick-review-title">复核快速停靠检查点</h2><p id="quick-review-description">确认当时留下的线索，补成一份新的可靠检查点；原记录仍会保留。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="取消复核并关闭">${icon("close")}</button></div>
+        <form class="dialog-body" data-form="quick-review">
+          <input type="hidden" name="projectId" value="${attr(project.id)}" />
+          <input type="hidden" name="sourceCheckpointId" value="${attr(reviewCheckpoint.id)}" />
+          <label class="field"><span class="required">确认后的当前状态</span><textarea name="summary" maxlength="1200" required>${escapeHTML(reviewCheckpoint.summary === QUICK_DOCK_NOT_RECORDED.summary ? "" : reviewCheckpoint.summary)}</textarea></label>
+          <label class="field"><span class="required">回来后的第一物理动作</span><textarea name="nextAction" maxlength="600" required>${escapeHTML(reviewCheckpoint.nextAction === QUICK_DOCK_NOT_RECORDED.nextAction ? "" : reviewCheckpoint.nextAction)}</textarea></label>
+          <label class="field"><span>仍未闭合的事项</span><textarea name="openLoops" maxlength="800">${escapeHTML(reviewCheckpoint.openLoops === QUICK_DOCK_NOT_RECORDED.openLoops ? "" : reviewCheckpoint.openLoops)}</textarea></label>
+          <label class="field"><span>材料入口或恢复提示</span><input name="returnHint" maxlength="400" placeholder="例如：先打开 README 的实验 4 小节" /></label>
+          <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">稍后再说</button><button class="primary-button" type="submit">${icon("check")} 保存可靠检查点</button></div>
+        </form>
+      </dialog>` : ""}
       <dialog id="edit-project-dialog" aria-labelledby="edit-project-title">
         <div class="dialog-header"><div><h2 id="edit-project-title">编辑项目现场</h2><p>项目目的应帮助未来的自己快速判断方向。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <form class="dialog-body" data-form="edit-project">
@@ -748,6 +764,7 @@ export class ReentryApp {
     if (action === "run-command") this.#runCommand(control.dataset.command, control.closest("dialog"));
     if (action === "edit-project") this.#openDialog("edit-project-dialog");
     if (action === "open-checkpoint") this.#openDialog("checkpoint-dialog");
+    if (action === "review-quick-checkpoint") this.#openDialog("quick-review-dialog");
     if (action === "start-session") this.#prepareSessionDialog(control.dataset.projectId);
     if (action === "quick-dock") this.#quickDock(control.dataset.sessionId, false);
     if (action === "interrupt-and-continue") this.#quickDock(control.dataset.sessionId, true);
@@ -776,6 +793,7 @@ export class ReentryApp {
       if (form.dataset.form === "capture-crumb") this.#captureCrumb(data);
       if (form.dataset.form === "quick-capture") this.#quickCapture(data, form);
       if (form.dataset.form === "checkpoint") this.#saveCheckpoint(data, form);
+      if (form.dataset.form === "quick-review") this.#reviewQuickCheckpoint(data, form);
       if (form.dataset.form === "edit-project") this.#editProject(data, form);
     } catch (error) {
       this.#toast(error.message, "error");
@@ -1007,6 +1025,22 @@ export class ReentryApp {
     form.closest("dialog")?.close();
     this.#announce("检查点已保存，会话已结束");
     this.#toast("现场已安全收拢，下次可以从这里复航。 ");
+  }
+
+  #reviewQuickCheckpoint(data, form) {
+    const { checkpoint, projectTitle } = prepareQuickCheckpointReview(this.#store.getState(), data);
+    this.#focusSelector = "#reentry-card-heading";
+    this.#store.update((state) => {
+      state.checkpoints.push(checkpoint);
+      const project = state.projects.find((item) => item.id === checkpoint.projectId);
+      if (!project) throw new Error("项目在保存前已不可用。");
+      project.nextAction = checkpoint.nextAction;
+      project.nextActionUpdatedAt = checkpoint.createdAt;
+      project.updatedAt = checkpoint.createdAt;
+    }, Date.parse(checkpoint.createdAt));
+    form.closest("dialog")?.close();
+    this.#announce("快速检查点已复核为可靠检查点");
+    this.#toast(`“${projectTitle}”已建立新的可靠检查点。`);
   }
 
   #continueStaleSession(sessionId) {

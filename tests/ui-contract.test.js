@@ -45,3 +45,12 @@ test("quick-dock continuation advances workspace time through the follow-up sess
 
   assert.match(source, /\}, followUp \? Date\.parse\(followUp\.startedAt\) : now\);/);
 });
+
+test("quick checkpoint review is an accessible explicit upgrade flow", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /data-action="review-quick-checkpoint">复核并升级检查点/);
+  assert.match(source, /<dialog id="quick-review-dialog" aria-labelledby="quick-review-title" aria-describedby="quick-review-description">/);
+  assert.match(source, /data-form="quick-review"/);
+  assert.match(source, /this\.#reviewQuickCheckpoint\(data, form\)/);
+});
