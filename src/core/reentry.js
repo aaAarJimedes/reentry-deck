@@ -165,16 +165,22 @@ function safeCollection(value) {
 }
 
 export function getProjectStats(state, projectId) {
-  const sessions = state.sessions.filter((item) => item.projectId === projectId);
-  const crumbs = state.crumbs.filter((item) => item.projectId === projectId);
-  return {
-    sessions: sessions.length,
-    completedSessions: sessions.filter((item) => item.status === "completed").length,
-    crumbs: crumbs.length,
-    decisions: crumbs.filter((item) => item.type === "decision").length,
-    blockers: crumbs.filter((item) => item.type === "blocker").length,
-    checkpoints: state.checkpoints.filter((item) => item.projectId === projectId).length
-  };
+  const stats = { sessions: 0, completedSessions: 0, crumbs: 0, decisions: 0, blockers: 0, checkpoints: 0 };
+  for (const session of safeCollection(state?.sessions)) {
+    if (session.projectId !== projectId) continue;
+    stats.sessions += 1;
+    if (session.status === "completed") stats.completedSessions += 1;
+  }
+  for (const crumb of safeCollection(state?.crumbs)) {
+    if (crumb.projectId !== projectId) continue;
+    stats.crumbs += 1;
+    if (crumb.type === "decision") stats.decisions += 1;
+    if (crumb.type === "blocker") stats.blockers += 1;
+  }
+  for (const checkpoint of safeCollection(state?.checkpoints)) {
+    if (checkpoint.projectId === projectId) stats.checkpoints += 1;
+  }
+  return stats;
 }
 
 function reentryScore(card) {

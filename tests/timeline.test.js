@@ -76,6 +76,22 @@ describe("buildTimelineWindow", () => {
     assert.equal(result.items.length, 30);
     assert.equal(result.remaining, 9_970);
   });
+
+  test("filters the target project before allocating sortable entries", () => {
+    const crumbs = Array.from({ length: 50_000 }, (_, index) => crumb(`other-${index}`, "other", String(index)));
+    crumbs.splice(123, 0, crumb("target-old", "target", "2026-08-27T00:00:00.000Z"));
+    crumbs.push(crumb("target-new", "target", "2026-08-28T00:00:00.000Z"));
+    Object.defineProperty(crumbs, "map", {
+      value() {
+        throw new Error("timeline must not map the full workspace");
+      }
+    });
+
+    const result = buildTimelineWindow(crumbs, "target");
+
+    assert.equal(result.total, 2);
+    assert.deepEqual(result.items.map((item) => item.id), ["target-new", "target-old"]);
+  });
 });
 
 describe("buildCollectionWindow", () => {

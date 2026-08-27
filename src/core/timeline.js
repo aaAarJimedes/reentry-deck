@@ -18,9 +18,12 @@ export function buildCollectionWindow(items, limit = COLLECTION_PAGE_SIZE) {
 export function buildTimelineWindow(crumbs, projectId, limit = TIMELINE_PAGE_SIZE) {
   const safeCrumbs = Array.isArray(crumbs) ? crumbs : [];
   const safeLimit = Number.isSafeInteger(limit) && limit > 0 ? limit : TIMELINE_PAGE_SIZE;
-  const ordered = safeCrumbs
-    .map((crumb, index) => ({ crumb, index }))
-    .filter(({ crumb }) => crumb?.projectId === projectId)
+  const matching = [];
+  for (let index = 0; index < safeCrumbs.length; index += 1) {
+    const crumb = safeCrumbs[index];
+    if (crumb?.projectId === projectId) matching.push({ crumb, index });
+  }
+  const ordered = matching
     .sort((left, right) => {
       const leftTime = sortableTime(left.crumb?.createdAt);
       const rightTime = sortableTime(right.crumb?.createdAt);

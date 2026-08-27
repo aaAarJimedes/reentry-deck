@@ -579,3 +579,27 @@ test("getProjectStats counts only matching records and recognized statuses/types
     checkpoints: 0
   });
 });
+
+test("getProjectStats derives every counter without collection filter rescans", () => {
+  const data = makeState({
+    sessions: [{ projectId: "p1", status: "completed" }, { projectId: "p2", status: "active" }],
+    crumbs: [{ projectId: "p1", type: "decision" }, { projectId: "p1", type: "blocker" }, { projectId: "p2", type: "note" }],
+    checkpoints: [{ projectId: "p1" }, { projectId: "p2" }]
+  });
+  for (const collection of [data.sessions, data.crumbs, data.checkpoints]) {
+    Object.defineProperty(collection, "filter", {
+      value() {
+        throw new Error("stats must use one streaming pass per collection");
+      }
+    });
+  }
+
+  assert.deepEqual(getProjectStats(data, "p1"), {
+    sessions: 1,
+    completedSessions: 1,
+    crumbs: 2,
+    decisions: 1,
+    blockers: 1,
+    checkpoints: 1
+  });
+});
