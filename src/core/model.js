@@ -7,6 +7,8 @@ export const SESSION_CLOSE_REASONS = Object.freeze(["checkpoint", "quick-dock", 
 export const CHECKPOINT_CAPTURE_MODES = Object.freeze(["manual", "quick"]);
 
 const COLOR_PALETTE = ["fern", "amber", "clay", "sky", "plum", "slate"];
+const UNSAFE_TEXT_CONTROL_PATTERN = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b\u200e\u200f\u202a-\u202e\u2060-\u206f\ufeff]/u;
+const UNSAFE_ID_CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/u;
 
 export const IMPORT_LIMITS = Object.freeze({
   records: 50_000,
@@ -52,6 +54,10 @@ export function compactText(value, maximum) {
     prefix += character;
   }
   return `${prefix.trimEnd()}…`;
+}
+
+export function containsUnsafeTextControl(value) {
+  return typeof value === "string" && UNSAFE_TEXT_CONTROL_PATTERN.test(value);
 }
 
 export function createEmptyState(now = Date.now()) {
@@ -383,7 +389,7 @@ function validateSettings(errors, settings) {
 }
 
 function validateImportId(errors, id, label) {
-  if (id.length > IMPORT_LIMITS.id || /[\u0000-\u001f\u007f]/.test(id)) addImportError(errors, `${label} ID 过长或包含控制字符`);
+  if (id.length > IMPORT_LIMITS.id || UNSAFE_ID_CONTROL_PATTERN.test(id)) addImportError(errors, `${label} ID 过长或包含控制字符`);
 }
 
 function validateText(errors, record, field, label, maximum) {
@@ -391,7 +397,10 @@ function validateText(errors, record, field, label, maximum) {
   if (value === undefined) return;
   const suffix = record?.id ? `：${record.id}` : "";
   if (typeof value !== "string") addImportError(errors, `${label}必须是文本${suffix}`);
-  else if (value.length > maximum) addImportError(errors, `${label}超过 ${maximum} 字符上限${suffix}`);
+  else {
+    if (value.length > maximum) addImportError(errors, `${label}超过 ${maximum} 字符上限${suffix}`);
+    if (containsUnsafeTextControl(value)) addImportError(errors, `${label}包含不可见控制字符${suffix}`);
+  }
 }
 
 function validateDates(errors, record, fields, label, id) {

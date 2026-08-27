@@ -41,6 +41,13 @@ describe("import snapshot inspection", () => {
     }, T1).source.appVersion;
     assert.ok(longMetadata.length <= 80);
     assert.match(longMetadata, /^release 🚀+…$/u);
+
+    const unsafeMetadata = readImportSnapshot({
+      format: "reentry-deck-backup",
+      appVersion: "0.6.0\u202Eexe",
+      data: raw
+    }, T1).source.appVersion;
+    assert.equal(unsafeMetadata, null);
   });
 
   test("verifies checksummed envelopes and rejects malformed or mismatched integrity metadata", () => {

@@ -370,6 +370,12 @@ describe("AppStore updates and persistence", () => {
       },
       {
         mutate(draft) {
+          draft.projects[0].title = "visible\u202Ehidden";
+        },
+        pattern: /项目名称包含不可见控制字符：p1/
+      },
+      {
+        mutate(draft) {
           draft.settings.staleAfterDays = 366;
         },
         pattern: /陈旧阈值必须在 1 到 365 天之间/
