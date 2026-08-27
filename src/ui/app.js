@@ -1,4 +1,5 @@
 import {
+  IMPORT_LIMITS,
   createCheckpoint,
   createCrumb,
   createProject,
@@ -1390,24 +1391,27 @@ export class ReentryApp {
   }
 }
 
-function parseRoute(hash) {
-  const value = hash.replace(/^#\/?/, "");
+export function parseRoute(hash) {
+  const value = String(hash ?? "").replace(/^#\/?/, "");
   if (!value) return { name: "home" };
-  const [name, encodedId] = value.split("/");
-  if (name === "project" && encodedId) {
+  const segments = value.split("/");
+  const [name, encodedId] = segments;
+  if (name === "project" && segments.length === 2 && encodedId && encodedId.length <= 2_400) {
     try {
-      return { name: "project", id: decodeURIComponent(encodedId) };
+      const id = decodeURIComponent(encodedId);
+      if (!id || id.length > IMPORT_LIMITS.id || /[\u0000-\u001f\u007f]/.test(id)) return { name: "notFound" };
+      return { name: "project", id };
     } catch {
       return { name: "notFound" };
     }
   }
-  if (name === "archive") return { name: "archive" };
-  if (name === "settings") return { name: "settings" };
-  return { name: "home" };
+  if (name === "archive" && segments.length === 1) return { name: "archive" };
+  if (name === "settings" && segments.length === 1) return { name: "settings" };
+  return { name: "notFound" };
 }
 
 function routeTitle(route) {
-  return { home: "项目舰桥", archive: "归档舱", settings: "数据保险箱" }[route.name] ?? "项目舰桥";
+  return { home: "项目舰桥", archive: "归档舱", settings: "数据保险箱", notFound: "页面未找到" }[route.name] ?? "页面未找到";
 }
 
 function brandMark() {
