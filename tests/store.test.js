@@ -341,7 +341,7 @@ describe("AppStore updates and persistence", () => {
 
     assert.equal(refreshed, false);
     assert.equal(store.getState().projects[0].id, "safe");
-    assert.match(store.notices.at(-1), /另一个标签页写入的数据无法读取/);
+    assert.match(store.notices.at(-1), /另一个标签页写入的数据无法安全采用/);
     assert.equal(emissions, 1);
     assert.deepEqual(sources, ["external"]);
 
@@ -350,8 +350,37 @@ describe("AppStore updates and persistence", () => {
     assert.equal(store.notices.length, 1);
     const notices = store.drainNotices();
     assert.equal(notices.length, 1);
-    assert.match(notices[0], /另一个标签页写入的数据无法读取/);
+    assert.match(notices[0], /另一个标签页写入的数据无法安全采用/);
     assert.deepEqual(store.drainNotices(), []);
+  });
+
+  test("rejects structurally valid external revision rollback without changing the current state", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(STORAGE_KEY, JSON.stringify(stateWithProject("current", "Current")));
+    const store = new AppStore(storage, T0, null);
+    const before = store.getState();
+    const rollback = stateWithProject("older", "Older");
+    rollback.meta.revision = before.meta.revision - 1;
+    storage.setItem(STORAGE_KEY, JSON.stringify(rollback));
+
+    assert.equal(store.refreshFromStorage(T1), false);
+    assert.strictEqual(store.getState(), before);
+    assert.match(store.notices.at(-1), /外部修订号未前进/);
+    assert.deepEqual(store.getState().projects.map((item) => item.id), ["current"]);
+  });
+
+  test("external primary-key removal becomes a monotonic empty revision", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(STORAGE_KEY, JSON.stringify(stateWithProject("current", "Current")));
+    const store = new AppStore(storage, T0, null);
+    const previousRevision = store.getState().meta.revision;
+    storage.removeItem(STORAGE_KEY);
+
+    assert.equal(store.refreshFromStorage(T1), true);
+    assert.deepEqual(store.getState().projects, []);
+    assert.equal(store.getState().meta.revision, previousRevision + 1);
+    const saved = store.update((draft) => { draft.settings.theme = "dark"; }, T2);
+    assert.equal(saved.meta.revision, previousRevision + 2);
   });
 
   test("a quota failure for the rollback copy does not make successful current writes read-only", () => {
@@ -499,6 +528,18 @@ describe("AppStore replacement, snapshots, and reset", () => {
     assert.equal(incoming.meta.revision, 4);
   });
 
+  test("replace advances beyond the current revision even when a backup revision is older", () => {
+    const store = new AppStore(new MemoryStorage(), T0, null);
+    for (let index = 0; index < 6; index += 1) store.update(() => {}, T1 + index);
+    const currentRevision = store.getState().meta.revision;
+    const incoming = stateWithProject("older-backup", "Older backup");
+    incoming.meta.revision = 1;
+
+    const replaced = store.replace(incoming, T2);
+
+    assert.equal(replaced.meta.revision, currentRevision + 1);
+  });
+
   test("replace rejects duplicate ids before changing state or storage", () => {
     const storage = new MemoryStorage();
     const store = new AppStore(storage, T0);
@@ -603,7 +644,7 @@ describe("AppStore replacement, snapshots, and reset", () => {
     assert.equal(imported.meta.updatedAt, new Date(T2).toISOString());
   });
 
-  test("reset persists and emits a fresh revision-zero state while backing up the old data", () => {
+  test("reset persists and emits a fresh monotonic state while backing up the old data", () => {
     const storage = new MemoryStorage();
     const store = new AppStore(storage, T0);
     store.update((draft) => draft.projects.push(createProject({ id: "p1" }, T0)), T1);
@@ -615,7 +656,7 @@ describe("AppStore replacement, snapshots, and reset", () => {
 
     assert.equal(result, undefined);
     assert.deepEqual(store.getState().projects, []);
-    assert.equal(store.getState().meta.revision, 0);
+    assert.equal(store.getState().meta.revision, beforeReset.meta.revision + 1);
     assert.equal(store.getState().meta.createdAt, new Date(T2).toISOString());
     assert.strictEqual(emitted, store.getState());
     assert.deepEqual(persisted(storage), store.getState());

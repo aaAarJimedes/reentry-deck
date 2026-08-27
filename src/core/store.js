@@ -2,7 +2,7 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.31.0";
+export const APP_VERSION = "0.32.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {
@@ -57,7 +57,16 @@ export class AppStore {
     if (current === this.#persistedRaw) return false;
     if (this.#hasRejectedRaw && current === this.#rejectedRaw) return false;
     try {
-      const next = current ? parseSavedState(current, now) : createEmptyState(now);
+      let next;
+      if (current) {
+        next = parseSavedState(current, now);
+        if (next.meta.revision <= this.#state.meta.revision) {
+          throw new Error(`外部修订号未前进（当前 ${this.#state.meta.revision}，收到 ${next.meta.revision}）`);
+        }
+      } else {
+        next = createEmptyState(isoAtOrAfter(now, this.#state.meta.updatedAt));
+        next.meta.revision = this.#state.meta.revision + 1;
+      }
       this.#persistedRaw = current;
       this.#rejectedRaw = null;
       this.#hasRejectedRaw = false;
@@ -67,7 +76,7 @@ export class AppStore {
     } catch (error) {
       this.#rejectedRaw = current;
       this.#hasRejectedRaw = true;
-      this.notices.push(`另一个标签页写入的数据无法读取，当前页面未采用它：${error.message}`);
+      this.notices.push(`另一个标签页写入的数据无法安全采用，当前页面未采用它：${error.message}`);
       this.#emit("external");
       return false;
     }
@@ -77,7 +86,7 @@ export class AppStore {
     const next = structuredClone(this.#state);
     recipe(next);
     next.meta.updatedAt = isoAtOrAfter(now, this.#state.meta.updatedAt);
-    next.meta.revision += 1;
+    next.meta.revision = Math.max(next.meta.revision, this.#state.meta.revision) + 1;
     const errors = validateState(next);
     if (errors.length) throw new Error(`无法保存：${errors.join("；")}`);
     this.#persist(next);
@@ -93,7 +102,7 @@ export class AppStore {
     const errors = validateState(next);
     if (errors.length) throw new Error(`导入失败：${errors.join("；")}`);
     next.meta.updatedAt = isoAtOrAfter(now, this.#state.meta.updatedAt, next.meta.updatedAt);
-    next.meta.revision += 1;
+    next.meta.revision = Math.max(next.meta.revision, this.#state.meta.revision) + 1;
     this.#persist(next);
     this.#state = next;
     this.#emit();
@@ -102,6 +111,7 @@ export class AppStore {
 
   reset(now = Date.now()) {
     const next = createEmptyState(isoAtOrAfter(now, this.#state.meta.updatedAt));
+    next.meta.revision = this.#state.meta.revision + 1;
     this.#persist(next);
     this.#state = next;
     this.#emit();
