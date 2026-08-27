@@ -66,6 +66,8 @@ describe("model constants and helpers", () => {
     assert.equal(compactText("abcdef", 1), "…");
     assert.equal(compactText("abcdef", 0), "");
     assert.equal(compactText(null, 10), "");
+    assert.equal(compactText("😀😀😀", 5), "😀😀…");
+    assert.doesNotMatch(compactText("😀😀😀", 4), /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u);
   });
 });
 

@@ -449,7 +449,7 @@ export class ReentryApp {
           <div class="session-timer js-session-timer" role="timer" aria-label="本次会话用时" data-started-at="${attr(session.startedAt)}">${formatDuration(elapsedSeconds(session.startedAt))}</div>
           <p class="session-intention"><span class="muted">本次意图：</span> <strong>${escapeHTML(session.intention || project.nextAction || "先推进一个清楚的下一步")}</strong></p>
           <form class="capture-form" data-form="capture-crumb" autocomplete="off">
-            <label class="field"><span>留下工作面包屑</span><textarea name="text" rows="3" maxlength="1200" placeholder="一句话就够：刚发现了什么、做了什么决定、卡在哪里…" required></textarea></label>
+            <label class="field"><span>留下工作面包屑</span><textarea name="text" rows="3" maxlength="${IMPORT_LIMITS.crumbText}" placeholder="一句话就够：刚发现了什么、做了什么决定、卡在哪里…" required></textarea></label>
             <div class="capture-row">
               <label class="field"><span class="sr-only">记录类型</span><select name="type" aria-label="记录类型">${Object.entries(CRUMB_LABELS).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></label>
               <span class="muted" style="align-self:center;font-size:12px">快捷键 C 可随时回到输入框</span>
@@ -626,9 +626,9 @@ export class ReentryApp {
       <dialog id="new-project-dialog" aria-labelledby="new-project-title">
         <div class="dialog-header"><div><h2 id="new-project-title">建立工作现场</h2><p>只需一个清楚的名字；其他信息以后再补也可以。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <form class="dialog-body" data-form="new-project">
-          <label class="field"><span class="required">项目名称</span><input name="title" maxlength="100" placeholder="例如：重构论文结果图" required autofocus /></label>
-          <label class="field"><span>为什么要做</span><textarea name="description" maxlength="800" placeholder="一句话说明目的，帮助未来的自己快速校准。"></textarea></label>
-          <label class="field"><span>已知的第一动作</span><input name="nextAction" maxlength="400" placeholder="例如：打开 figure_03.ipynb，核对配色映射" /></label>
+          <label class="field"><span class="required">项目名称</span><input name="title" maxlength="${IMPORT_LIMITS.projectTitle}" placeholder="例如：重构论文结果图" required autofocus /></label>
+          <label class="field"><span>为什么要做</span><textarea name="description" maxlength="${IMPORT_LIMITS.projectDescription}" placeholder="一句话说明目的，帮助未来的自己快速校准。"></textarea></label>
+          <label class="field"><span>已知的第一动作</span><input name="nextAction" maxlength="${IMPORT_LIMITS.nextAction}" placeholder="例如：打开 figure_03.ipynb，核对配色映射" /></label>
           <fieldset class="field-group" style="border:0;padding:0;margin:0"><legend class="field-label">识别颜色</legend><div class="color-options">${Object.entries(colors).map(([name, color], index) => `<label class="color-choice" title="${COLOR_LABELS[name]}"><input type="radio" name="color" value="${name}" aria-label="${COLOR_LABELS[name]}" ${index === 0 ? "checked" : ""}/><span style="--choice-color:${color}"></span></label>`).join("")}</div></fieldset>
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">建立项目</button></div>
         </form>
@@ -638,7 +638,7 @@ export class ReentryApp {
         <form class="dialog-body" data-form="quick-capture" autocomplete="off">
           <label class="field"><span class="required">目标项目</span><select name="projectId" required>${captureProjects.map((item) => `<option value="${attr(item.id)}" ${item.id === captureProjectId ? "selected" : ""}>${escapeHTML(item.title)}${activeSession?.projectId === item.id ? " · 会话中" : ""}</option>`).join("")}</select></label>
           <label class="field"><span class="required">证据类型</span><select name="type">${Object.entries(CRUMB_LABELS).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></label>
-          <label class="field"><span class="required">刚刚发生了什么</span><textarea name="text" maxlength="1200" placeholder="一句话即可；它会保留真实记录时间。" required autofocus></textarea></label>
+          <label class="field"><span class="required">刚刚发生了什么</span><textarea name="text" maxlength="${IMPORT_LIMITS.crumbText}" placeholder="一句话即可；它会保留真实记录时间。" required autofocus></textarea></label>
           <label class="check-row"><input type="checkbox" name="pinned" /><span><strong>同时设为置顶航标</strong><small>适合长期约束、关键决定或回来时必须先看的线索。</small></span></label>
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">${icon("plus")} 保存轨迹</button></div>
         </form>
@@ -647,17 +647,17 @@ export class ReentryApp {
         <div class="dialog-header"><div><h2 id="start-session-title">开始一次有意图的会话</h2><p>意图不是结果承诺，只是这段时间的方向。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <form class="dialog-body" data-form="start-session">
           <input type="hidden" name="projectId" value="${attr(project?.id ?? "")}" />
-          <label class="field"><span class="required">这次准备推进什么</span><textarea name="intention" maxlength="600" placeholder="例如：先验证图例排序是否与正文一致" required>${escapeHTML(project?.nextAction ?? "")}</textarea></label>
+          <label class="field"><span class="required">这次准备推进什么</span><textarea name="intention" maxlength="${IMPORT_LIMITS.sessionIntention}" placeholder="例如：先验证图例排序是否与正文一致" required>${escapeHTML(project?.nextAction ?? "")}</textarea></label>
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">${icon("play")} 开始计时</button></div>
         </form>
       </dialog>
       <dialog id="checkpoint-dialog" aria-labelledby="checkpoint-title">
         <div class="dialog-header"><div><h2 id="checkpoint-title">留下可靠检查点</h2><p>给下次回来的自己一条短而清楚的路。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <form class="dialog-body" data-form="checkpoint">
-          <label class="field"><span class="required">现在停在哪里</span><textarea name="summary" maxlength="1200" placeholder="已经完成什么、当前看到什么结果？" required></textarea></label>
-          <label class="field"><span class="required">回来后的第一物理动作</span><textarea name="nextAction" maxlength="600" placeholder="避免‘继续做’，写成能直接动手的动作。" required>${escapeHTML(project?.nextAction ?? "")}</textarea></label>
-          <label class="field"><span>仍未闭合的事项</span><textarea name="openLoops" maxlength="800" placeholder="问题、依赖、需要确认的人或材料。"></textarea></label>
-          <label class="field"><span>复航提示</span><input name="returnHint" maxlength="400" placeholder="例如：先看 README 的实验 4 小节，不必重跑前两组" /></label>
+          <label class="field"><span class="required">现在停在哪里</span><textarea name="summary" maxlength="${IMPORT_LIMITS.checkpointSummary}" placeholder="已经完成什么、当前看到什么结果？" required></textarea></label>
+          <label class="field"><span class="required">回来后的第一物理动作</span><textarea name="nextAction" maxlength="${IMPORT_LIMITS.nextAction}" placeholder="避免‘继续做’，写成能直接动手的动作。" required>${escapeHTML(project?.nextAction ?? "")}</textarea></label>
+          <label class="field"><span>仍未闭合的事项</span><textarea name="openLoops" maxlength="${IMPORT_LIMITS.openLoops}" placeholder="问题、依赖、需要确认的人或材料。"></textarea></label>
+          <label class="field"><span>复航提示</span><input name="returnHint" maxlength="${IMPORT_LIMITS.returnHint}" placeholder="例如：先看 README 的实验 4 小节，不必重跑前两组" /></label>
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">继续工作</button><button class="primary-button" type="submit">${icon("check")} 保存并结束会话</button></div>
         </form>
       </dialog>
@@ -667,10 +667,10 @@ export class ReentryApp {
         <form class="dialog-body" data-form="quick-review">
           <input type="hidden" name="projectId" value="${attr(project.id)}" />
           <input type="hidden" name="sourceCheckpointId" value="${attr(reviewCheckpoint.id)}" />
-          <label class="field"><span class="required">确认后的当前状态</span><textarea name="summary" maxlength="1200" required>${escapeHTML(reviewCheckpoint.summary === QUICK_DOCK_NOT_RECORDED.summary ? "" : reviewCheckpoint.summary)}</textarea></label>
-          <label class="field"><span class="required">回来后的第一物理动作</span><textarea name="nextAction" maxlength="600" required>${escapeHTML(reviewCheckpoint.nextAction === QUICK_DOCK_NOT_RECORDED.nextAction ? "" : reviewCheckpoint.nextAction)}</textarea></label>
-          <label class="field"><span>仍未闭合的事项</span><textarea name="openLoops" maxlength="800">${escapeHTML(reviewCheckpoint.openLoops === QUICK_DOCK_NOT_RECORDED.openLoops ? "" : reviewCheckpoint.openLoops)}</textarea></label>
-          <label class="field"><span>材料入口或恢复提示</span><input name="returnHint" maxlength="400" placeholder="例如：先打开 README 的实验 4 小节" /></label>
+          <label class="field"><span class="required">确认后的当前状态</span><textarea name="summary" maxlength="${IMPORT_LIMITS.checkpointSummary}" required>${escapeHTML(reviewCheckpoint.summary === QUICK_DOCK_NOT_RECORDED.summary ? "" : reviewCheckpoint.summary)}</textarea></label>
+          <label class="field"><span class="required">回来后的第一物理动作</span><textarea name="nextAction" maxlength="${IMPORT_LIMITS.nextAction}" required>${escapeHTML(reviewCheckpoint.nextAction === QUICK_DOCK_NOT_RECORDED.nextAction ? "" : reviewCheckpoint.nextAction)}</textarea></label>
+          <label class="field"><span>仍未闭合的事项</span><textarea name="openLoops" maxlength="${IMPORT_LIMITS.openLoops}">${escapeHTML(reviewCheckpoint.openLoops === QUICK_DOCK_NOT_RECORDED.openLoops ? "" : reviewCheckpoint.openLoops)}</textarea></label>
+          <label class="field"><span>材料入口或恢复提示</span><input name="returnHint" maxlength="${IMPORT_LIMITS.returnHint}" placeholder="例如：先打开 README 的实验 4 小节" /></label>
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">稍后再说</button><button class="primary-button" type="submit">${icon("check")} 保存可靠检查点</button></div>
         </form>
       </dialog>` : ""}
@@ -678,9 +678,9 @@ export class ReentryApp {
         <div class="dialog-header"><div><h2 id="edit-project-title">编辑项目现场</h2><p>项目目的应帮助未来的自己快速判断方向。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <form class="dialog-body" data-form="edit-project">
           <input type="hidden" name="projectId" value="${attr(project?.id ?? "")}" />
-          <label class="field"><span class="required">项目名称</span><input name="title" maxlength="100" value="${attr(project?.title ?? "")}" required /></label>
-          <label class="field"><span>项目目的</span><textarea name="description" maxlength="800">${escapeHTML(project?.description ?? "")}</textarea></label>
-          <label class="field"><span>当前第一动作</span><textarea name="nextAction" maxlength="600">${escapeHTML(project?.nextAction ?? "")}</textarea></label>
+          <label class="field"><span class="required">项目名称</span><input name="title" maxlength="${IMPORT_LIMITS.projectTitle}" value="${attr(project?.title ?? "")}" required /></label>
+          <label class="field"><span>项目目的</span><textarea name="description" maxlength="${IMPORT_LIMITS.projectDescription}">${escapeHTML(project?.description ?? "")}</textarea></label>
+          <label class="field"><span>当前第一动作</span><textarea name="nextAction" maxlength="${IMPORT_LIMITS.nextAction}">${escapeHTML(project?.nextAction ?? "")}</textarea></label>
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">保存修改</button></div>
         </form>
       </dialog>

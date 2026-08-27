@@ -54,3 +54,12 @@ test("quick checkpoint review is an accessible explicit upgrade flow", async () 
   assert.match(source, /data-form="quick-review"/);
   assert.match(source, /this\.#reviewQuickCheckpoint\(data, form\)/);
 });
+
+test("form length boundaries come from the persisted model contract", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.doesNotMatch(source, /maxlength="\d+"/);
+  for (const field of ["projectTitle", "projectDescription", "sessionIntention", "crumbText", "checkpointSummary", "nextAction", "openLoops", "returnHint"]) {
+    assert.match(source, new RegExp(`maxlength="\\$\\{IMPORT_LIMITS\\.${field}\\}"`, "u"));
+  }
+});
