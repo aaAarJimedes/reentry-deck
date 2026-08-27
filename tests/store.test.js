@@ -521,6 +521,24 @@ describe("AppStore updates and persistence", () => {
     assert.equal(second.projects[0].title, "Second");
   });
 
+  test("published state is recursively frozen across containers and records", () => {
+    const storage = new MemoryStorage();
+    const store = new AppStore(storage, T0, null);
+    const state = store.update((draft) => draft.projects.push(createProject({ id: "p1", title: "Original" }, T0)), T1);
+
+    for (const value of [state, state.meta, state.settings, state.ui, state.projects, state.projects[0], state.sessions, state.crumbs, state.checkpoints]) {
+      assert.equal(Object.isFrozen(value), true);
+    }
+    assert.throws(() => { store.getState().projects[0].title = "Tampered"; }, TypeError);
+    assert.throws(() => { store.getState().projects.push(createProject({ id: "p2" }, T1)); }, TypeError);
+    assert.equal(store.getState().projects[0].title, "Original");
+    assert.equal(persisted(storage).projects[0].title, "Original");
+
+    const next = store.update((draft) => { draft.projects[0].title = "Updated through recipe"; }, T2);
+    assert.equal(next.projects[0].title, "Updated through recipe");
+    assert.equal(Object.isFrozen(next.projects[0]), true);
+  });
+
   test("saving without storage reports a clear error and keeps the empty state", () => {
     const store = new AppStore(null, T0);
     const before = store.getState();

@@ -2,7 +2,7 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.57.0";
+export const APP_VERSION = "0.58.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
@@ -26,7 +26,7 @@ export class AppStore {
       this.#storage = null;
       this.notices.push(`浏览器本地存储不可访问，已用临时空白工作区启动：${errorMessage(error)}`);
     }
-    this.#state = this.#load(now, this.#persistedRaw);
+    this.#state = freezeState(this.#load(now, this.#persistedRaw));
     if (eventTarget?.addEventListener) {
       this.#eventTarget = eventTarget;
       this.#storageListener = (event) => {
@@ -93,7 +93,7 @@ export class AppStore {
       this.#persistedRaw = current;
       this.#rejectedRaw = null;
       this.#hasRejectedRaw = false;
-      this.#state = next;
+      this.#state = freezeState(next);
       this.#emit("external");
       return true;
     } catch (error) {
@@ -113,7 +113,7 @@ export class AppStore {
     const errors = validateImportCandidate(next);
     if (errors.length) throw new Error(`无法保存：${errors.join("；")}`);
     this.#persist(next);
-    this.#state = next;
+    this.#state = freezeState(next);
     this.#emit();
     return next;
   }
@@ -127,7 +127,7 @@ export class AppStore {
     next.meta.updatedAt = isoAtOrAfter(now, this.#state.meta.updatedAt, next.meta.updatedAt);
     next.meta.revision = Math.max(next.meta.revision, this.#state.meta.revision) + 1;
     this.#persist(next);
-    this.#state = next;
+    this.#state = freezeState(next);
     this.#emit();
     return next;
   }
@@ -136,7 +136,7 @@ export class AppStore {
     const next = createEmptyState(isoAtOrAfter(now, this.#state.meta.updatedAt));
     next.meta.revision = this.#state.meta.revision + 1;
     this.#persist(next);
-    this.#state = next;
+    this.#state = freezeState(next);
     this.#emit();
   }
 
@@ -165,7 +165,7 @@ export class AppStore {
     restored.meta.updatedAt = isoAtOrAfter(now, this.#state.meta.updatedAt, restored.meta.updatedAt);
     restored.meta.revision = this.#state.meta.revision + 1;
     this.#persist(restored);
-    this.#state = restored;
+    this.#state = freezeState(restored);
     this.#emit();
     return restored;
   }
@@ -283,6 +283,19 @@ export class AppStore {
 
 function errorMessage(error) {
   return typeof error?.message === "string" && error.message.trim() ? error.message : "访问被拒绝";
+}
+
+function freezeState(state) {
+  for (const name of ["projects", "sessions", "crumbs", "checkpoints"]) {
+    for (const record of state[name]) {
+      if (record && typeof record === "object") Object.freeze(record);
+    }
+    Object.freeze(state[name]);
+  }
+  Object.freeze(state.meta);
+  Object.freeze(state.settings);
+  Object.freeze(state.ui);
+  return Object.freeze(state);
 }
 
 function isQuotaExceeded(error) {
