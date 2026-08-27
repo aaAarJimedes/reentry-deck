@@ -72,6 +72,9 @@ test("backup reads ignore stale completions and are invalidated on app destructi
   assert.match(source, /if \(!isCurrentRequest\(\)\) return/);
   assert.match(source, /if \(isCurrentRequest\(\)\) this\.#toast/);
   assert.match(source, /this\.#importRequestGate\.invalidate\(\)/);
+  assert.match(source, /this\.#importReadController\?\.abort\(\)/);
+  assert.match(source, /readBackupFile\(file, \{ signal: controller\.signal \}\)/);
+  assert.match(source, /if \(this\.#importReadController === controller\) this\.#importReadController = null/);
 });
 
 test("attention threshold is an accessible validated local setting", async () => {

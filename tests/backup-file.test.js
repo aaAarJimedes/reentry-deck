@@ -46,6 +46,63 @@ describe("readBackupFile", () => {
     );
     await assert.rejects(readBackupFile(fakeFile({ size: 1, text: "{" })), /不是有效的 JSON 文件/);
   });
+
+  test("streams bytes, enforces the observed boundary, and cancels stale reads", async () => {
+    const bytes = new TextEncoder().encode('{"streamed":true}');
+    let step = 0;
+    const streamed = {
+      size: bytes.byteLength,
+      stream() {
+        return { getReader() { return {
+          async read() { step += 1; return step === 1 ? { done: false, value: bytes } : { done: true }; },
+          async cancel() {},
+          releaseLock() {}
+        }; } };
+      }
+    };
+    assert.deepEqual(await readBackupFile(streamed), { streamed: true });
+
+    let oversizedCanceled = false;
+    const oversizedView = Object.create(Uint8Array.prototype);
+    Object.defineProperty(oversizedView, "byteLength", { value: MAX_BACKUP_FILE_BYTES + 1 });
+    const oversized = {
+      size: 1,
+      stream() {
+        return { getReader() { return {
+          async read() { return { done: false, value: oversizedView }; },
+          async cancel() { oversizedCanceled = true; },
+          releaseLock() {}
+        }; } };
+      }
+    };
+    await assert.rejects(readBackupFile(oversized), /实际内容超过 25 MB/u);
+    assert.equal(oversizedCanceled, true);
+
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(readBackupFile(streamed, { signal: controller.signal }), /读取已取消/u);
+
+    const inFlightController = new AbortController();
+    let finishRead;
+    let canceled = false;
+    let released = false;
+    const inFlight = {
+      size: 2,
+      stream() {
+        return { getReader() { return {
+          read() { return new Promise((resolve) => { finishRead = resolve; }); },
+          async cancel() { canceled = true; finishRead?.({ done: true }); },
+          releaseLock() { released = true; }
+        }; } };
+      }
+    };
+    const pending = readBackupFile(inFlight, { signal: inFlightController.signal });
+    await Promise.resolve();
+    inFlightController.abort();
+    await assert.rejects(pending, /读取已取消/u);
+    assert.equal(canceled, true);
+    assert.equal(released, true);
+  });
 });
 
 test("createLatestRequestGate lets only the newest asynchronous request commit", () => {

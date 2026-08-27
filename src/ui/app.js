@@ -91,6 +91,7 @@ export class ReentryApp {
   #acknowledgedStaleSessions = new Set();
   #pendingImport = null;
   #importRequestGate = createLatestRequestGate();
+  #importReadController = null;
   #clipboardRequestGate = createLatestRequestGate();
   #timelineLimits = new Map();
   #collectionLimits = new Map();
@@ -140,6 +141,8 @@ export class ReentryApp {
   destroy() {
     window.clearInterval(this.#timerId);
     this.#importRequestGate.invalidate();
+    this.#importReadController?.abort();
+    this.#importReadController = null;
     this.#clipboardRequestGate.invalidate();
     this.#pendingImport = null;
     this.#eventController.abort();
@@ -1360,8 +1363,11 @@ export class ReentryApp {
 
   async #importData(file, input) {
     const isCurrentRequest = this.#importRequestGate.begin();
+    this.#importReadController?.abort();
+    const controller = new AbortController();
+    this.#importReadController = controller;
     try {
-      const parsed = await readBackupFile(file);
+      const parsed = await readBackupFile(file, { signal: controller.signal });
       if (!isCurrentRequest()) return;
       this.#pendingImport = {
         value: parsed,
@@ -1376,6 +1382,7 @@ export class ReentryApp {
     } catch (error) {
       if (isCurrentRequest()) this.#toast(`无法导入：${error.message}`, "error");
     } finally {
+      if (this.#importReadController === controller) this.#importReadController = null;
       if (isCurrentRequest()) input.value = "";
     }
   }
