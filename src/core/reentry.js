@@ -2,7 +2,7 @@ import { daysSince } from "./time.js";
 import { QUICK_DOCK_NOT_RECORDED } from "./session.js";
 
 export function getProjectActivity(state, projectId) {
-  return getIndexedProjectActivity(buildReentryIndex(state), projectId);
+  return getIndexedProjectActivity(buildReentryIndex(state, [projectId]), projectId);
 }
 
 function getIndexedProjectActivity(index, projectId) {
@@ -12,12 +12,13 @@ function getIndexedProjectActivity(index, projectId) {
 }
 
 export function buildReentryCard(state, projectId, now = Date.now()) {
-  return buildIndexedReentryCard(buildReentryIndex(state), projectId, now);
+  return buildIndexedReentryCard(buildReentryIndex(state, [projectId]), projectId, now);
 }
 
 export function buildReentryCards(state, projectIds, now = Date.now()) {
-  const index = buildReentryIndex(state);
-  return (Array.isArray(projectIds) ? projectIds : [])
+  const safeProjectIds = Array.isArray(projectIds) ? projectIds : [];
+  const index = buildReentryIndex(state, safeProjectIds);
+  return safeProjectIds
     .map((projectId) => buildIndexedReentryCard(index, projectId, now))
     .filter(Boolean);
 }
@@ -105,7 +106,7 @@ function buildIndexedReentryCard(index, projectId, now) {
 export function rankProjectsForReentry(state, now = Date.now()) {
   const projects = state.projects
     .filter((project) => project.status !== "archived");
-  const index = buildReentryIndex(state);
+  const index = buildReentryIndex(state, projects.map((project) => project.id));
   return projects
     .map((project) => buildIndexedReentryCard(index, project.id, now))
     .filter(Boolean)
@@ -113,7 +114,8 @@ export function rankProjectsForReentry(state, now = Date.now()) {
     .sort((a, b) => b.recommendationScore - a.recommendationScore || timeOf(b.lastActivityAt) - timeOf(a.lastActivityAt));
 }
 
-function buildReentryIndex(state) {
+function buildReentryIndex(state, projectIds = null) {
+  const requested = projectIds === null ? null : new Set(projectIds);
   const projects = new Map();
   const sessions = new Map();
   const crumbs = new Map();
@@ -121,6 +123,7 @@ function buildReentryIndex(state) {
   const lastActivity = new Map();
 
   for (const project of safeCollection(state?.projects)) {
+    if (requested && !requested.has(project.id)) continue;
     projects.set(project.id, project);
     lastActivity.set(project.id, newestDate([project.updatedAt, project.lastOpenedAt, project.createdAt]));
   }

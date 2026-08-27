@@ -429,6 +429,35 @@ test("buildReentryCards indexes shared collections once while preserving per-pro
   assert.deepEqual(buildReentryCards(data, ["missing"], NOW), []);
 });
 
+test("targeted reentry projection never reads or sorts unrelated evidence payloads", () => {
+  let unrelatedDateReads = 0;
+  const unrelated = {
+    id: "unrelated",
+    projectId: "p2",
+    type: "note",
+    text: "must stay untouched",
+    get createdAt() {
+      unrelatedDateReads += 1;
+      return at(-1_000);
+    }
+  };
+  const data = makeState({
+    projects: [makeProject("p1"), makeProject("p2")],
+    crumbs: [
+      unrelated,
+      { id: "target", projectId: "p1", type: "note", text: "target evidence", createdAt: at(-2_000) }
+    ]
+  });
+
+  assert.equal(buildReentryCard(data, "p1", NOW).summary, "target evidence");
+  assert.equal(unrelatedDateReads, 0);
+  assert.deepEqual(buildReentryCards(data, ["p1"], NOW).map((card) => card.project.id), ["p1"]);
+  assert.equal(unrelatedDateReads, 0);
+
+  assert.equal(buildReentryCard(data, "p2", NOW).summary, "must stay untouched");
+  assert.ok(unrelatedDateReads > 0, "the payload is read only when its project is requested");
+});
+
 test("resolved questions disappear from open evidence and can be reconstructed from timestamps", () => {
   const state = makeState({
     projects: [makeProject("p1")],
