@@ -5,6 +5,7 @@ import {
   createSession,
   isoNow
 } from "../core/model.js";
+import { buildAttentionDeck, buildWeeklyReview } from "../core/insights.js";
 import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
 import { getProjectResources, searchWorkspace } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession } from "../core/session.js";
@@ -183,6 +184,8 @@ export class ReentryApp {
     const crumbsToday = state.crumbs.filter((item) => isToday(item.createdAt)).length;
     const activeProjects = projects.filter((item) => item.status === "active").length;
     const blockedProjects = projects.filter((item) => item.status === "blocked").length;
+    const weeklyReview = buildWeeklyReview(state);
+    const attentionDeck = buildAttentionDeck(state);
 
     return `
       <section class="page-heading">
@@ -199,9 +202,33 @@ export class ReentryApp {
         ${metric("可靠检查点", state.checkpoints.length, "次可恢复现场")}
         ${metric("受阻项目", blockedProjects, blockedProjects ? "需要一次澄清" : "目前航路通畅")}
       </section>
+      ${this.#renderWorkspacePulse(weeklyReview, attentionDeck)}
       <section>
         <div class="section-heading"><div><h2>项目舰桥</h2><p>按当前最值得复航的顺序排列</p></div><button class="secondary-button" type="button" data-action="open-new-project">${icon("plus")} 建立项目</button></div>
         <div class="project-grid">${ranked.map((card) => this.#renderProjectCard(card)).join("")}</div>
+      </section>`;
+  }
+
+  #renderWorkspacePulse(review, attentionDeck) {
+    const dockCount = review.quickDocks + review.interruptions;
+    return `
+      <section class="panel workspace-pulse" aria-labelledby="pulse-heading">
+        <div class="panel-header inline-between"><div><h2 id="pulse-heading">七日航迹</h2><p>只根据本机已有时间戳整理；单次异常长会话最多计 12 小时。</p></div><span class="soft-pill">${icon("trail")} 最近 ${review.windowDays} 天</span></div>
+        <div class="panel-body pulse-layout">
+          <div>
+            <div class="pulse-metrics">
+              ${pulseMetric(formatInsightDuration(review.focusedMinutes), "可计会话时长", review.cappedSessions ? `${review.cappedSessions} 段已封顶` : "按开始与结束时间")}
+              ${pulseMetric(review.sessions, "会话窗口", `${review.records} 条轨迹`)}
+              ${pulseMetric(review.nearbySwitches, "近距项目切换", "4 小时内转到另一项目")}
+              ${pulseMetric(`${review.recoverability}%`, "平均复航完整度", "未归档项目")}
+            </div>
+            <p class="pulse-summary">${review.topProject ? `投入最多：${escapeHTML(review.topProject.title)}（${formatInsightDuration(review.topProject.minutes)}）` : "本周还没有可计会话。"}${dockCount ? ` · ${dockCount} 次应急停靠或中断` : ""}${review.resolvedSignals ? ` · 闭合 ${review.resolvedSignals} 个问题` : ""}</p>
+          </div>
+          <div class="attention-deck">
+            <div class="attention-heading"><strong>值得核对</strong><span>按现场缺口排序，不评价产出</span></div>
+            ${attentionDeck.length ? `<ul>${attentionDeck.map((item) => `<li><a href="#/project/${encodeURIComponent(item.project.id)}"><span class="attention-level" data-level="${attr(item.level)}" aria-hidden="true"></span><span><strong>${escapeHTML(item.project.title)}</strong><small>${escapeHTML(item.reasons.join(" · "))}</small></span>${icon("arrow")}</a></li>`).join("")}</ul>` : '<p class="attention-empty">当前没有明显的现场缺口。</p>'}
+          </div>
+        </div>
       </section>`;
   }
 
@@ -953,6 +980,15 @@ function metric(label, value, detail) {
 
 function miniStat(value, label) {
   return `<div class="mini-stat"><strong>${value}</strong><span>${escapeHTML(label)}</span></div>`;
+}
+
+function pulseMetric(value, label, detail) {
+  return `<article><strong>${escapeHTML(value)}</strong><span>${escapeHTML(label)}</span><small>${escapeHTML(detail)}</small></article>`;
+}
+
+function formatInsightDuration(minutes) {
+  if (!Number.isFinite(minutes) || minutes <= 0) return "0 分钟";
+  return formatDuration(Math.round(minutes * 60), { compact: true });
 }
 
 function greeting() {

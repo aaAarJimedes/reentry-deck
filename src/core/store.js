@@ -1,7 +1,7 @@
 import { createEmptyState, isoNow, normalizeState, validateImportCandidate, validateState } from "./model.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.4.0";
+export const APP_VERSION = "0.5.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {

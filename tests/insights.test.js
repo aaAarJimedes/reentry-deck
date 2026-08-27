@@ -1,0 +1,104 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import { buildAttentionDeck, buildWeeklyReview } from "../src/core/insights.js";
+
+const NOW = Date.parse("2026-08-28T12:00:00.000Z");
+const HOUR = 3_600_000;
+const DAY = 86_400_000;
+const at = (offset) => new Date(NOW + offset).toISOString();
+
+function project(id, overrides = {}) {
+  return {
+    id,
+    title: `Project ${id}`,
+    description: "",
+    nextAction: "",
+    status: "active",
+    createdAt: at(-20 * DAY),
+    updatedAt: at(-2 * DAY),
+    lastOpenedAt: at(-2 * DAY),
+    ...overrides
+  };
+}
+
+function state(overrides = {}) {
+  return {
+    settings: { staleAfterDays: 7 },
+    projects: [],
+    sessions: [],
+    crumbs: [],
+    checkpoints: [],
+    ...overrides
+  };
+}
+
+test("buildWeeklyReview calculates bounded local evidence and nearby project switches", () => {
+  const data = state({
+    projects: [project("p1"), project("p2")],
+    sessions: [
+      { id: "old", projectId: "p1", status: "completed", startedAt: at(-8 * DAY), endedAt: at(-8 * DAY + HOUR) },
+      { id: "s1", projectId: "p1", status: "completed", startedAt: at(-6 * HOUR), endedAt: at(-5 * HOUR) },
+      { id: "s2", projectId: "p2", status: "completed", startedAt: at(-4 * HOUR), endedAt: at(-2 * HOUR) },
+      { id: "s3", projectId: "p2", status: "abandoned", closeReason: "quick-dock", startedAt: at(-HOUR), endedAt: at(-30 * 60_000) }
+    ],
+    crumbs: [
+      { id: "d", projectId: "p1", type: "decision", createdAt: at(-DAY) },
+      { id: "q", projectId: "p2", type: "question", createdAt: at(-DAY), resolvedAt: at(-HOUR) },
+      { id: "old-crumb", projectId: "p1", type: "note", createdAt: at(-9 * DAY) }
+    ],
+    checkpoints: [
+      { id: "cp1", projectId: "p1", summary: "state", nextAction: "next", returnHint: "hint", createdAt: at(-2 * DAY) },
+      { id: "cp2", projectId: "p2", summary: "state", nextAction: "next", returnHint: "hint", createdAt: at(-2 * DAY) }
+    ]
+  });
+
+  const review = buildWeeklyReview(data, NOW);
+  assert.equal(review.sessions, 3);
+  assert.equal(review.focusedMinutes, 210);
+  assert.equal(review.nearbySwitches, 1);
+  assert.equal(review.interruptions, 0);
+  assert.equal(review.quickDocks, 1);
+  assert.equal(review.activeSessions, 0);
+  assert.equal(review.records, 2);
+  assert.equal(review.decisions, 1);
+  assert.equal(review.resolvedSignals, 1);
+  assert.equal(review.recoverability, 100);
+  assert.deepEqual(review.topProject, { id: "p2", title: "Project p2", minutes: 150 });
+});
+
+test("buildWeeklyReview caps implausibly long sessions and normalizes options", () => {
+  const data = state({
+    projects: [project("p1")],
+    sessions: [{ id: "long", projectId: "p1", status: "active", startedAt: at(-20 * HOUR), endedAt: null }]
+  });
+  const review = buildWeeklyReview(data, NOW, { windowDays: 200 });
+  assert.equal(review.windowDays, 90);
+  assert.equal(review.focusedMinutes, 720);
+  assert.equal(review.cappedSessions, 1);
+});
+
+test("buildAttentionDeck explains risk without including healthy or archived work", () => {
+  const data = state({
+    projects: [
+      project("stale-session", { status: "active" }),
+      project("blocked", { status: "blocked", updatedAt: at(-10 * DAY), lastOpenedAt: at(-10 * DAY) }),
+      project("healthy", { nextAction: "continue", nextActionUpdatedAt: at(-DAY) }),
+      project("archived", { status: "archived" })
+    ],
+    sessions: [{ id: "open", projectId: "stale-session", status: "active", startedAt: at(-13 * HOUR), endedAt: null }],
+    crumbs: [
+      { id: "b", projectId: "blocked", type: "blocker", text: "dependency", createdAt: at(-9 * DAY), resolvedAt: null },
+      { id: "q", projectId: "blocked", type: "question", text: "unknown", createdAt: at(-8 * DAY), resolvedAt: null }
+    ],
+    checkpoints: [{ id: "healthy-cp", projectId: "healthy", summary: "good", nextAction: "continue", returnHint: "open file", createdAt: at(-DAY) }]
+  });
+
+  const deck = buildAttentionDeck(data, NOW);
+  assert.deepEqual(deck.map((item) => item.project.id), ["stale-session", "blocked"]);
+  assert.equal(deck[0].level, "high");
+  assert.match(deck[0].reasons.join("；"), /没有收拢/);
+  assert.match(deck[1].reasons.join("；"), /受阻/);
+  assert.equal(deck.some((item) => item.project.id === "archived"), false);
+  assert.deepEqual(buildAttentionDeck(data, NOW, { limit: 0 }), []);
+});
