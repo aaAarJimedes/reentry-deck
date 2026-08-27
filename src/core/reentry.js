@@ -66,6 +66,13 @@ function buildIndexedReentryCard(index, projectId, now) {
   const rawCompleteness = Math.round((completenessFields.filter(Boolean).length / completenessFields.length) * 100);
   const confidenceCap = checkpoint?.captureMode === "quick" ? 50 : 100;
   const completeness = Math.max(0, Math.min(rawCompleteness, confidenceCap) - Math.min(contextGapSessions.length * 20, 40));
+  const readinessGaps = [];
+  if (contextGapSessions.length) readinessGaps.push(`核对 ${contextGapSessions.length} 段未收拢或中断的会话`);
+  if (checkpoint?.captureMode === "quick") readinessGaps.push("复核快速停靠生成的低置信度检查点");
+  if (!summaryEvidence) readinessGaps.push("补一条当前状态摘要");
+  if (!nextActionEvidence) readinessGaps.push("明确一个可直接执行的下一动作");
+  if (!checkpoint) readinessGaps.push("完成一次可靠检查点");
+  else if (!checkpoint.returnHint) readinessGaps.push("写下材料入口或恢复提示");
 
   return {
     project,
@@ -80,6 +87,7 @@ function buildIndexedReentryCard(index, projectId, now) {
     openLoops: checkpoint?.openLoops || unresolvedSignals.map((item) => item.text).join("；"),
     returnHint,
     completeness,
+    readinessGaps,
     decisions,
     pinnedCrumbs,
     unresolvedSignals,

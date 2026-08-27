@@ -422,6 +422,7 @@ export class ReentryApp {
         <div class="panel-header inline-between"><div><h2 id="reentry-card-heading">60 秒复航卡</h2><p>${card.checkpoint ? (card.checkpoint.captureMode === "quick" ? `快速停靠 · ${formatDateTime(card.checkpoint.createdAt)} · 请先复核` : `来自 ${formatDateTime(card.checkpoint.createdAt)} 的可靠检查点`) : "信息不足时，从三问校准开始"}</p></div><span class="soft-pill">${icon("compass")} ${card.completeness}%</span></div>
         <div class="panel-body">
           ${card.contextGapSessions.length ? `<div class="evidence-warning" role="status">${icon("alert")} 检查点之后还有 ${card.contextGapSessions.length} 段未收拢或中断的会话，完整度已下调；请先核对现场。</div>` : ""}
+          ${card.readinessGaps.length ? `<div class="reentry-gaps" role="note"><strong>${icon("compass")} 复航缺口</strong><ul>${card.readinessGaps.map((gap) => `<li>${escapeHTML(gap)}</li>`).join("")}</ul></div>` : ""}
           <div class="reentry-section"><span class="reentry-label">${icon("trail")} 01 · 可靠检查点</span><p class="reentry-value">${textBlock(card.checkpoint?.summary || "还没有可靠检查点；以下内容来自零散证据。")}</p><p class="evidence-source">${escapeHTML(checkpointLabel)}</p></div>
           ${card.pinnedCrumbs.length ? `<div class="reentry-section pinned-evidence"><span class="reentry-label">${icon("pin")} 置顶航标</span>${this.#renderEvidenceList(card.pinnedCrumbs, "")}</div>` : ""}
           <div class="reentry-section"><span class="reentry-label">${icon("spark")} 02 · 检查点后发生了什么</span>${this.#renderEvidenceList(card.changesSinceCheckpoint, "检查点之后没有新的状态、决定或下一步记录。")}</div>

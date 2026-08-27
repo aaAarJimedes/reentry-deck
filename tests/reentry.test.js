@@ -187,6 +187,7 @@ test("quick-dock checkpoints are visibly capped at low-confidence readiness", ()
 
   assert.equal(card.completeness, 50);
   assert.equal(card.checkpoint.captureMode, "quick");
+  assert.deepEqual(card.readinessGaps, ["复核快速停靠生成的低置信度检查点"]);
 });
 
 test("buildReentryCard applies crumb, project, and default fallbacks independently", async (t) => {
@@ -243,6 +244,11 @@ test("buildReentryCard applies crumb, project, and default fallbacks independent
     assert.equal(card.openLoops, "");
     assert.equal(card.returnHint, "先看最近轨迹，再开始一次短会话。");
     assert.equal(card.completeness, 0);
+    assert.deepEqual(card.readinessGaps, [
+      "补一条当前状态摘要",
+      "明确一个可直接执行的下一动作",
+      "完成一次可靠检查点"
+    ]);
   });
 });
 
@@ -422,6 +428,24 @@ test("an unclosed session after the checkpoint lowers readiness and old next rec
   assert.equal(card.nextActionEvidence.id, "cp");
   assert.deepEqual(card.contextGapSessions.map((item) => item.id), ["open-session"]);
   assert.equal(card.completeness, 80);
+  assert.deepEqual(card.readinessGaps, ["核对 1 段未收拢或中断的会话"]);
+});
+
+test("a reliable checkpoint without a return route exposes one focused readiness gap", () => {
+  const state = makeState({
+    projects: [makeProject("p1")],
+    checkpoints: [{
+      id: "cp",
+      projectId: "p1",
+      summary: "状态清楚",
+      nextAction: "打开草稿",
+      returnHint: "",
+      captureMode: "manual",
+      createdAt: at(-1_000)
+    }]
+  });
+
+  assert.deepEqual(buildReentryCard(state, "p1", NOW).readinessGaps, ["写下材料入口或恢复提示"]);
 });
 
 test("getProjectStats counts only matching records and recognized statuses/types", () => {
