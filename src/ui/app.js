@@ -12,7 +12,7 @@ import { prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { triggerBlobDownload } from "../core/download.js";
 import { buildWorkspaceOverview } from "../core/insights.js";
-import { buildReentryCard, getProjectStats } from "../core/reentry.js";
+import { buildReentryCard, buildReentryCards, getProjectStats } from "../core/reentry.js";
 import { buildReentryBrief, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession, prepareQuickCheckpointReview } from "../core/session.js";
@@ -595,11 +595,17 @@ export class ReentryApp {
   #renderArchive(state) {
     const projects = state.projects.filter((item) => item.status === "archived");
     const projectWindow = buildCollectionWindow(projects, this.#collectionLimits.get("archive"));
+    const visibleIds = new Set(projectWindow.items.map((project) => project.id));
+    const cards = new Map(buildReentryCards(state, [...visibleIds]).map((card) => [card.project.id, card]));
+    const crumbCounts = new Map([...visibleIds].map((projectId) => [projectId, 0]));
+    for (const crumb of state.crumbs) {
+      if (visibleIds.has(crumb.projectId)) crumbCounts.set(crumb.projectId, (crumbCounts.get(crumb.projectId) ?? 0) + 1);
+    }
     return `
       <section class="page-heading"><div><p class="eyebrow">归档舱</p><h1>结束的航程，也保留来路。</h1><p class="lede">归档不会删除任何会话、决定或检查点；需要时可以随时恢复。</p></div></section>
       ${projects.length ? `<div class="project-grid" id="project-window-archive" data-project-window="archive">${projectWindow.items.map((project, index) => {
-        const card = buildReentryCard(state, project.id);
-        return `<article class="project-card" data-project-window-item="${index}" tabindex="-1" data-color="${attr(project.color)}"><div><div class="project-card-header"><span class="status-pill" data-status="archived">已归档</span><span class="muted">${formatRelative(project.archivedAt ?? project.updatedAt)}</span></div><h3>${escapeHTML(project.title)}</h3><p class="project-description">${escapeHTML(project.description || card.summary)}</p></div><div class="project-card-footer"><span>${state.crumbs.filter((item) => item.projectId === project.id).length} 条轨迹</span><button class="ghost-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}" aria-label="恢复项目：${attr(controlContext(project.title))}">恢复项目</button></div></article>`;
+        const card = cards.get(project.id);
+        return `<article class="project-card" data-project-window-item="${index}" tabindex="-1" data-color="${attr(project.color)}"><div><div class="project-card-header"><span class="status-pill" data-status="archived">已归档</span><span class="muted">${formatRelative(project.archivedAt ?? project.updatedAt)}</span></div><h3>${escapeHTML(project.title)}</h3><p class="project-description">${escapeHTML(project.description || card?.summary || "还没有留下状态摘要。")}</p></div><div class="project-card-footer"><span>${crumbCounts.get(project.id) ?? 0} 条轨迹</span><button class="ghost-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}" aria-label="恢复项目：${attr(controlContext(project.title))}">恢复项目</button></div></article>`;
       }).join("")}</div>${this.#renderCollectionMore(projectWindow, "archive", "归档项目")}` : `<section class="empty-state"><div class="empty-illustration" aria-hidden="true"><span></span><span></span><span></span></div><h2>归档舱还是空的</h2><p>完成或暂时不再关注的项目，可以从项目页移到这里。</p><a class="primary-button" href="#/">返回舰桥</a></section>`}`;
   }
 

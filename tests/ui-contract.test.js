@@ -172,6 +172,15 @@ test("checkpoint-only open loops are labeled as historical instead of disappeari
   assert.match(source, /if \(card\.historicalOpenLoops\)/u);
 });
 
+test("archive cards batch reentry projection and record counting", async () => {
+  const source = await readFile(new URL("../src/ui/app.js", import.meta.url), "utf8");
+
+  assert.match(source, /buildReentryCards\(state, \[\.\.\.visibleIds\]\)/u);
+  assert.match(source, /for \(const crumb of state\.crumbs\)/u);
+  assert.match(source, /crumbCounts\.get\(project\.id\) \?\? 0/u);
+  assert.doesNotMatch(source, /state\.crumbs\.filter\(\(item\) => item\.projectId === project\.id\)\.length/u);
+});
+
 test("repeated dynamic controls expose bounded contextual names and labeled groups", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 
