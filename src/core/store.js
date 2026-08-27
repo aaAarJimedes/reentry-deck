@@ -2,7 +2,7 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.56.0";
+export const APP_VERSION = "0.57.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
@@ -17,10 +17,15 @@ export class AppStore {
   #rejectedRaw = null;
   #hasRejectedRaw = false;
 
-  constructor(storage = globalThis.localStorage, now = Date.now(), eventTarget = globalThis.window) {
-    this.#storage = storage;
+  constructor(storage = undefined, now = Date.now(), eventTarget = globalThis.window) {
     this.notices = [];
-    this.#persistedRaw = this.#storage?.getItem(STORAGE_KEY) ?? null;
+    this.#storage = storage === undefined ? defaultStorage() : storage;
+    try {
+      this.#persistedRaw = this.#storage?.getItem(STORAGE_KEY) ?? null;
+    } catch (error) {
+      this.#storage = null;
+      this.notices.push(`浏览器本地存储不可访问，已用临时空白工作区启动：${errorMessage(error)}`);
+    }
     this.#state = this.#load(now, this.#persistedRaw);
     if (eventTarget?.addEventListener) {
       this.#eventTarget = eventTarget;
@@ -61,7 +66,14 @@ export class AppStore {
   }
 
   refreshFromStorage(now = Date.now()) {
-    const current = this.#storage?.getItem(STORAGE_KEY) ?? null;
+    let current;
+    try {
+      current = this.#storage?.getItem(STORAGE_KEY) ?? null;
+    } catch (error) {
+      this.notices.push(`无法读取另一个标签页的更新，当前页面保持不变：${errorMessage(error)}`);
+      this.#emit("external");
+      return false;
+    }
     if (current === this.#persistedRaw) return false;
     if (this.#hasRejectedRaw && current === this.#rejectedRaw) return false;
     try {
@@ -172,7 +184,13 @@ export class AppStore {
       return parseSavedState(current, now);
     } catch (error) {
       this.#skipNextPreviousWrite = true;
-      const previous = this.#storage?.getItem(PREVIOUS_KEY);
+      let previous = null;
+      try {
+        previous = this.#storage?.getItem(PREVIOUS_KEY) ?? null;
+      } catch {
+        // The primary read already failed validation; an inaccessible rollback
+        // copy cannot safely participate in recovery.
+      }
       if (previous) {
         try {
           const recovered = parseSavedState(previous, now);
@@ -206,7 +224,12 @@ export class AppStore {
 
   #persist(next) {
     if (!this.#storage) throw new Error("浏览器没有提供可用的本地存储。 ");
-    const current = this.#storage.getItem(STORAGE_KEY);
+    let current;
+    try {
+      current = this.#storage.getItem(STORAGE_KEY);
+    } catch (error) {
+      throw new Error(`本地保存失败，无法核对现有数据：${errorMessage(error)}`);
+    }
     if (current !== this.#persistedRaw) {
       this.refreshFromStorage();
       throw new Error("检测到另一个标签页刚刚更新了数据；已阻止覆盖，请重试刚才的操作。 ");
@@ -216,7 +239,12 @@ export class AppStore {
     try {
       this.#storage.setItem(STORAGE_KEY, serialized);
     } catch (error) {
-      const previous = this.#storage.getItem(PREVIOUS_KEY);
+      let previous = null;
+      try {
+        previous = this.#storage.getItem(PREVIOUS_KEY);
+      } catch {
+        // Without a readable rollback value there is nothing safe to reclaim.
+      }
       if (!isQuotaExceeded(error) || previous === null) {
         throw new Error(`本地保存失败，原数据仍然保留：${error.message}`);
       }
@@ -251,6 +279,18 @@ export class AppStore {
     const event = Object.freeze({ source });
     for (const listener of this.#listeners) listener(this.#state, event);
   }
+}
+
+function defaultStorage() {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function errorMessage(error) {
+  return typeof error?.message === "string" && error.message.trim() ? error.message : "访问被拒绝";
 }
 
 function isQuotaExceeded(error) {

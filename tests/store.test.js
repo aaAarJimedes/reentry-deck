@@ -93,6 +93,43 @@ describe("MemoryStorage", () => {
 });
 
 describe("AppStore loading and recovery", () => {
+  test("starts safely when the browser denies storage reads", () => {
+    const deniedStorage = {
+      getItem() {
+        const error = new Error("blocked by privacy policy");
+        error.name = "SecurityError";
+        throw error;
+      }
+    };
+    const store = new AppStore(deniedStorage, T0, null);
+
+    assert.deepEqual(store.getState().projects, []);
+    assert.match(store.drainNotices().join("；"), /本地存储不可访问.*blocked by privacy policy/u);
+    assert.throws(() => store.update(() => {}, T1), /没有提供可用的本地存储/u);
+  });
+
+  test("keeps the current state when a later external read is denied", () => {
+    class DeniedLaterStorage extends MemoryStorage {
+      denied = false;
+
+      getItem(key) {
+        if (this.denied) throw new Error("read access revoked");
+        return super.getItem(key);
+      }
+    }
+    const storage = new DeniedLaterStorage();
+    storage.setItem(STORAGE_KEY, JSON.stringify(stateWithProject("safe", "Safe")));
+    const store = new AppStore(storage, T0, null);
+    const before = store.getState();
+    storage.denied = true;
+
+    assert.equal(store.refreshFromStorage(T1), false);
+    assert.strictEqual(store.getState(), before);
+    assert.match(store.drainNotices().join("；"), /无法读取另一个标签页的更新.*read access revoked/u);
+    assert.throws(() => store.update(() => {}, T1), /无法核对现有数据.*read access revoked/u);
+    assert.strictEqual(store.getState(), before);
+  });
+
   test("destroy detaches storage events and clears subscriptions", () => {
     const storage = new MemoryStorage();
     const eventTarget = new EventTarget();
