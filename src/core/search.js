@@ -1,3 +1,5 @@
+import { compactText } from "./model.js";
+
 const RESULT_LIMIT = 40;
 const RESOURCE_LIMIT = 20;
 const MAX_RESOURCE_URL_LENGTH = 2_048;
@@ -175,7 +177,7 @@ function normalizeText(value) {
 
 function compact(value) {
   const text = String(value ?? "").replace(/\s+/gu, " ").trim();
-  return text.length > 150 ? `${text.slice(0, 147)}…` : text;
+  return compactText(text, 150);
 }
 
 function readableURL(url) {

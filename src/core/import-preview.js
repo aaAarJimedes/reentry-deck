@@ -1,4 +1,4 @@
-import { normalizeState, validateImportCandidate, validateState } from "./model.js";
+import { compactText, normalizeState, validateImportCandidate, validateState } from "./model.js";
 
 const COLLECTION_NAMES = Object.freeze(["projects", "sessions", "crumbs", "checkpoints"]);
 const DETAIL_LIMIT = 6;
@@ -153,7 +153,7 @@ function describeActiveSession(state) {
 }
 
 function cleanMetadata(value) {
-  return typeof value === "string" && value.trim() ? value.trim().slice(0, 80) : null;
+  return typeof value === "string" && value.trim() ? compactText(value, 80) : null;
 }
 
 function validDate(value) {

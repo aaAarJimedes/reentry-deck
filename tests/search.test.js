@@ -55,6 +55,23 @@ test("a reusable search index preserves results across queries and snapshots nor
   assert.deepEqual(searchWorkspaceIndex(index, "changed after indexing"), []);
 });
 
+test("search snippets collapse whitespace and never split a Unicode code point", () => {
+  const unicodeState = structuredClone(state);
+  unicodeState.crumbs.push({
+    id: "unicode",
+    projectId: "p1",
+    type: "note",
+    text: `needle\n\t${"😀".repeat(100)}`,
+    createdAt: "2026-01-07T00:00:00.000Z"
+  });
+
+  const [result] = searchWorkspace(unicodeState, "needle");
+  assert.equal(result.id, "unicode");
+  assert.ok(result.snippet.length <= 150);
+  assert.match(result.snippet, /^needle 😀+…$/u);
+  assert.equal(result.snippet.includes("\n"), false);
+});
+
 test("a 50,000-record index only materializes matching results", () => {
   const large = {
     projects: [{ ...state.projects[0] }],

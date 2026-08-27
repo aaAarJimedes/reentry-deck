@@ -33,6 +33,14 @@ describe("import snapshot inspection", () => {
       exportedAt: "2026-08-27T12:00:00.000Z",
       checksumVerified: null
     });
+
+    const longMetadata = readImportSnapshot({
+      format: "reentry-deck-backup",
+      appVersion: ` release ${"🚀".repeat(50)} `,
+      data: raw
+    }, T1).source.appVersion;
+    assert.ok(longMetadata.length <= 80);
+    assert.match(longMetadata, /^release 🚀+…$/u);
   });
 
   test("verifies checksummed envelopes and rejects malformed or mismatched integrity metadata", () => {
