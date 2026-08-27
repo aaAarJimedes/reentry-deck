@@ -39,15 +39,23 @@ const mimeTypes = {
 };
 
 export function resolvePublicFile(rawUrl, root = defaultRoot) {
+  const requestTarget = rawUrl || "/";
+  if (typeof requestTarget !== "string"
+    || !requestTarget.startsWith("/")
+    || requestTarget.startsWith("//")
+    || requestTarget.includes("#")
+    || /[\u0000-\u0020\u007f-\u009f]/u.test(requestTarget)) {
+    return { error: 400, path: null };
+  }
   let pathname;
   try {
-    const parsed = new URL(rawUrl || "/", "http://localhost");
+    const parsed = new URL(requestTarget, "http://localhost");
     pathname = decodeURIComponent(parsed.pathname);
   } catch {
     return { error: 400, path: null };
   }
 
-  if (pathname.includes("\0") || pathname.includes("\\") || pathname.split("/").includes("..")) {
+  if (/[\u0000-\u001f\u007f-\u009f]/u.test(pathname) || pathname.includes("\\") || pathname.split("/").includes("..")) {
     return { error: 400, path: null };
   }
   const relativePath = PUBLIC_FILES.get(pathname);

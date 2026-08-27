@@ -69,6 +69,21 @@ describe("public path resolution", () => {
     assert.equal(resolvePublicFile("/%E0%A4%A", projectRoot).error, 400);
     assert.ok([400, 404].includes(resolvePublicFile("/%2e%2e/package.json", projectRoot).error));
   });
+
+  test("accepts only control-free origin-form request targets", () => {
+    assert.equal(resolvePublicFile("/src/main.js?cache=1", projectRoot).path, resolve(projectRoot, "src/main.js"));
+    for (const target of [
+      "http://attacker.invalid/src/main.js",
+      "//attacker.invalid/src/main.js",
+      "/src/main.js#fragment",
+      " /src/main.js",
+      "/src/main.js\t",
+      "/src/%00main.js",
+      "/src/%C2%85main.js"
+    ]) {
+      assert.equal(resolvePublicFile(target, projectRoot).error, 400, target);
+    }
+  });
 });
 
 describe("local HTTP server", () => {
@@ -85,6 +100,8 @@ describe("local HTTP server", () => {
 
   test("malformed URLs return 400 and do not terminate the server", async () => {
     assert.equal((await send("/%")).status, 400);
+    assert.equal((await send("http://attacker.invalid/src/main.js")).status, 400);
+    assert.equal((await send("/src/main.js#fragment")).status, 400);
     assert.equal((await send("/")).status, 200);
   });
 
