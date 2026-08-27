@@ -6,6 +6,7 @@ import {
   isoNow
 } from "../core/model.js";
 import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
+import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession } from "../core/session.js";
 import { elapsedSeconds, formatDateTime, formatDuration, formatRelative } from "../core/time.js";
 
 const PROJECT_STATUS_LABELS = {
@@ -66,6 +67,7 @@ export class ReentryApp {
   #timerId;
   #focusSelector = null;
   #noticeQueue = [];
+  #acknowledgedStaleSessions = new Set();
 
   constructor(root, store) {
     this.#root = root;
@@ -75,7 +77,10 @@ export class ReentryApp {
     this.#root.addEventListener("click", (event) => this.#onClick(event));
     this.#root.addEventListener("submit", (event) => this.#onSubmit(event));
     this.#root.addEventListener("change", (event) => this.#onChange(event));
-    window.addEventListener("hashchange", () => this.render());
+    window.addEventListener("hashchange", () => {
+      this.#focusSelector = "#main-content";
+      this.render();
+    });
     window.addEventListener("keydown", (event) => this.#onKeydown(event));
     this.#store.subscribe(() => this.render());
 
@@ -135,13 +140,13 @@ export class ReentryApp {
           <span class="brand-copy"><span class="brand-name">复航台</span><span class="brand-subtitle">REENTRY</span></span>
         </a>
         <nav class="side-nav">
-          <a href="#/" ${route.name === "home" || route.name === "project" ? 'aria-current="page"' : ""}>${icon("home")}<span>项目舰桥</span><span class="nav-count">${activeCount}</span></a>
-          <a href="#/archive" ${route.name === "archive" ? 'aria-current="page"' : ""}>${icon("archive")}<span>归档舱</span>${archivedCount ? `<span class="nav-count">${archivedCount}</span>` : ""}</a>
-          <a href="#/settings" ${route.name === "settings" ? 'aria-current="page"' : ""}>${icon("settings")}<span>数据保险箱</span></a>
+          <a href="#/" aria-label="项目舰桥，${activeCount} 个未归档项目" ${route.name === "home" || route.name === "project" ? 'aria-current="page"' : ""}>${icon("home")}<span>项目舰桥</span><span class="nav-count">${activeCount}</span></a>
+          <a href="#/archive" aria-label="归档舱${archivedCount ? `，${archivedCount} 个项目` : ""}" ${route.name === "archive" ? 'aria-current="page"' : ""}>${icon("archive")}<span>归档舱</span>${archivedCount ? `<span class="nav-count">${archivedCount}</span>` : ""}</a>
+          <a href="#/settings" aria-label="数据保险箱" ${route.name === "settings" ? 'aria-current="page"' : ""}>${icon("settings")}<span>数据保险箱</span></a>
         </nav>
         <div class="sidebar-bottom">
           <div class="privacy-note">${icon("lock")}<span>所有工作轨迹只保存在这个浏览器中</span></div>
-          <button class="new-project-button" type="button" data-action="open-new-project">${icon("plus")}<span>建立新项目</span></button>
+          <button class="new-project-button" type="button" data-action="open-new-project" aria-label="建立新项目">${icon("plus")}<span>建立新项目</span></button>
         </div>
       </aside>`;
   }
@@ -162,7 +167,8 @@ export class ReentryApp {
   #renderRoute(route, state, project, activeSession) {
     if (route.name === "archive") return this.#renderArchive(state);
     if (route.name === "settings") return this.#renderSettings(state);
-    if (route.name === "project") return project ? this.#renderProject(state, project, activeSession) : this.#renderNotFound();
+    if (route.name === "notFound") return this.#renderNotFound();
+    if (route.name === "project") return project ? (project.status === "archived" ? this.#renderArchivedProject(state, project) : this.#renderProject(state, project, activeSession)) : this.#renderNotFound();
     return this.#renderDashboard(state, activeSession);
   }
 
@@ -261,7 +267,7 @@ export class ReentryApp {
         </div>
         <div class="project-header-actions">
           <button class="secondary-button" type="button" data-action="edit-project">${icon("edit")} 编辑</button>
-          ${isRunning ? `<button class="primary-button" type="button" data-action="open-checkpoint">${icon("stop")} 留下检查点</button>` : anotherRunning ? `<a class="secondary-button" href="#/project/${encodeURIComponent(activeSession.projectId)}">先处理活动会话</a>` : `<button class="primary-button" type="button" data-action="start-session" data-project-id="${attr(project.id)}">${icon("play")} 开始会话</button>`}
+          ${isRunning ? `<button class="secondary-button" type="button" data-action="quick-dock" data-session-id="${attr(activeSession.id)}">${icon("archive")} 快速停靠</button><button class="primary-button" type="button" data-action="open-checkpoint">${icon("stop")} 留下检查点</button>` : anotherRunning ? `<a class="secondary-button" href="#/project/${encodeURIComponent(activeSession.projectId)}">先处理活动会话</a>` : `<button class="primary-button" type="button" data-action="start-session" data-project-id="${attr(project.id)}">${icon("play")} 开始会话</button>`}
         </div>
       </section>
       <div class="workspace-grid">
@@ -280,7 +286,7 @@ export class ReentryApp {
   #renderReentryPanel(card, anotherRunning) {
     return `
       <section class="panel reentry-card" aria-labelledby="reentry-card-heading">
-        <div class="panel-header inline-between"><div><h2 id="reentry-card-heading">60 秒复航卡</h2><p>${card.checkpoint ? `来自 ${formatDateTime(card.checkpoint.createdAt)} 的检查点` : "信息不足时，从三问校准开始"}</p></div><span class="soft-pill">${icon("compass")} ${card.completeness}%</span></div>
+        <div class="panel-header inline-between"><div><h2 id="reentry-card-heading">60 秒复航卡</h2><p>${card.checkpoint ? (card.checkpoint.captureMode === "quick" ? `快速停靠 · ${formatDateTime(card.checkpoint.createdAt)} · 请先复核` : `来自 ${formatDateTime(card.checkpoint.createdAt)} 的可靠检查点`) : "信息不足时，从三问校准开始"}</p></div><span class="soft-pill">${icon("compass")} ${card.completeness}%</span></div>
         <div class="panel-body">
           <div class="reentry-section"><span class="reentry-label">${icon("trail")} 01 · 上次停在哪里</span><p class="reentry-value">${textBlock(card.summary)}</p></div>
           <div class="reentry-section"><span class="reentry-label">${icon("alert")} 02 · 仍待确认</span><p class="reentry-value ${card.openLoops ? "" : "muted"}">${textBlock(card.openLoops || "没有明确记录。开始前问自己：当前最大的未知是什么？")}</p></div>
@@ -295,10 +301,13 @@ export class ReentryApp {
   }
 
   #renderFocusPanel(project, session) {
+    const health = inspectSession(session);
+    const showStaleWarning = health.stale && !this.#acknowledgedStaleSessions.has(session.id);
     return `
       <section class="panel focus-panel" aria-labelledby="focus-heading">
         <div class="panel-header inline-between"><div><h2 id="focus-heading">工作现场已展开</h2><p>计时以开始时间为准，关闭页面也不会失真。</p></div><span class="status-pill" data-status="active">会话中</span></div>
         <div class="panel-body">
+          ${showStaleWarning ? this.#renderStaleSessionWarning(session, health) : ""}
           <div class="session-timer js-session-timer" role="timer" aria-label="本次会话用时" data-started-at="${attr(session.startedAt)}">${formatDuration(elapsedSeconds(session.startedAt))}</div>
           <p class="session-intention"><span class="muted">本次意图：</span> <strong>${escapeHTML(session.intention || project.nextAction || "先推进一个清楚的下一步")}</strong></p>
           <form class="capture-form" data-form="capture-crumb" autocomplete="off">
@@ -311,6 +320,26 @@ export class ReentryApp {
           </form>
         </div>
       </section>`;
+  }
+
+  #renderStaleSessionWarning(session, health) {
+    const reason = health.staleReasons.includes("calendar-day")
+      ? "它跨过了自然日"
+      : health.staleReasons.includes("invalid-started-at")
+        ? "开始时间无法确认"
+        : `它已经持续 ${formatDuration(Math.floor((health.ageMs ?? 0) / 1000), { compact: true })}`;
+    return `
+      <div class="stale-session-alert" role="status">
+        <div class="stale-session-icon">${icon("alert")}</div>
+        <div><strong>上次会话可能没有收拢</strong><p>${reason}。复航台不会擅自停止计时，请选择最符合实际情况的处理方式。</p>
+          <div class="button-row">
+            <button class="ghost-button" type="button" data-action="continue-session" data-session-id="${attr(session.id)}">继续原会话</button>
+            <button class="secondary-button" type="button" data-action="open-checkpoint">补完整检查点</button>
+            <button class="secondary-button" type="button" data-action="quick-dock" data-session-id="${attr(session.id)}">快速停靠</button>
+            <button class="primary-button" type="button" data-action="interrupt-and-continue" data-session-id="${attr(session.id)}">中断并接续</button>
+          </div>
+        </div>
+      </div>`;
   }
 
   #renderProjectControls(project) {
@@ -357,6 +386,18 @@ export class ReentryApp {
       }).join("")}</div>` : `<section class="empty-state"><div class="empty-illustration" aria-hidden="true"><span></span><span></span><span></span></div><h2>归档舱还是空的</h2><p>完成或暂时不再关注的项目，可以从项目页移到这里。</p><a class="primary-button" href="#/">返回舰桥</a></section>`}`;
   }
 
+  #renderArchivedProject(state, project) {
+    const card = buildReentryCard(state, project.id);
+    const crumbs = state.crumbs.filter((item) => item.projectId === project.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return `
+      <section class="project-header">
+        <div><p class="eyebrow">已归档</p><h1>${escapeHTML(project.title)}</h1><p class="lede">${escapeHTML(project.description || card.summary)}</p><div class="project-meta"><span>归档于 ${formatDateTime(project.archivedAt ?? project.updatedAt)}</span><span class="separator">•</span><span>所有历史记录保持只读</span></div></div>
+        <div class="project-header-actions"><button class="primary-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}">恢复到暂泊状态</button></div>
+      </section>
+      <section class="panel reentry-card"><div class="panel-header"><h2>最后的复航现场</h2><p>恢复项目后可从这个检查点继续。</p></div><div class="panel-body"><div class="reentry-section"><span class="reentry-label">最后状态</span><p class="reentry-value">${textBlock(card.summary)}</p></div><div class="reentry-section"><span class="reentry-label">下一动作</span><p class="reentry-value next-action">${textBlock(card.nextAction)}</p></div></div></section>
+      <section class="panel" style="margin-top:18px"><div class="panel-header inline-between"><div><h2>历史轨迹</h2><p>归档项目不会接受新的会话或记录。</p></div><span class="soft-pill">${crumbs.length} 条</span></div><div class="panel-body">${crumbs.length ? `<div class="timeline">${crumbs.map((crumb) => this.#renderCrumb(crumb)).join("")}</div>` : '<div class="timeline-empty">没有历史轨迹。</div>'}</div></section>`;
+  }
+
   #renderSettings(state) {
     const snapshot = JSON.stringify(this.#store.exportSnapshot());
     const size = formatBytes(new Blob([snapshot]).size);
@@ -378,7 +419,8 @@ export class ReentryApp {
   }
 
   #renderSessionDock(session, project) {
-    return `<a class="active-session-dock" href="#/project/${encodeURIComponent(project.id)}" aria-label="返回活动会话：${attr(project.title)}"><span class="dock-pulse"></span><span class="dock-copy"><small>活动会话</small><strong>${escapeHTML(project.title)}</strong></span><span class="dock-time js-session-timer" data-started-at="${attr(session.startedAt)}">${formatDuration(elapsedSeconds(session.startedAt))}</span>${icon("arrow")}</a>`;
+    const stale = inspectSession(session).stale;
+    return `<div class="active-session-dock" data-stale="${stale}"><a class="dock-main" href="#/project/${encodeURIComponent(project.id)}" aria-label="返回活动会话：${attr(project.title)}"><span class="dock-pulse"></span><span class="dock-copy"><small>${stale ? "可能未收拢" : "活动会话"}</small><strong>${escapeHTML(project.title)}</strong></span><span class="dock-time js-session-timer" data-started-at="${attr(session.startedAt)}">${formatDuration(elapsedSeconds(session.startedAt))}</span>${icon("arrow")}</a><button class="dock-quick" type="button" data-action="quick-dock" data-session-id="${attr(session.id)}">快速停靠</button></div>`;
   }
 
   #renderDialogs(project, activeSession) {
@@ -390,7 +432,7 @@ export class ReentryApp {
           <label class="field"><span class="required">项目名称</span><input name="title" maxlength="100" placeholder="例如：重构论文结果图" required autofocus /></label>
           <label class="field"><span>为什么要做</span><textarea name="description" maxlength="800" placeholder="一句话说明目的，帮助未来的自己快速校准。"></textarea></label>
           <label class="field"><span>已知的第一动作</span><input name="nextAction" maxlength="400" placeholder="例如：打开 figure_03.ipynb，核对配色映射" /></label>
-          <fieldset class="field-group" style="border:0;padding:0;margin:0"><legend class="field-label">识别颜色</legend><div class="color-options">${Object.entries(colors).map(([name, color], index) => `<label class="color-choice" title="${COLOR_LABELS[name]}"><input type="radio" name="color" value="${name}" ${index === 0 ? "checked" : ""}/><span style="--choice-color:${color}"></span></label>`).join("")}</div></fieldset>
+          <fieldset class="field-group" style="border:0;padding:0;margin:0"><legend class="field-label">识别颜色</legend><div class="color-options">${Object.entries(colors).map(([name, color], index) => `<label class="color-choice" title="${COLOR_LABELS[name]}"><input type="radio" name="color" value="${name}" aria-label="${COLOR_LABELS[name]}" ${index === 0 ? "checked" : ""}/><span style="--choice-color:${color}"></span></label>`).join("")}</div></fieldset>
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">建立项目</button></div>
         </form>
       </dialog>
@@ -440,6 +482,9 @@ export class ReentryApp {
     if (action === "edit-project") this.#openDialog("edit-project-dialog");
     if (action === "open-checkpoint") this.#openDialog("checkpoint-dialog");
     if (action === "start-session") this.#prepareSessionDialog(control.dataset.projectId);
+    if (action === "quick-dock") this.#quickDock(control.dataset.sessionId, false);
+    if (action === "interrupt-and-continue") this.#quickDock(control.dataset.sessionId, true);
+    if (action === "continue-session") this.#continueStaleSession(control.dataset.sessionId);
     if (action === "archive-project") this.#archiveProject(control.dataset.projectId);
     if (action === "restore-project") this.#restoreProject(control.dataset.projectId);
     if (action === "load-sample") this.#loadSample();
@@ -519,7 +564,9 @@ export class ReentryApp {
     if (state.sessions.some((item) => item.status === "active")) throw new Error("已有活动会话，请先为它留下检查点。 ");
     const project = state.projects.find((item) => item.id === data.projectId);
     if (!project || project.status === "archived") throw new Error("项目不可用，无法开始会话。 ");
-    const session = createSession({ projectId: project.id, intention: data.intention });
+    const sourceCheckpoint = state.checkpoints.filter((item) => item.projectId === project.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+    const session = createSession({ projectId: project.id, intention: data.intention, sourceCheckpointId: sourceCheckpoint?.id ?? null });
+    this.#focusSelector = '[data-form="capture-crumb"] textarea';
     this.#store.update((next) => {
       next.sessions.push(session);
       const item = next.projects.find((candidate) => candidate.id === project.id);
@@ -556,12 +603,14 @@ export class ReentryApp {
     if (!session) throw new Error("活动会话已经结束。 ");
     const checkpoint = createCheckpoint({ ...data, projectId: session.projectId, sessionId: session.id });
     if (!checkpoint.summary || !checkpoint.nextAction) throw new Error("状态摘要和第一物理动作不能为空。 ");
+    this.#focusSelector = "#main-content";
     this.#store.update((next) => {
       next.checkpoints.push(checkpoint);
       const currentSession = next.sessions.find((item) => item.id === session.id);
       currentSession.status = "completed";
       currentSession.endedAt = checkpoint.createdAt;
       currentSession.checkpointId = checkpoint.id;
+      currentSession.closeReason = "checkpoint";
       const project = next.projects.find((item) => item.id === session.projectId);
       project.nextAction = checkpoint.nextAction;
       project.updatedAt = checkpoint.createdAt;
@@ -571,11 +620,63 @@ export class ReentryApp {
     this.#toast("现场已安全收拢，下次可以从这里复航。 ");
   }
 
+  #continueStaleSession(sessionId) {
+    this.#acknowledgedStaleSessions.add(sessionId);
+    this.#focusSelector = '[data-form="capture-crumb"] textarea';
+    this.render();
+    this.#announce("继续原会话；计时保持不变");
+  }
+
+  #quickDock(sessionId, continueAfter) {
+    try {
+      const state = this.#store.getState();
+      const activeSession = state.sessions.find((item) => item.status === "active");
+      if (!activeSession || activeSession.id !== sessionId) throw new Error("这个会话已经不再活动，无需重复停靠。 ");
+      const now = Date.now();
+      const input = deriveQuickDockCheckpointInput(state, sessionId, now);
+      const checkpoint = createCheckpoint(input, now);
+      const recordedNextAction = input.nextAction !== QUICK_DOCK_NOT_RECORDED.nextAction;
+      const followUp = continueAfter ? createSession({
+        projectId: activeSession.projectId,
+        intention: recordedNextAction ? input.nextAction : activeSession.intention,
+        sourceCheckpointId: checkpoint.id
+      }, now + 1) : null;
+
+      this.#focusSelector = continueAfter ? '[data-form="capture-crumb"] textarea' : "#main-content";
+      this.#store.update((next) => {
+        const current = next.sessions.find((item) => item.id === sessionId && item.status === "active");
+        if (!current) throw new Error("会话状态刚刚发生变化，请重新确认。 ");
+        next.checkpoints.push(checkpoint);
+        current.status = "abandoned";
+        current.endedAt = checkpoint.createdAt;
+        current.checkpointId = checkpoint.id;
+        current.closeReason = continueAfter ? "interrupted" : "quick-dock";
+        const project = next.projects.find((item) => item.id === current.projectId);
+        project.updatedAt = checkpoint.createdAt;
+        if (recordedNextAction) project.nextAction = input.nextAction;
+        if (followUp) {
+          next.sessions.push(followUp);
+          project.lastOpenedAt = followUp.startedAt;
+          project.updatedAt = followUp.startedAt;
+        }
+      }, now);
+
+      this.#acknowledgedStaleSessions.delete(sessionId);
+      this.#announce(continueAfter ? "旧会话已标记中断，并已开始接续会话" : "会话已快速停靠");
+      this.#toast(continueAfter ? "旧现场已保留，接续会话已经开始。" : "已用现有证据生成低置信度检查点。 ");
+    } catch (error) {
+      this.#toast(error.message, "error");
+    }
+  }
+
   #editProject(data, form) {
+    const title = String(data.title ?? "").trim();
+    if (!title) throw new Error("项目名称不能只包含空格。 ");
+    this.#focusSelector = '[data-action="edit-project"]';
     this.#store.update((state) => {
       const project = state.projects.find((item) => item.id === data.projectId);
       if (!project) throw new Error("找不到要编辑的项目。 ");
-      project.title = String(data.title).trim();
+      project.title = title;
       project.description = String(data.description ?? "").trim();
       project.nextAction = String(data.nextAction ?? "").trim();
       project.updatedAt = isoNow();
@@ -587,6 +688,7 @@ export class ReentryApp {
   #changeProjectStatus(projectId, status) {
     if (!["active", "paused", "blocked"].includes(status)) return;
     try {
+      this.#focusSelector = '[data-control="project-status"]';
       this.#store.update((state) => {
         const project = state.projects.find((item) => item.id === projectId);
         if (!project) throw new Error("找不到项目。 ");
@@ -618,6 +720,7 @@ export class ReentryApp {
   }
 
   #restoreProject(projectId) {
+    this.#focusSelector = "#main-content";
     this.#store.update((state) => {
       const project = state.projects.find((item) => item.id === projectId);
       if (!project) throw new Error("找不到项目。 ");
@@ -630,6 +733,7 @@ export class ReentryApp {
 
   #setTheme(theme) {
     if (!["system", "light", "dark"].includes(theme)) return;
+    this.#focusSelector = `[data-action="set-theme"][data-theme="${theme}"]`;
     this.#store.update((state) => { state.settings.theme = theme; });
   }
 
@@ -730,7 +834,13 @@ function parseRoute(hash) {
   const value = hash.replace(/^#\/?/, "");
   if (!value) return { name: "home" };
   const [name, encodedId] = value.split("/");
-  if (name === "project" && encodedId) return { name: "project", id: decodeURIComponent(encodedId) };
+  if (name === "project" && encodedId) {
+    try {
+      return { name: "project", id: decodeURIComponent(encodedId) };
+    } catch {
+      return { name: "notFound" };
+    }
+  }
   if (name === "archive") return { name: "archive" };
   if (name === "settings") return { name: "settings" };
   return { name: "home" };

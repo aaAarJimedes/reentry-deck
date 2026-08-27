@@ -164,6 +164,27 @@ test("buildReentryCard gives the newest checkpoint first priority for checkpoint
   assert.equal(card.completeness, 100);
 });
 
+test("quick-dock checkpoints are visibly capped at low-confidence readiness", () => {
+  const state = makeState();
+  state.projects.push(makeProject("p1"));
+  state.checkpoints.push({
+    id: "quick",
+    projectId: "p1",
+    sessionId: null,
+    summary: "已有状态",
+    nextAction: "已有下一步",
+    openLoops: "已有未决",
+    returnHint: "回来先复核",
+    captureMode: "quick",
+    createdAt: at(-1_000)
+  });
+
+  const card = buildReentryCard(state, "p1", NOW);
+
+  assert.equal(card.completeness, 50);
+  assert.equal(card.checkpoint.captureMode, "quick");
+});
+
 test("buildReentryCard applies crumb, project, and default fallbacks independently", async (t) => {
   await t.test("eligible crumbs beat project fields and unresolved signals form open loops", () => {
     const project = makeProject("p1", {

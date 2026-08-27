@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import { createProject } from "../src/core/model.js";
-import { AppStore, MemoryStorage, STORAGE_KEY } from "../src/core/store.js";
+import { APP_VERSION, AppStore, MemoryStorage, STORAGE_KEY } from "../src/core/store.js";
 
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 const T0 = Date.parse("2026-08-28T00:00:00.000Z");
@@ -255,6 +255,39 @@ describe("AppStore updates and persistence", () => {
     assert.throws(() => store.update(() => {}, T1), /浏览器没有提供可用的本地存储/);
     assert.strictEqual(store.getState(), before);
   });
+
+  test("prevents stale tabs from overwriting a newer persisted revision and can retry on refreshed state", () => {
+    const storage = new MemoryStorage();
+    const firstTab = new AppStore(storage, T0, null);
+    const secondTab = new AppStore(storage, T0, null);
+
+    firstTab.update((draft) => draft.projects.push(createProject({ id: "from-first" }, T1)), T1);
+    assert.throws(
+      () => secondTab.update((draft) => draft.projects.push(createProject({ id: "from-second" }, T1)), T1),
+      /另一个标签页刚刚更新了数据/
+    );
+    assert.deepEqual(secondTab.getState().projects.map((item) => item.id), ["from-first"]);
+
+    secondTab.update((draft) => draft.projects.push(createProject({ id: "from-second" }, T2)), T2);
+    assert.deepEqual(persisted(storage).projects.map((item) => item.id), ["from-first", "from-second"]);
+  });
+
+  test("a quota failure for the rollback copy does not make successful current writes read-only", () => {
+    class BackupQuotaStorage extends MemoryStorage {
+      setItem(key, value) {
+        if (key === PREVIOUS_KEY && String(value).length > 1000) throw new Error("backup quota");
+        super.setItem(key, value);
+      }
+    }
+    const storage = new BackupQuotaStorage();
+    const store = new AppStore(storage, T0, null);
+    store.update((draft) => draft.projects.push(createProject({ id: "large", description: "x".repeat(2000) }, T1)), T1);
+
+    const next = store.update((draft) => { draft.projects[0].title = "Still writable"; }, T2);
+
+    assert.equal(next.projects[0].title, "Still writable");
+    assert.equal(persisted(storage).projects[0].title, "Still writable");
+  });
 });
 
 describe("AppStore replacement, snapshots, and reset", () => {
@@ -291,6 +324,20 @@ describe("AppStore replacement, snapshots, and reset", () => {
     assert.equal(storage.getItem(STORAGE_KEY), beforeStorage);
   });
 
+  test("replace rejects malformed collections and orphan records without changing current data", () => {
+    const storage = new MemoryStorage();
+    const store = new AppStore(storage, T0, null);
+    store.update((draft) => draft.projects.push(createProject({ id: "safe" }, T0)), T0);
+    const before = storage.getItem(STORAGE_KEY);
+
+    const malformed = stateWithProject("incoming");
+    malformed.sessions = [{ id: "orphan-session", projectId: "missing", status: "active" }];
+    assert.throws(() => store.replace(malformed, T1), /会话引用了不存在的项目/);
+
+    assert.equal(storage.getItem(STORAGE_KEY), before);
+    assert.deepEqual(store.getState().projects.map((item) => item.id), ["safe"]);
+  });
+
   test("importSnapshot accepts both backup envelopes and raw state", () => {
     const store = new AppStore(new MemoryStorage(), T0);
 
@@ -323,7 +370,7 @@ describe("AppStore replacement, snapshots, and reset", () => {
     const snapshot = store.exportSnapshot();
 
     assert.equal(snapshot.format, "reentry-deck-backup");
-    assert.equal(snapshot.appVersion, "0.1.0");
+    assert.equal(snapshot.appVersion, APP_VERSION);
     assert.equal(Number.isFinite(Date.parse(snapshot.exportedAt)), true);
     assert.deepEqual(snapshot.data, store.getState());
     assert.notStrictEqual(snapshot.data, store.getState());

@@ -3,6 +3,8 @@ export const SCHEMA_VERSION = 1;
 export const PROJECT_STATUSES = Object.freeze(["active", "paused", "blocked", "archived"]);
 export const CRUMB_TYPES = Object.freeze(["note", "discovery", "decision", "question", "blocker", "next"]);
 export const SESSION_STATUSES = Object.freeze(["active", "completed", "abandoned"]);
+export const SESSION_CLOSE_REASONS = Object.freeze(["checkpoint", "quick-dock", "interrupted"]);
+export const CHECKPOINT_CAPTURE_MODES = Object.freeze(["manual", "quick"]);
 
 const COLOR_PALETTE = ["fern", "amber", "clay", "sky", "plum", "slate"];
 
@@ -64,7 +66,9 @@ export function createSession(input = {}, now = Date.now()) {
     status: SESSION_STATUSES.includes(input.status) ? input.status : "active",
     startedAt: input.startedAt ?? timestamp,
     endedAt: input.endedAt ?? null,
-    checkpointId: input.checkpointId ?? null
+    checkpointId: input.checkpointId ?? null,
+    sourceCheckpointId: input.sourceCheckpointId ?? null,
+    closeReason: SESSION_CLOSE_REASONS.includes(input.closeReason) ? input.closeReason : null
   };
 }
 
@@ -89,6 +93,7 @@ export function createCheckpoint(input = {}, now = Date.now()) {
     nextAction: cleanText(input.nextAction),
     openLoops: cleanText(input.openLoops),
     returnHint: cleanText(input.returnHint),
+    captureMode: CHECKPOINT_CAPTURE_MODES.includes(input.captureMode) ? input.captureMode : "manual",
     createdAt: input.createdAt ?? isoNow(now)
   };
 }
@@ -154,7 +159,48 @@ export function validateState(state) {
       else ids.add(item.id);
     }
   }
+  if (Array.isArray(state?.sessions) && state.sessions.filter((item) => item?.status === "active").length > 1) {
+    errors.push("同一时间只能有一个活动会话");
+  }
   return errors;
+}
+
+export function validateImportCandidate(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return ["备份根数据必须是对象"];
+  const errors = validateState(value);
+  if (errors.length) return errors;
+
+  const projectIds = new Set(value.projects.map((item) => item?.id));
+  const sessionIds = new Set(value.sessions.map((item) => item?.id));
+  const checkpointIds = new Set(value.checkpoints.map((item) => item?.id));
+  const projectsById = new Map(value.projects.map((item) => [item?.id, item]));
+  for (const project of value.projects) {
+    if (typeof project?.id !== "string" || !project.id) errors.push("存在无效的项目 ID");
+    if (project?.status !== undefined && !PROJECT_STATUSES.includes(project.status)) errors.push(`项目状态无效：${project.status}`);
+  }
+  for (const session of value.sessions) {
+    if (typeof session?.id !== "string" || !session.id) errors.push("存在无效的会话 ID");
+    if (!projectIds.has(session?.projectId)) errors.push(`会话引用了不存在的项目：${session?.id ?? "未知"}`);
+    if (session?.status !== undefined && !SESSION_STATUSES.includes(session.status)) errors.push(`会话状态无效：${session.status}`);
+    if (session?.closeReason && !SESSION_CLOSE_REASONS.includes(session.closeReason)) errors.push(`会话关闭原因无效：${session.closeReason}`);
+    if (session?.checkpointId && !checkpointIds.has(session.checkpointId)) errors.push(`会话引用了不存在的检查点：${session.id ?? "未知"}`);
+    if (session?.sourceCheckpointId && !checkpointIds.has(session.sourceCheckpointId)) errors.push(`会话来源检查点不存在：${session.id ?? "未知"}`);
+    if (session?.status === "active" && session?.endedAt) errors.push(`活动会话不能包含结束时间：${session.id ?? "未知"}`);
+    if (session?.status === "active" && projectsById.get(session.projectId)?.status === "archived") errors.push(`归档项目不能包含活动会话：${session.id ?? "未知"}`);
+  }
+  for (const crumb of value.crumbs) {
+    if (typeof crumb?.id !== "string" || !crumb.id) errors.push("存在无效的面包屑 ID");
+    if (!projectIds.has(crumb?.projectId)) errors.push(`面包屑引用了不存在的项目：${crumb?.id ?? "未知"}`);
+    if (crumb?.sessionId && !sessionIds.has(crumb.sessionId)) errors.push(`面包屑引用了不存在的会话：${crumb.id ?? "未知"}`);
+    if (crumb?.type !== undefined && !CRUMB_TYPES.includes(crumb.type)) errors.push(`面包屑类型无效：${crumb.type}`);
+  }
+  for (const checkpoint of value.checkpoints) {
+    if (typeof checkpoint?.id !== "string" || !checkpoint.id) errors.push("存在无效的检查点 ID");
+    if (!projectIds.has(checkpoint?.projectId)) errors.push(`检查点引用了不存在的项目：${checkpoint?.id ?? "未知"}`);
+    if (checkpoint?.sessionId && !sessionIds.has(checkpoint.sessionId)) errors.push(`检查点引用了不存在的会话：${checkpoint.id ?? "未知"}`);
+    if (checkpoint?.captureMode && !CHECKPOINT_CAPTURE_MODES.includes(checkpoint.captureMode)) errors.push(`检查点采集方式无效：${checkpoint.captureMode}`);
+  }
+  return [...new Set(errors)];
 }
 
 function cleanText(value) {

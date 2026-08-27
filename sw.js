@@ -1,8 +1,9 @@
 "use strict";
 
-// Change this build id whenever any unversioned app-shell file changes. A unique
-// cache per release keeps an active tab on one coherent set of HTML, CSS and JS.
-const BUILD_ID = "2026-08-28.2";
+// The build id provides a clean release boundary. Runtime requests also use a
+// network-first strategy, so a forgotten bump cannot strand online clients on
+// an old shell; the cached release remains the complete offline fallback.
+const BUILD_ID = "2026-08-28.4";
 const CACHE_PREFIX = "reentry-deck-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 
@@ -17,6 +18,7 @@ const SHELL_PATHS = Object.freeze([
   "./src/core/model.js",
   "./src/core/store.js",
   "./src/core/reentry.js",
+  "./src/core/session.js",
   "./src/core/time.js"
 ]);
 
@@ -92,17 +94,13 @@ self.addEventListener("activate", (event) => {
 
 async function serveNavigation(request) {
   const cache = await caches.open(CACHE_NAME);
-  const cachedDocument = await cache.match(documentURL);
-
-  // The cached document and its modules come from the same build. Serving this
-  // first avoids mixing a newly deployed index with an older active worker.
-  if (cachedDocument) {
-    return cachedDocument;
-  }
-
   try {
-    return await fetch(request);
+    const response = await fetch(request);
+    if (isUsableResponse(response)) await cache.put(documentURL, response.clone());
+    return response;
   } catch {
+    const cachedDocument = await cache.match(documentURL);
+    if (cachedDocument) return cachedDocument;
     return new Response("离线状态下无法载入复航台，请联网后重试。", {
       status: 503,
       statusText: "Service Unavailable",
@@ -116,15 +114,18 @@ async function serveNavigation(request) {
 
 async function serveShellAsset(request, canonicalURL) {
   const cache = await caches.open(CACHE_NAME);
-  const cachedResponse = await cache.match(canonicalURL);
-  if (cachedResponse) {
-    return cachedResponse;
+  try {
+    const response = await fetch(request);
+    if (isUsableResponse(response)) await cache.put(canonicalURL, response.clone());
+    return response;
+  } catch {
+    const cachedResponse = await cache.match(canonicalURL);
+    if (cachedResponse) return cachedResponse;
+    return new Response("Offline asset unavailable", {
+      status: 503,
+      headers: { "Content-Type": "text/plain; charset=utf-8" }
+    });
   }
-
-  // This path is only expected after manual cache clearing or storage eviction.
-  // Network fallback lets the current page recover without caching an unknown
-  // deployment into this build's immutable shell cache.
-  return fetch(request);
 }
 
 self.addEventListener("fetch", (event) => {
@@ -144,7 +145,11 @@ self.addEventListener("fetch", (event) => {
   }
 
   const canonicalURL = cleanURL(requestURL);
-  if (shellURLs.has(canonicalURL)) {
+  const scopePath = scopeURL.pathname.endsWith("/") ? scopeURL.pathname : `${scopeURL.pathname}/`;
+  const isRuntimeAsset = requestURL.pathname.startsWith(`${scopePath}src/`)
+    || requestURL.pathname.startsWith(`${scopePath}assets/`)
+    || requestURL.pathname === `${scopePath}app.webmanifest`;
+  if (shellURLs.has(canonicalURL) || isRuntimeAsset) {
     event.respondWith(serveShellAsset(request, canonicalURL));
   }
 });

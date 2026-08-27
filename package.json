@@ -1,6 +1,6 @@
 {
   "name": "reentry-deck",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "复航台：为被打断的工作保存上下文，并在 60 秒内重新进入状态。",
@@ -8,7 +8,7 @@
     "start": "node tools/server.mjs",
     "dev": "node --watch tools/server.mjs",
     "test": "node --test",
-    "check": "node --check src/main.js && node --check src/ui/app.js && node --check src/core/model.js && node --check src/core/store.js && node --check src/core/reentry.js"
+    "check": "node --check src/main.js && node --check src/ui/app.js && node --check src/core/model.js && node --check src/core/store.js && node --check src/core/reentry.js && node --check src/core/session.js && node --check tools/server.mjs && node --check sw.js"
   },
   "engines": {
     "node": ">=22"

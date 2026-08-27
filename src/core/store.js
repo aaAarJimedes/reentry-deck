@@ -1,17 +1,27 @@
-import { createEmptyState, isoNow, normalizeState, validateState } from "./model.js";
+import { createEmptyState, isoNow, normalizeState, validateImportCandidate, validateState } from "./model.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
+export const APP_VERSION = "0.2.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {
   #storage;
   #state;
+  #persistedRaw = null;
   #listeners = new Set();
+  #storageListener = null;
 
-  constructor(storage = globalThis.localStorage, now = Date.now()) {
+  constructor(storage = globalThis.localStorage, now = Date.now(), eventTarget = globalThis.window) {
     this.#storage = storage;
     this.notices = [];
-    this.#state = this.#load(now);
+    this.#persistedRaw = this.#storage?.getItem(STORAGE_KEY) ?? null;
+    this.#state = this.#load(now, this.#persistedRaw);
+    if (eventTarget?.addEventListener) {
+      this.#storageListener = (event) => {
+        if (event.key === STORAGE_KEY) this.refreshFromStorage();
+      };
+      eventTarget.addEventListener("storage", this.#storageListener);
+    }
   }
 
   getState() {
@@ -21,6 +31,23 @@ export class AppStore {
   subscribe(listener) {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
+  }
+
+  refreshFromStorage(now = Date.now()) {
+    const current = this.#storage?.getItem(STORAGE_KEY) ?? null;
+    if (current === this.#persistedRaw) return false;
+    try {
+      const next = current ? normalizeState(JSON.parse(current), now) : createEmptyState(now);
+      const errors = validateState(next);
+      if (errors.length) throw new Error(errors.join("；"));
+      this.#persistedRaw = current;
+      this.#state = next;
+      this.#emit();
+      return true;
+    } catch (error) {
+      this.notices.push(`另一个标签页写入的数据无法读取，当前页面未采用它：${error.message}`);
+      return false;
+    }
   }
 
   update(recipe, now = Date.now()) {
@@ -37,6 +64,8 @@ export class AppStore {
   }
 
   replace(value, now = Date.now()) {
+    const candidateErrors = validateImportCandidate(value);
+    if (candidateErrors.length) throw new Error(`导入失败：${candidateErrors.join("；")}`);
     const next = normalizeState(value, now);
     const errors = validateState(next);
     if (errors.length) throw new Error(`导入失败：${errors.join("；")}`);
@@ -59,7 +88,7 @@ export class AppStore {
     return {
       format: "reentry-deck-backup",
       exportedAt: isoNow(),
-      appVersion: "0.1.0",
+      appVersion: APP_VERSION,
       data: structuredClone(this.#state)
     };
   }
@@ -73,8 +102,7 @@ export class AppStore {
     return this.replace(value, now);
   }
 
-  #load(now) {
-    const current = this.#storage?.getItem(STORAGE_KEY);
+  #load(now, current) {
     if (!current) return createEmptyState(now);
     try {
       return normalizeState(JSON.parse(current), now);
@@ -97,12 +125,24 @@ export class AppStore {
   #persist(next) {
     if (!this.#storage) throw new Error("浏览器没有提供可用的本地存储。 ");
     const current = this.#storage.getItem(STORAGE_KEY);
-    if (current) this.#storage.setItem(PREVIOUS_KEY, current);
+    if (current !== this.#persistedRaw) {
+      this.refreshFromStorage();
+      throw new Error("检测到另一个标签页刚刚更新了数据；已阻止覆盖，请重试刚才的操作。 ");
+    }
+    const serialized = JSON.stringify(next);
     try {
-      this.#storage.setItem(STORAGE_KEY, JSON.stringify(next));
+      this.#storage.setItem(STORAGE_KEY, serialized);
     } catch (error) {
-      if (current) this.#storage.setItem(STORAGE_KEY, current);
       throw new Error(`本地保存失败，原数据仍然保留：${error.message}`);
+    }
+    this.#persistedRaw = serialized;
+    if (current) {
+      try {
+        this.#storage.setItem(PREVIOUS_KEY, current);
+      } catch {
+        // The current write already succeeded. A missing rollback copy is safer
+        // than rejecting all future edits near the browser's quota limit.
+      }
     }
   }
 

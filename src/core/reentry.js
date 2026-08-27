@@ -39,7 +39,8 @@ export function buildReentryCard(state, projectId, now = Date.now()) {
   const nextAction = checkpoint?.nextAction || latestNextCrumb?.text || project.nextAction || "先写下一个足够具体的下一步。";
   const returnHint = checkpoint?.returnHint || "先看最近轨迹，再开始一次短会话。";
   const completenessFields = [checkpoint?.summary, nextAction, checkpoint?.openLoops, checkpoint?.returnHint];
-  const completeness = Math.round((completenessFields.filter(Boolean).length / completenessFields.length) * 100);
+  const rawCompleteness = Math.round((completenessFields.filter(Boolean).length / completenessFields.length) * 100);
+  const completeness = checkpoint?.captureMode === "quick" ? Math.min(rawCompleteness, 50) : rawCompleteness;
 
   return {
     project,

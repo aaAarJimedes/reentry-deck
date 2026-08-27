@@ -3,8 +3,10 @@ import { describe, test } from "node:test";
 
 import {
   CRUMB_TYPES,
+  CHECKPOINT_CAPTURE_MODES,
   PROJECT_STATUSES,
   SCHEMA_VERSION,
+  SESSION_CLOSE_REASONS,
   SESSION_STATUSES,
   createCheckpoint,
   createCrumb,
@@ -14,6 +16,7 @@ import {
   isoNow,
   makeId,
   normalizeState,
+  validateImportCandidate,
   validateState
 } from "../src/core/model.js";
 
@@ -25,9 +28,13 @@ describe("model constants and helpers", () => {
     assert.deepEqual(PROJECT_STATUSES, ["active", "paused", "blocked", "archived"]);
     assert.deepEqual(CRUMB_TYPES, ["note", "discovery", "decision", "question", "blocker", "next"]);
     assert.deepEqual(SESSION_STATUSES, ["active", "completed", "abandoned"]);
+    assert.deepEqual(SESSION_CLOSE_REASONS, ["checkpoint", "quick-dock", "interrupted"]);
+    assert.deepEqual(CHECKPOINT_CAPTURE_MODES, ["manual", "quick"]);
     assert.equal(Object.isFrozen(PROJECT_STATUSES), true);
     assert.equal(Object.isFrozen(CRUMB_TYPES), true);
     assert.equal(Object.isFrozen(SESSION_STATUSES), true);
+    assert.equal(Object.isFrozen(SESSION_CLOSE_REASONS), true);
+    assert.equal(Object.isFrozen(CHECKPOINT_CAPTURE_MODES), true);
   });
 
   test("isoNow accepts a timestamp and makeId applies its prefix", () => {
@@ -133,7 +140,9 @@ describe("model factories", () => {
       status: "active",
       startedAt: NOW_ISO,
       endedAt: null,
-      checkpointId: null
+      checkpointId: null,
+      sourceCheckpointId: null,
+      closeReason: null
     });
     assert.deepEqual(crumb, {
       id: "c1",
@@ -152,6 +161,7 @@ describe("model factories", () => {
       nextAction: "next",
       openLoops: "",
       returnHint: "hint",
+      captureMode: "manual",
       createdAt: NOW_ISO
     });
   });
@@ -328,6 +338,62 @@ describe("validateState", () => {
       "记录 ID 重复：same",
       "记录 ID 重复：same",
       "存在缺少 ID 的记录"
+    ]);
+  });
+
+  test("rejects multiple simultaneous active sessions", () => {
+    const state = createEmptyState(NOW);
+    state.projects.push(createProject({ id: "p1" }, NOW));
+    state.sessions.push(
+      createSession({ id: "s1", projectId: "p1" }, NOW),
+      createSession({ id: "s2", projectId: "p1" }, NOW)
+    );
+
+    assert.deepEqual(validateState(state), ["同一时间只能有一个活动会话"]);
+  });
+});
+
+describe("validateImportCandidate", () => {
+  test("rejects lossy collection coercion and orphaned records before normalization", () => {
+    const malformed = createEmptyState(NOW);
+    malformed.sessions = {};
+    assert.match(validateImportCandidate(malformed).join("；"), /会话列表无效/);
+
+    const orphaned = createEmptyState(NOW);
+    orphaned.sessions.push(createSession({ id: "s1", projectId: "missing" }, NOW));
+    assert.deepEqual(validateImportCandidate(orphaned), ["会话引用了不存在的项目：s1"]);
+  });
+
+  test("rejects dangling session references and unsupported enum values", () => {
+    const state = createEmptyState(NOW);
+    state.projects.push(createProject({ id: "p1" }, NOW));
+    state.crumbs.push({ id: "c1", projectId: "p1", sessionId: "missing", type: "mystery" });
+
+    assert.deepEqual(validateImportCandidate(state), [
+      "面包屑引用了不存在的会话：c1",
+      "面包屑类型无效：mystery"
+    ]);
+  });
+
+  test("rejects broken session lifecycle and checkpoint references", () => {
+    const state = createEmptyState(NOW);
+    state.projects.push(createProject({ id: "p1", status: "archived" }, NOW));
+    const brokenSession = createSession({
+      id: "s1",
+      projectId: "p1",
+      endedAt: NOW_ISO,
+      checkpointId: "missing-close",
+      sourceCheckpointId: "missing-source"
+    }, NOW);
+    brokenSession.closeReason = "not-a-reason";
+    state.sessions.push(brokenSession);
+
+    assert.deepEqual(validateImportCandidate(state), [
+      "会话关闭原因无效：not-a-reason",
+      "会话引用了不存在的检查点：s1",
+      "会话来源检查点不存在：s1",
+      "活动会话不能包含结束时间：s1",
+      "归档项目不能包含活动会话：s1"
     ]);
   });
 });
