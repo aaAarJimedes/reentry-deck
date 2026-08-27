@@ -50,6 +50,24 @@ describe("import snapshot inspection", () => {
     assert.equal(unsafeMetadata, null);
   });
 
+  test("binds legacy defaults to the first preview instead of the later confirmation time", () => {
+    const legacy = {
+      projects: [{ id: "legacy", title: "Legacy" }],
+      sessions: [],
+      crumbs: [],
+      checkpoints: []
+    };
+    const first = buildImportPreview(legacy, workspace(), T0);
+    const second = buildImportPreview(first.normalizedSnapshot, workspace(), T1);
+
+    const firstProject = first.normalizedSnapshot.projects[0];
+    const secondProject = second.normalizedSnapshot.projects[0];
+    assert.equal(firstProject.createdAt, new Date(T0).toISOString());
+    assert.equal(firstProject.updatedAt, new Date(T0).toISOString());
+    assert.equal(firstProject.lastOpenedAt, new Date(T0).toISOString());
+    assert.deepEqual(secondProject, firstProject);
+  });
+
   test("verifies checksummed envelopes and rejects malformed or mismatched integrity metadata", () => {
     const raw = workspace([createProject({ id: "checked", title: "Checked" }, T0)]);
     const checksum = checksumSnapshotData(raw);

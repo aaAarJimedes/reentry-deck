@@ -66,6 +66,7 @@ export function buildImportPreview(value, currentState, now = Date.now()) {
     || Object.values(collections).some((change) => change.added || change.removed || change.changed || change.orderChanged);
 
   return {
+    normalizedSnapshot: incomingState,
     source,
     currentRevision: currentState.meta.revision,
     incomingRevision: incomingState.meta.revision,

@@ -163,7 +163,11 @@ export class ReentryApp {
     const state = this.#store.getState();
     const reopenImportPreview = Boolean(this.#root.querySelector("#import-preview-dialog")?.open && this.#pendingImport);
     if (this.#pendingImport && this.#pendingImport.baseState !== state) {
-      this.#pendingImport.preview = this.#store.previewImport(this.#pendingImport.value);
+      this.#pendingImport.preview = {
+        ...this.#store.previewImport(this.#pendingImport.value),
+        source: this.#pendingImport.source
+      };
+      this.#pendingImport.value = this.#pendingImport.preview.normalizedSnapshot;
       this.#pendingImport.baseState = state;
       this.#pendingImport.refreshed = true;
     }
@@ -1369,9 +1373,11 @@ export class ReentryApp {
     try {
       const parsed = await readBackupFile(file, { signal: controller.signal });
       if (!isCurrentRequest()) return;
+      const preview = this.#store.previewImport(parsed);
       this.#pendingImport = {
-        value: parsed,
-        preview: this.#store.previewImport(parsed),
+        value: preview.normalizedSnapshot,
+        preview,
+        source: preview.source,
         baseState: this.#store.getState(),
         fileName: file.name || "未命名备份.json",
         fileSize: file.size,
@@ -1392,7 +1398,8 @@ export class ReentryApp {
     if (!pending || !pending.preview.hasContentChanges) return;
     const currentState = this.#store.getState();
     if (currentState !== pending.baseState) {
-      pending.preview = this.#store.previewImport(pending.value);
+      pending.preview = { ...this.#store.previewImport(pending.value), source: pending.source };
+      pending.value = pending.preview.normalizedSnapshot;
       pending.baseState = currentState;
       pending.refreshed = true;
       this.render();
