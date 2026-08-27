@@ -43,11 +43,15 @@ export function createEmptyState(now = Date.now()) {
 
 export function createProject(input = {}, now = Date.now()) {
   const timestamp = isoNow(now);
+  const description = cleanText(input.description);
+  const nextAction = cleanText(input.nextAction);
   return {
     id: input.id ?? makeId("project"),
     title: cleanText(input.title) || "未命名项目",
-    description: cleanText(input.description),
-    nextAction: cleanText(input.nextAction),
+    description,
+    descriptionUpdatedAt: input.descriptionUpdatedAt ?? (description ? input.updatedAt ?? timestamp : null),
+    nextAction,
+    nextActionUpdatedAt: input.nextActionUpdatedAt ?? (nextAction ? input.updatedAt ?? timestamp : null),
     color: COLOR_PALETTE.includes(input.color) ? input.color : COLOR_PALETTE[0],
     status: PROJECT_STATUSES.includes(input.status) ? input.status : "active",
     createdAt: input.createdAt ?? timestamp,
@@ -80,6 +84,7 @@ export function createCrumb(input = {}, now = Date.now()) {
     type: CRUMB_TYPES.includes(input.type) ? input.type : "note",
     text: cleanText(input.text),
     pinned: Boolean(input.pinned),
+    resolvedAt: input.resolvedAt ?? null,
     createdAt: input.createdAt ?? isoNow(now)
   };
 }
@@ -162,6 +167,12 @@ export function validateState(state) {
   if (Array.isArray(state?.sessions) && state.sessions.filter((item) => item?.status === "active").length > 1) {
     errors.push("同一时间只能有一个活动会话");
   }
+  if (Array.isArray(state?.crumbs)) {
+    for (const crumb of state.crumbs) {
+      if (crumb?.resolvedAt && !["question", "blocker"].includes(crumb.type)) errors.push(`只有问题或阻塞可以标记为已解决：${crumb.id ?? "未知"}`);
+      if (crumb?.resolvedAt && !isValidDate(crumb.resolvedAt)) errors.push(`面包屑解决时间无效：${crumb.id ?? "未知"}`);
+    }
+  }
   return errors;
 }
 
@@ -217,4 +228,8 @@ function isObject(value) {
 
 function safeInteger(value, fallback) {
   return Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+}
+
+function isValidDate(value) {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
 }

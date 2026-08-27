@@ -207,7 +207,7 @@ export class ReentryApp {
     return `
       <section class="reentry-hero" aria-labelledby="recommended-heading">
         <div>
-          <p class="eyebrow">${isRunning ? "正在进行" : card.project.status === "blocked" ? "值得先解阻" : "建议复航"}</p>
+          <p class="eyebrow">${isRunning ? "正在进行" : card.project.status === "blocked" ? "值得先解阻" : "建议复航"} · ${escapeHTML(card.recommendationReason || "现场可恢复")}</p>
           <h2 id="recommended-heading">${escapeHTML(card.project.title)}</h2>
           <p class="hero-summary">${escapeHTML(card.summary)}</p>
           <p class="hero-action-label">回来后的第一动作</p>
@@ -284,14 +284,20 @@ export class ReentryApp {
   }
 
   #renderReentryPanel(card, anotherRunning) {
+    const checkpointLabel = card.checkpoint
+      ? `${card.checkpoint.captureMode === "quick" ? "快速停靠，需复核" : "可靠检查点"} · ${formatDateTime(card.checkpoint.createdAt)}`
+      : "尚无检查点";
     return `
       <section class="panel reentry-card" aria-labelledby="reentry-card-heading">
         <div class="panel-header inline-between"><div><h2 id="reentry-card-heading">60 秒复航卡</h2><p>${card.checkpoint ? (card.checkpoint.captureMode === "quick" ? `快速停靠 · ${formatDateTime(card.checkpoint.createdAt)} · 请先复核` : `来自 ${formatDateTime(card.checkpoint.createdAt)} 的可靠检查点`) : "信息不足时，从三问校准开始"}</p></div><span class="soft-pill">${icon("compass")} ${card.completeness}%</span></div>
         <div class="panel-body">
-          <div class="reentry-section"><span class="reentry-label">${icon("trail")} 01 · 上次停在哪里</span><p class="reentry-value">${textBlock(card.summary)}</p></div>
-          <div class="reentry-section"><span class="reentry-label">${icon("alert")} 02 · 仍待确认</span><p class="reentry-value ${card.openLoops ? "" : "muted"}">${textBlock(card.openLoops || "没有明确记录。开始前问自己：当前最大的未知是什么？")}</p></div>
-          <div class="reentry-section"><span class="reentry-label">${icon("spark")} 03 · 复航提示</span><p class="reentry-value">${textBlock(card.returnHint)}</p></div>
-          <div class="reentry-section"><span class="reentry-label">${icon("arrow")} 04 · 第一物理动作</span><p class="reentry-value next-action">${textBlock(card.nextAction)}</p></div>
+          ${card.contextGapSessions.length ? `<div class="evidence-warning" role="status">${icon("alert")} 检查点之后还有 ${card.contextGapSessions.length} 段未收拢或中断的会话，完整度已下调；请先核对现场。</div>` : ""}
+          <div class="reentry-section"><span class="reentry-label">${icon("trail")} 01 · 可靠检查点</span><p class="reentry-value">${textBlock(card.checkpoint?.summary || "还没有可靠检查点；以下内容来自零散证据。")}</p><p class="evidence-source">${escapeHTML(checkpointLabel)}</p></div>
+          <div class="reentry-section"><span class="reentry-label">${icon("spark")} 02 · 检查点后发生了什么</span>${this.#renderEvidenceList(card.changesSinceCheckpoint, "检查点之后没有新的状态、决定或下一步记录。")}</div>
+          <div class="reentry-section"><span class="reentry-label">${icon("check")} 03 · 最近决定</span>${this.#renderEvidenceList(card.decisions, "还没有记录明确决定。")}</div>
+          <div class="reentry-section"><span class="reentry-label">${icon("alert")} 04 · 仍未解决</span>${this.#renderEvidenceList(card.unresolvedSignals, "当前没有未解决的问题或阻塞。", true)}</div>
+          <div class="reentry-section"><span class="reentry-label">${icon("arrow")} 05 · 第一物理动作</span><p class="reentry-value next-action">${textBlock(card.nextAction)}</p><p class="evidence-source">来源：${escapeHTML(card.nextActionEvidence?.label || "引导建议")} ${card.nextActionEvidence?.createdAt ? `· ${formatDateTime(card.nextActionEvidence.createdAt)}` : ""}</p></div>
+          <div class="reentry-section"><span class="reentry-label">${icon("compass")} 复航提示</span><p class="reentry-value">${textBlock(card.returnHint)}</p></div>
           <div class="reentry-section">
             <ol class="reentry-steps"><li>读完上次状态，不急着打开所有材料。</li><li>确认未决事项现在是否仍成立。</li><li>用上面的具体动作开始一段短会话。</li></ol>
           </div>
@@ -365,15 +371,22 @@ export class ReentryApp {
       </section>`;
   }
 
-  #renderCrumb(crumb) {
+  #renderCrumb(crumb, interactive = true) {
+    const signal = ["question", "blocker"].includes(crumb.type);
     return `
-      <article class="timeline-item">
+      <article class="timeline-item" data-resolved="${Boolean(crumb.resolvedAt)}">
         <span class="timeline-dot" data-type="${attr(crumb.type)}" aria-hidden="true"></span>
         <div class="timeline-content">
-          <div class="timeline-meta"><span class="crumb-type">${CRUMB_LABELS[crumb.type] ?? "记录"}</span><time datetime="${attr(crumb.createdAt)}">${formatRelative(crumb.createdAt)} · ${formatDateTime(crumb.createdAt)}</time>${crumb.pinned ? `<span title="已置顶">${icon("pin")}</span>` : ""}</div>
+          <div class="timeline-meta"><span class="crumb-type">${CRUMB_LABELS[crumb.type] ?? "记录"}</span><time datetime="${attr(crumb.createdAt)}">${formatRelative(crumb.createdAt)} · ${formatDateTime(crumb.createdAt)}</time>${crumb.resolvedAt ? `<span class="resolved-pill">已解决 · ${formatRelative(crumb.resolvedAt)}</span>` : ""}${crumb.pinned ? `<span title="已置顶">${icon("pin")}</span>` : ""}</div>
           <p class="timeline-text">${textBlock(crumb.text)}</p>
+          ${signal && interactive ? `<button class="crumb-resolution" type="button" data-action="toggle-crumb-resolution" data-resolution-context="timeline" data-crumb-id="${attr(crumb.id)}" aria-pressed="${Boolean(crumb.resolvedAt)}">${crumb.resolvedAt ? "重新打开" : "标记已解决"}</button>` : ""}
         </div>
       </article>`;
+  }
+
+  #renderEvidenceList(items, emptyText, resolvable = false) {
+    if (!items.length) return `<p class="reentry-value muted">${escapeHTML(emptyText)}</p>`;
+    return `<ul class="evidence-list">${items.map((item) => `<li><span>${textBlock(item.text)}</span><small>${escapeHTML(CRUMB_LABELS[item.type] ?? "记录")} · ${formatDateTime(item.createdAt)}</small>${resolvable ? `<button type="button" data-action="toggle-crumb-resolution" data-resolution-context="reentry" data-crumb-id="${attr(item.id)}">标记已解决</button>` : ""}</li>`).join("")}</ul>`;
   }
 
   #renderArchive(state) {
@@ -395,7 +408,7 @@ export class ReentryApp {
         <div class="project-header-actions"><button class="primary-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}">恢复到暂泊状态</button></div>
       </section>
       <section class="panel reentry-card"><div class="panel-header"><h2>最后的复航现场</h2><p>恢复项目后可从这个检查点继续。</p></div><div class="panel-body"><div class="reentry-section"><span class="reentry-label">最后状态</span><p class="reentry-value">${textBlock(card.summary)}</p></div><div class="reentry-section"><span class="reentry-label">下一动作</span><p class="reentry-value next-action">${textBlock(card.nextAction)}</p></div></div></section>
-      <section class="panel" style="margin-top:18px"><div class="panel-header inline-between"><div><h2>历史轨迹</h2><p>归档项目不会接受新的会话或记录。</p></div><span class="soft-pill">${crumbs.length} 条</span></div><div class="panel-body">${crumbs.length ? `<div class="timeline">${crumbs.map((crumb) => this.#renderCrumb(crumb)).join("")}</div>` : '<div class="timeline-empty">没有历史轨迹。</div>'}</div></section>`;
+      <section class="panel" style="margin-top:18px"><div class="panel-header inline-between"><div><h2>历史轨迹</h2><p>归档项目不会接受新的会话或记录。</p></div><span class="soft-pill">${crumbs.length} 条</span></div><div class="panel-body">${crumbs.length ? `<div class="timeline">${crumbs.map((crumb) => this.#renderCrumb(crumb, false)).join("")}</div>` : '<div class="timeline-empty">没有历史轨迹。</div>'}</div></section>`;
   }
 
   #renderSettings(state) {
@@ -491,6 +504,7 @@ export class ReentryApp {
     if (action === "export-data") this.#exportData();
     if (action === "choose-import") this.#root.querySelector("#import-file")?.click();
     if (action === "set-theme") this.#setTheme(control.dataset.theme);
+    if (action === "toggle-crumb-resolution") this.#toggleCrumbResolution(control.dataset.crumbId, control.dataset.resolutionContext);
   }
 
   #onSubmit(event) {
@@ -591,7 +605,10 @@ export class ReentryApp {
       next.crumbs.push(crumb);
       const project = next.projects.find((item) => item.id === session.projectId);
       project.updatedAt = crumb.createdAt;
-      if (crumb.type === "next") project.nextAction = crumb.text;
+      if (crumb.type === "next") {
+        project.nextAction = crumb.text;
+        project.nextActionUpdatedAt = crumb.createdAt;
+      }
     });
     this.#announce(`${CRUMB_LABELS[crumb.type]}已记录`);
     this.#toast(`${CRUMB_LABELS[crumb.type]}已留在轨迹中。`);
@@ -613,6 +630,7 @@ export class ReentryApp {
       currentSession.closeReason = "checkpoint";
       const project = next.projects.find((item) => item.id === session.projectId);
       project.nextAction = checkpoint.nextAction;
+      project.nextActionUpdatedAt = checkpoint.createdAt;
       project.updatedAt = checkpoint.createdAt;
     });
     form.closest("dialog")?.close();
@@ -653,7 +671,10 @@ export class ReentryApp {
         current.closeReason = continueAfter ? "interrupted" : "quick-dock";
         const project = next.projects.find((item) => item.id === current.projectId);
         project.updatedAt = checkpoint.createdAt;
-        if (recordedNextAction) project.nextAction = input.nextAction;
+        if (recordedNextAction) {
+          project.nextAction = input.nextAction;
+          project.nextActionUpdatedAt = checkpoint.createdAt;
+        }
         if (followUp) {
           next.sessions.push(followUp);
           project.lastOpenedAt = followUp.startedAt;
@@ -678,8 +699,10 @@ export class ReentryApp {
       if (!project) throw new Error("找不到要编辑的项目。 ");
       project.title = title;
       project.description = String(data.description ?? "").trim();
+      project.descriptionUpdatedAt = isoNow();
       project.nextAction = String(data.nextAction ?? "").trim();
-      project.updatedAt = isoNow();
+      project.nextActionUpdatedAt = project.nextAction ? project.descriptionUpdatedAt : null;
+      project.updatedAt = project.descriptionUpdatedAt;
     });
     form.closest("dialog")?.close();
     this.#toast("项目说明已更新。 ");
@@ -699,6 +722,20 @@ export class ReentryApp {
     } catch (error) {
       this.#toast(error.message, "error");
     }
+  }
+
+  #toggleCrumbResolution(crumbId, context) {
+    this.#focusSelector = `[data-action="toggle-crumb-resolution"][data-resolution-context="${CSS.escape(context || "timeline")}"][data-crumb-id="${CSS.escape(crumbId)}"]`;
+    this.#store.update((state) => {
+      const crumb = state.crumbs.find((item) => item.id === crumbId);
+      if (!crumb || !["question", "blocker"].includes(crumb.type)) throw new Error("找不到可处理的问题或阻塞。 ");
+      crumb.resolvedAt = crumb.resolvedAt ? null : isoNow();
+      const project = state.projects.find((item) => item.id === crumb.projectId);
+      if (project) project.updatedAt = isoNow();
+    });
+    const resolved = Boolean(this.#store.getState().crumbs.find((item) => item.id === crumbId)?.resolvedAt);
+    this.#announce(resolved ? "事项已标记为解决" : "事项已重新打开");
+    this.#toast(resolved ? "已从待解决清单移除。" : "已重新加入待解决清单。");
   }
 
   #archiveProject(projectId) {

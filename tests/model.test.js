@@ -89,7 +89,9 @@ describe("model factories", () => {
       id: "p1",
       title: "Alpha",
       description: "Description",
+      descriptionUpdatedAt: "2020-01-02T00:00:00.000Z",
       nextAction: "",
+      nextActionUpdatedAt: null,
       color: "fern",
       status: "active",
       createdAt: "2020-01-01T00:00:00.000Z",
@@ -151,6 +153,7 @@ describe("model factories", () => {
       type: "note",
       text: "note",
       pinned: true,
+      resolvedAt: null,
       createdAt: NOW_ISO
     });
     assert.deepEqual(checkpoint, {
@@ -394,6 +397,21 @@ describe("validateImportCandidate", () => {
       "会话来源检查点不存在：s1",
       "活动会话不能包含结束时间：s1",
       "归档项目不能包含活动会话：s1"
+    ]);
+  });
+
+  test("rejects invalid resolution metadata without losing legitimate resolved signals", () => {
+    const state = createEmptyState(NOW);
+    state.projects.push(createProject({ id: "p1" }, NOW));
+    state.crumbs.push(
+      createCrumb({ id: "resolved", projectId: "p1", type: "question", text: "done", resolvedAt: NOW_ISO }, NOW),
+      createCrumb({ id: "wrong-type", projectId: "p1", type: "note", text: "note", resolvedAt: NOW_ISO }, NOW),
+      createCrumb({ id: "bad-date", projectId: "p1", type: "blocker", text: "blocked", resolvedAt: "not-a-date" }, NOW)
+    );
+
+    assert.deepEqual(validateImportCandidate(state), [
+      "只有问题或阻塞可以标记为已解决：wrong-type",
+      "面包屑解决时间无效：bad-date"
     ]);
   });
 });

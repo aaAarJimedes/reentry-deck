@@ -121,7 +121,7 @@ test("getProjectActivity ignores other projects and falls back to createdAt", ()
   assert.equal(getProjectActivity(state, "p1").lastActivityAt, project.createdAt);
 });
 
-test("buildReentryCard gives the newest checkpoint first priority for checkpoint fields", () => {
+test("buildReentryCard uses the newest timestamped evidence instead of blindly trusting a checkpoint", () => {
   const project = makeProject("p1", {
     description: "project summary",
     nextAction: "project next"
@@ -157,11 +157,14 @@ test("buildReentryCard gives the newest checkpoint first priority for checkpoint
   const card = buildReentryCard(state, "p1", NOW);
 
   assert.equal(card.checkpoint, latestCheckpoint);
-  assert.equal(card.summary, "checkpoint summary");
-  assert.equal(card.nextAction, "checkpoint next");
+  assert.equal(card.summary, "crumb summary");
+  assert.equal(card.summaryEvidence.id, "summary");
+  assert.equal(card.nextAction, "crumb next");
+  assert.equal(card.nextActionEvidence.id, "next");
   assert.equal(card.openLoops, "checkpoint loops");
   assert.equal(card.returnHint, "checkpoint hint");
   assert.equal(card.completeness, 100);
+  assert.deepEqual(card.changesSinceCheckpoint.map((item) => item.id), ["next", "summary"]);
 });
 
 test("quick-dock checkpoints are visibly capped at low-confidence readiness", () => {
@@ -217,7 +220,7 @@ test("buildReentryCard applies crumb, project, and default fallbacks independent
     assert.equal(card.nextAction, "new next");
     assert.equal(card.openLoops, "open blocker；open question");
     assert.equal(card.returnHint, "先看最近轨迹，再开始一次短会话。");
-    assert.equal(card.completeness, 25, "completeness measures populated checkpoint fields, with the resolved next action included");
+    assert.equal(card.completeness, 75, "readiness counts actual evidence and does not count fallback prose");
   });
 
   await t.test("project fields are used when no eligible crumbs exist", () => {
@@ -238,7 +241,7 @@ test("buildReentryCard applies crumb, project, and default fallbacks independent
     assert.equal(card.nextAction, "先写下一个足够具体的下一步。");
     assert.equal(card.openLoops, "");
     assert.equal(card.returnHint, "先看最近轨迹，再开始一次短会话。");
-    assert.equal(card.completeness, 25);
+    assert.equal(card.completeness, 0);
   });
 });
 
@@ -275,7 +278,8 @@ test("buildReentryCard sorts and limits active sessions, signals, decisions, and
 
   assert.equal(card.activeSession.id, "active-new");
   assert.deepEqual(card.unresolvedSignals.map((item) => item.id), ["blocker-new", "question-mid", "blocker-mid"]);
-  assert.deepEqual(card.decisions.map((item) => item.id), ["decision-newest", "decision-new", "decision-mid"]);
+  assert.deepEqual(card.decisions.map((item) => item.id), ["decision-newest", "decision-new"]);
+  assert.deepEqual(card.changesSinceCheckpoint.map((item) => item.id), ["note-new", "decision-newest", "decision-new"]);
   assert.deepEqual(card.recentTrail.map((item) => item.id), ["note-new", "blocker-new", "decision-newest", "question-mid", "decision-new"]);
   assert.deepEqual(crumbs.map((item) => item.id), originalCrumbOrder, "building a card must not reorder state crumbs");
   assert.deepEqual(sessions.map((item) => item.id), originalSessionOrder, "building a card must not reorder state sessions");
@@ -294,7 +298,7 @@ test("buildReentryCard reports activity age and returns null for an unknown proj
   assert.equal(buildReentryCard(state, "missing", NOW), null);
 });
 
-test("rankProjectsForReentry filters archived projects and combines status, session, staleness, and context scores", () => {
+test("rankProjectsForReentry keeps active work ahead of stale paused work and explains every recommendation", () => {
   const projects = [
     makeProject("active-fresh", { status: "active", createdAt: at(0), updatedAt: at(0), lastOpenedAt: at(0) }),
     makeProject("blocked-stale-context", { status: "blocked", createdAt: at(-40 * DAY), updatedAt: at(-40 * DAY), lastOpenedAt: at(-40 * DAY) }),
@@ -319,15 +323,55 @@ test("rankProjectsForReentry filters archived projects and combines status, sess
   const ranked = rankProjectsForReentry(state, NOW);
 
   assert.deepEqual(ranked.map((card) => card.project.id), [
-    "blocked-stale-context", // 40 status + 45 capped staleness + 12 checkpoint
-    "paused-active-session", // 10 status + 80 active session + a small age component
-    "paused-very-stale", // 10 status + 45 capped staleness
-    "active-fresh", // 30 status
-    "paused-fresh-context", // 10 status + 12 checkpoint
-    "paused-fresh" // 10 status
+    "paused-active-session",
+    "active-fresh",
+    "blocked-stale-context",
+    "paused-very-stale",
+    "paused-fresh-context",
+    "paused-fresh"
   ]);
+  assert.equal(ranked[0].recommendationReason, "有尚未收拢的活动会话");
+  assert.ok(ranked.every((card) => card.recommendationScore >= 0 && card.recommendationReason));
   assert.equal(ranked.some((card) => card.project.id === "archived"), false);
   assert.deepEqual(state.projects.map((project) => project.id), projects.map((project) => project.id));
+});
+
+test("resolved questions disappear from open evidence and can be reconstructed from timestamps", () => {
+  const state = makeState({
+    projects: [makeProject("p1")],
+    crumbs: [
+      { id: "open", projectId: "p1", type: "question", text: "still open", resolvedAt: null, createdAt: at(-2_000) },
+      { id: "done", projectId: "p1", type: "blocker", text: "fixed", resolvedAt: at(-500), createdAt: at(-1_000) }
+    ]
+  });
+
+  const card = buildReentryCard(state, "p1", NOW);
+  assert.deepEqual(card.unresolvedSignals.map((item) => item.id), ["open"]);
+  assert.equal(card.lastActivityAt, at(-500), "resolution time is itself meaningful project activity");
+});
+
+test("an unclosed session after the checkpoint lowers readiness and old next records never override it", () => {
+  const checkpoint = {
+    id: "cp",
+    projectId: "p1",
+    summary: "checkpoint summary",
+    nextAction: "checkpoint next",
+    returnHint: "known route",
+    captureMode: "manual",
+    createdAt: at(-5_000)
+  };
+  const state = makeState({
+    projects: [makeProject("p1", { nextAction: "initial next", nextActionUpdatedAt: at(-10_000) })],
+    checkpoints: [checkpoint],
+    crumbs: [{ id: "old-next", projectId: "p1", type: "next", text: "obsolete", createdAt: at(-6_000) }],
+    sessions: [{ id: "open-session", projectId: "p1", status: "active", startedAt: at(-4_000), endedAt: null, checkpointId: null }]
+  });
+
+  const card = buildReentryCard(state, "p1", NOW);
+  assert.equal(card.nextAction, "checkpoint next");
+  assert.equal(card.nextActionEvidence.id, "cp");
+  assert.deepEqual(card.contextGapSessions.map((item) => item.id), ["open-session"]);
+  assert.equal(card.completeness, 80);
 });
 
 test("getProjectStats counts only matching records and recognized statuses/types", () => {
