@@ -1,4 +1,4 @@
-import { CRUMB_TYPES, createCrumb } from "./model.js";
+import { CRUMB_TYPES, createCrumb, isoAtOrAfter } from "./model.js";
 
 export function prepareQuickCapture(state, input, now = Date.now()) {
   const project = state?.projects?.find((item) => item.id === input?.projectId && item.status !== "archived");
@@ -11,7 +11,7 @@ export function prepareQuickCapture(state, input, now = Date.now()) {
     type: input.type,
     text: input.text,
     pinned: input.pinned === true || input.pinned === "on"
-  }, now);
+  }, isoAtOrAfter(now, project.updatedAt, session?.startedAt));
   if (!crumb.text) throw new Error("先写下一条记录。 ");
 
   return {

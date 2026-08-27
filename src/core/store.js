@@ -1,8 +1,8 @@
-import { createEmptyState, isoNow, normalizeState, validateImportCandidate, validateState } from "./model.js";
+import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate, validateState } from "./model.js";
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.29.0";
+export const APP_VERSION = "0.30.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {
@@ -76,7 +76,7 @@ export class AppStore {
   update(recipe, now = Date.now()) {
     const next = structuredClone(this.#state);
     recipe(next);
-    next.meta.updatedAt = isoNow(now);
+    next.meta.updatedAt = isoAtOrAfter(now, this.#state.meta.updatedAt);
     next.meta.revision += 1;
     const errors = validateState(next);
     if (errors.length) throw new Error(`无法保存：${errors.join("；")}`);
@@ -92,7 +92,7 @@ export class AppStore {
     const next = normalizeState(value, now);
     const errors = validateState(next);
     if (errors.length) throw new Error(`导入失败：${errors.join("；")}`);
-    next.meta.updatedAt = isoNow(now);
+    next.meta.updatedAt = isoAtOrAfter(now, this.#state.meta.updatedAt, next.meta.updatedAt);
     next.meta.revision += 1;
     this.#persist(next);
     this.#state = next;
@@ -101,7 +101,7 @@ export class AppStore {
   }
 
   reset(now = Date.now()) {
-    const next = createEmptyState(now);
+    const next = createEmptyState(isoAtOrAfter(now, this.#state.meta.updatedAt));
     this.#persist(next);
     this.#state = next;
     this.#emit();
@@ -111,7 +111,7 @@ export class AppStore {
     const data = structuredClone(this.#state);
     return {
       format: "reentry-deck-backup",
-      exportedAt: isoNow(),
+      exportedAt: isoAtOrAfter(Date.now(), this.#state.meta.updatedAt),
       appVersion: APP_VERSION,
       checksum: checksumSnapshotData(data),
       data
@@ -129,7 +129,7 @@ export class AppStore {
 
   restorePrevious(now = Date.now()) {
     const restored = this.#readPrevious(now);
-    restored.meta.updatedAt = isoNow(now);
+    restored.meta.updatedAt = isoAtOrAfter(now, this.#state.meta.updatedAt, restored.meta.updatedAt);
     restored.meta.revision = this.#state.meta.revision + 1;
     this.#persist(restored);
     this.#state = restored;

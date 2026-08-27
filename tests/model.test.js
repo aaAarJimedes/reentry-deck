@@ -14,6 +14,7 @@ import {
   createEmptyState,
   createProject,
   createSession,
+  isoAtOrAfter,
   isoNow,
   makeId,
   normalizeState,
@@ -46,6 +47,15 @@ describe("model constants and helpers", () => {
     assert.match(first, /^project_.+/);
     assert.match(second, /^project_.+/);
     assert.notEqual(first, second);
+  });
+
+  test("isoAtOrAfter preserves the latest valid business anchor during clock rollback", () => {
+    const earlier = "2026-08-27T23:00:00.000Z";
+    const later = "2026-08-28T05:00:00.000Z";
+
+    assert.equal(isoAtOrAfter(earlier, NOW_ISO, "invalid", later), later);
+    assert.equal(isoAtOrAfter(NOW), NOW_ISO);
+    assert.throws(() => isoAtOrAfter("not-a-date"), /无法生成有效时间/);
   });
 });
 

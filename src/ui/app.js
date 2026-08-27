@@ -3,7 +3,7 @@ import {
   createCrumb,
   createProject,
   createSession,
-  isoNow
+  isoAtOrAfter
 } from "../core/model.js";
 import { prepareQuickCapture } from "../core/capture.js";
 import { readBackupFile } from "../core/backup-file.js";
@@ -877,7 +877,7 @@ export class ReentryApp {
   }
 
   #createProject(data, form) {
-    const project = createProject(data);
+    const project = createProject(data, isoAtOrAfter(Date.now(), this.#store.getState().meta.updatedAt));
     this.#store.update((state) => {
       state.projects.push(project);
       state.ui.selectedProjectId = project.id;
@@ -910,7 +910,10 @@ export class ReentryApp {
     const project = state.projects.find((item) => item.id === data.projectId);
     if (!project || project.status === "archived") throw new Error("项目不可用，无法开始会话。 ");
     const sourceCheckpoint = state.checkpoints.filter((item) => item.projectId === project.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-    const session = createSession({ projectId: project.id, intention: data.intention, sourceCheckpointId: sourceCheckpoint?.id ?? null });
+    const session = createSession(
+      { projectId: project.id, intention: data.intention, sourceCheckpointId: sourceCheckpoint?.id ?? null },
+      isoAtOrAfter(Date.now(), project.updatedAt, sourceCheckpoint?.createdAt)
+    );
     this.#focusSelector = '[data-form="capture-crumb"] textarea';
     this.#store.update((next) => {
       next.sessions.push(session);
@@ -929,7 +932,11 @@ export class ReentryApp {
     const state = this.#store.getState();
     const session = state.sessions.find((item) => item.status === "active");
     if (!session) throw new Error("没有活动会话，无法记录现场。 ");
-    const crumb = createCrumb({ projectId: session.projectId, sessionId: session.id, type: data.type, text: data.text });
+    const project = state.projects.find((item) => item.id === session.projectId);
+    const crumb = createCrumb(
+      { projectId: session.projectId, sessionId: session.id, type: data.type, text: data.text },
+      isoAtOrAfter(Date.now(), session.startedAt, project?.updatedAt)
+    );
     if (!crumb.text) throw new Error("先写下一条记录。 ");
     this.#focusSelector = '[data-form="capture-crumb"] textarea';
     this.#store.update((next) => {
@@ -967,7 +974,11 @@ export class ReentryApp {
     const state = this.#store.getState();
     const session = state.sessions.find((item) => item.status === "active");
     if (!session) throw new Error("活动会话已经结束。 ");
-    const checkpoint = createCheckpoint({ ...data, projectId: session.projectId, sessionId: session.id });
+    const project = state.projects.find((item) => item.id === session.projectId);
+    const checkpoint = createCheckpoint(
+      { ...data, projectId: session.projectId, sessionId: session.id },
+      isoAtOrAfter(Date.now(), session.startedAt, project?.updatedAt)
+    );
     if (!checkpoint.summary || !checkpoint.nextAction) throw new Error("状态摘要和第一物理动作不能为空。 ");
     this.#focusSelector = "#main-content";
     this.#store.update((next) => {
@@ -1001,13 +1012,15 @@ export class ReentryApp {
       if (!activeSession || activeSession.id !== sessionId) throw new Error("这个会话已经不再活动，无需重复停靠。 ");
       const now = Date.now();
       const input = deriveQuickDockCheckpointInput(state, sessionId, now);
-      const checkpoint = createCheckpoint(input, now);
+      const project = state.projects.find((item) => item.id === activeSession.projectId);
+      const eventTime = isoAtOrAfter(now, activeSession.startedAt, project?.updatedAt);
+      const checkpoint = createCheckpoint(input, eventTime);
       const recordedNextAction = input.nextAction !== QUICK_DOCK_NOT_RECORDED.nextAction;
       const followUp = continueAfter ? createSession({
         projectId: activeSession.projectId,
         intention: recordedNextAction ? input.nextAction : activeSession.intention,
         sourceCheckpointId: checkpoint.id
-      }, now + 1) : null;
+      }, Date.parse(eventTime) + 1) : null;
 
       this.#focusSelector = continueAfter ? '[data-form="capture-crumb"] textarea' : "#main-content";
       this.#store.update((next) => {
@@ -1046,9 +1059,10 @@ export class ReentryApp {
     this.#store.update((state) => {
       const project = state.projects.find((item) => item.id === data.projectId);
       if (!project) throw new Error("找不到要编辑的项目。 ");
+      const changedAt = isoAtOrAfter(Date.now(), project.updatedAt);
       project.title = title;
       project.description = String(data.description ?? "").trim();
-      project.descriptionUpdatedAt = isoNow();
+      project.descriptionUpdatedAt = changedAt;
       project.nextAction = String(data.nextAction ?? "").trim();
       project.nextActionUpdatedAt = project.nextAction ? project.descriptionUpdatedAt : null;
       project.updatedAt = project.descriptionUpdatedAt;
@@ -1065,7 +1079,7 @@ export class ReentryApp {
         const project = state.projects.find((item) => item.id === projectId);
         if (!project) throw new Error("找不到项目。 ");
         project.status = status;
-        project.updatedAt = isoNow();
+        project.updatedAt = isoAtOrAfter(Date.now(), project.updatedAt);
       });
       this.#toast(`项目已标记为“${PROJECT_STATUS_LABELS[status]}”。`);
     } catch (error) {
@@ -1078,9 +1092,10 @@ export class ReentryApp {
     this.#store.update((state) => {
       const crumb = state.crumbs.find((item) => item.id === crumbId);
       if (!crumb || !["question", "blocker"].includes(crumb.type)) throw new Error("找不到可处理的问题或阻塞。 ");
-      crumb.resolvedAt = crumb.resolvedAt ? null : isoNow();
+      const changedAt = isoAtOrAfter(Date.now(), crumb.createdAt, crumb.resolvedAt);
+      crumb.resolvedAt = crumb.resolvedAt ? null : changedAt;
       const project = state.projects.find((item) => item.id === crumb.projectId);
-      if (project) project.updatedAt = isoNow();
+      if (project) project.updatedAt = isoAtOrAfter(changedAt, project.updatedAt);
     });
     const resolved = Boolean(this.#store.getState().crumbs.find((item) => item.id === crumbId)?.resolvedAt);
     this.#announce(resolved ? "事项已标记为解决" : "事项已重新打开");
@@ -1094,7 +1109,7 @@ export class ReentryApp {
       if (!crumb) throw new Error("找不到要置顶的轨迹。 ");
       crumb.pinned = !crumb.pinned;
       const project = state.projects.find((item) => item.id === crumb.projectId);
-      if (project) project.updatedAt = isoNow();
+      if (project) project.updatedAt = isoAtOrAfter(Date.now(), project.updatedAt, crumb.createdAt);
     });
     const pinned = Boolean(this.#store.getState().crumbs.find((item) => item.id === crumbId)?.pinned);
     this.#announce(pinned ? "轨迹已设为置顶航标" : "轨迹已取消置顶");
@@ -1130,7 +1145,7 @@ export class ReentryApp {
       this.#store.update((next) => {
         const item = next.projects.find((candidate) => candidate.id === projectId);
         item.status = "archived";
-        item.archivedAt = isoNow();
+        item.archivedAt = isoAtOrAfter(Date.now(), item.updatedAt);
         item.updatedAt = item.archivedAt;
       });
       location.hash = "#/";
@@ -1149,7 +1164,7 @@ export class ReentryApp {
       if (!project) throw new Error("找不到项目。 ");
       project.status = "paused";
       project.archivedAt = null;
-      project.updatedAt = isoNow();
+      project.updatedAt = isoAtOrAfter(Date.now(), project.updatedAt);
     });
     this.#toast("项目已恢复为暂泊状态。 ");
   }

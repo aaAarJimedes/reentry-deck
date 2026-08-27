@@ -36,6 +36,17 @@ describe("prepareQuickCapture", () => {
     assert.equal(result.crumb.pinned, false);
   });
 
+  test("clamps evidence time to project and session anchors when the system clock moves backward", () => {
+    const state = createEmptyState(NOW);
+    const anchor = "2026-08-28T06:00:00.000Z";
+    state.projects.push(createProject({ id: "p1", title: "Future anchor", updatedAt: anchor }, NOW));
+    state.sessions.push(createSession({ id: "s1", projectId: "p1", startedAt: anchor }, NOW));
+
+    const result = prepareQuickCapture(state, { projectId: "p1", type: "note", text: "kept in order" }, NOW);
+
+    assert.equal(result.crumb.createdAt, anchor);
+  });
+
   test("rejects archived or missing projects, invalid types, and blank evidence", () => {
     const state = createEmptyState(NOW);
     state.projects.push(createProject({ id: "archived", status: "archived" }, NOW), createProject({ id: "active" }, NOW));

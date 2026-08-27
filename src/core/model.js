@@ -31,6 +31,16 @@ export function isoNow(now = Date.now()) {
   return new Date(now).toISOString();
 }
 
+export function isoAtOrAfter(now = Date.now(), ...anchors) {
+  let timestamp = new Date(now).getTime();
+  if (!Number.isFinite(timestamp)) throw new RangeError("无法生成有效时间。 ");
+  for (const anchor of anchors) {
+    const parsed = Date.parse(anchor ?? "");
+    if (Number.isFinite(parsed)) timestamp = Math.max(timestamp, parsed);
+  }
+  return new Date(timestamp).toISOString();
+}
+
 export function createEmptyState(now = Date.now()) {
   const timestamp = isoNow(now);
   return {

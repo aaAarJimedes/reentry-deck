@@ -156,6 +156,17 @@ describe("AppStore loading and recovery", () => {
 });
 
 describe("AppStore updates and persistence", () => {
+  test("workspace metadata never moves backward when the system clock regresses", () => {
+    const store = new AppStore(new MemoryStorage(), T0, null);
+    store.update((draft) => draft.projects.push(createProject({ id: "p1" }, T1)), T1);
+    const latest = store.update((draft) => { draft.projects[0].title = "Later"; }, T2);
+    const regressed = store.update((draft) => { draft.projects[0].title = "Clock moved"; }, T0);
+
+    assert.equal(latest.meta.updatedAt, new Date(T2).toISOString());
+    assert.equal(regressed.meta.updatedAt, latest.meta.updatedAt);
+    assert.equal(regressed.meta.revision, latest.meta.revision + 1);
+  });
+
   test("update works on a clone, increments revision, persists, and emits the committed state", () => {
     const storage = new MemoryStorage();
     const store = new AppStore(storage, T0);
