@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { buildImportPreview, readImportSnapshot } from "../src/core/import-preview.js";
+import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "../src/core/import-preview.js";
 import { createCheckpoint, createCrumb, createEmptyState, createProject, createSession } from "../src/core/model.js";
 
 const T0 = Date.parse("2026-08-20T08:00:00.000Z");
@@ -30,8 +30,28 @@ describe("import snapshot inspection", () => {
     assert.deepEqual(result.source, {
       envelope: true,
       appVersion: "0.6.0",
-      exportedAt: "2026-08-27T12:00:00.000Z"
+      exportedAt: "2026-08-27T12:00:00.000Z",
+      checksumVerified: null
     });
+  });
+
+  test("verifies checksummed envelopes and rejects malformed or mismatched integrity metadata", () => {
+    const raw = workspace([createProject({ id: "checked", title: "Checked" }, T0)]);
+    const checksum = checksumSnapshotData(raw);
+    const result = readImportSnapshot({ format: "reentry-deck-backup", checksum, data: raw }, T1);
+
+    assert.equal(result.source.checksumVerified, true);
+    assert.match(checksum, /^fnv1a32:[0-9a-f]{8}$/u);
+    assert.throws(
+      () => readImportSnapshot({ format: "reentry-deck-backup", checksum: "broken", data: raw }, T1),
+      /校验码格式无效/
+    );
+    const changed = structuredClone(raw);
+    changed.projects[0].title = "Unexpected edit";
+    assert.throws(
+      () => readImportSnapshot({ format: "reentry-deck-backup", checksum, data: changed }, T1),
+      /内容与校验码不一致/
+    );
   });
 
   test("rejects malformed envelopes and invalid references before previewing", () => {

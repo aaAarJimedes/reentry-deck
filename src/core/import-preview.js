@@ -2,21 +2,43 @@ import { normalizeState, validateImportCandidate, validateState } from "./model.
 
 const COLLECTION_NAMES = Object.freeze(["projects", "sessions", "crumbs", "checkpoints"]);
 const DETAIL_LIMIT = 6;
+const CHECKSUM_PATTERN = /^fnv1a32:[0-9a-f]{8}$/u;
+
+export function checksumSnapshotData(value) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  let hash = 0x811c9dc5;
+  for (const byte of bytes) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
 
 export function readImportSnapshot(value, now = Date.now()) {
   let candidate = value;
-  let source = { envelope: false, appVersion: null, exportedAt: null };
+  let source = { envelope: false, appVersion: null, exportedAt: null, checksumVerified: null };
 
   if (value && typeof value === "object" && !Array.isArray(value) && "format" in value) {
     if (value.format !== "reentry-deck-backup") throw new Error("导入失败：无法识别这份备份的格式。 ");
     if (!value.data || typeof value.data !== "object" || Array.isArray(value.data)) {
       throw new Error("导入失败：备份信封缺少数据内容。 ");
     }
+    let checksumVerified = null;
+    if ("checksum" in value) {
+      if (typeof value.checksum !== "string" || !CHECKSUM_PATTERN.test(value.checksum)) {
+        throw new Error("导入失败：备份校验码格式无效。 ");
+      }
+      if (checksumSnapshotData(value.data) !== value.checksum) {
+        throw new Error("导入失败：备份内容与校验码不一致，文件可能已损坏或被意外修改。 ");
+      }
+      checksumVerified = true;
+    }
     candidate = value.data;
     source = {
       envelope: true,
       appVersion: cleanMetadata(value.appVersion),
-      exportedAt: validDate(value.exportedAt) ? value.exportedAt : null
+      exportedAt: validDate(value.exportedAt) ? value.exportedAt : null,
+      checksumVerified
     };
   }
 

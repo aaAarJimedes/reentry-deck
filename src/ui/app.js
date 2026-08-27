@@ -653,6 +653,7 @@ export class ReentryApp {
       preview.source.envelope ? "标准备份信封" : "原始工作区数据",
       preview.source.appVersion ? `应用 ${preview.source.appVersion}` : null,
       preview.source.exportedAt ? `导出于 ${formatDateTime(preview.source.exportedAt)}` : null,
+      preview.source.checksumVerified ? "内容校验码已核对（非加密）" : preview.source.envelope ? "旧格式未含校验码" : null,
       formatBytes(pending.fileSize)
     ].filter(Boolean).join(" · ");
     const projectSections = [
@@ -668,7 +669,7 @@ export class ReentryApp {
 
     return `
       <dialog id="import-preview-dialog" class="import-preview-dialog" aria-labelledby="import-preview-title" aria-describedby="import-preview-description">
-        <div class="dialog-header"><div><h2 id="import-preview-title">核对导入影响</h2><p id="import-preview-description">文件已在本机通过完整结构校验；确认后才会替换工作区。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="取消导入并关闭">${icon("close")}</button></div>
+        <div class="dialog-header"><div><h2 id="import-preview-title">核对导入影响</h2><p id="import-preview-description">文件已在本机通过完整结构${preview.source.checksumVerified ? "与内容校验码" : ""}校验；确认后才会替换工作区。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="取消导入并关闭">${icon("close")}</button></div>
         <div class="dialog-body">
           <div class="import-file-summary"><span>${icon("shield")}</span><div><strong>${escapeHTML(pending.fileName)}</strong><small>${escapeHTML(sourceDetails)}</small></div></div>
           ${preview.hasContentChanges ? "" : `<div class="import-identical">${icon("check")}<span>项目、记录和设置与当前工作区一致，无需重复导入。</span></div>`}

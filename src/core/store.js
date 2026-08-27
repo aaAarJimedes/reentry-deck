@@ -1,8 +1,8 @@
 import { createEmptyState, isoNow, normalizeState, validateImportCandidate, validateState } from "./model.js";
-import { buildImportPreview, readImportSnapshot } from "./import-preview.js";
+import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.17.0";
+export const APP_VERSION = "0.18.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {
@@ -97,11 +97,13 @@ export class AppStore {
   }
 
   exportSnapshot() {
+    const data = structuredClone(this.#state);
     return {
       format: "reentry-deck-backup",
       exportedAt: isoNow(),
       appVersion: APP_VERSION,
-      data: structuredClone(this.#state)
+      checksum: checksumSnapshotData(data),
+      data
     };
   }
 

@@ -487,6 +487,7 @@ describe("AppStore replacement, snapshots, and reset", () => {
 
     assert.equal(snapshot.format, "reentry-deck-backup");
     assert.equal(snapshot.appVersion, APP_VERSION);
+    assert.match(snapshot.checksum, /^fnv1a32:[0-9a-f]{8}$/u);
     assert.equal(Number.isFinite(Date.parse(snapshot.exportedAt)), true);
     assert.deepEqual(snapshot.data, store.getState());
     assert.notStrictEqual(snapshot.data, store.getState());
