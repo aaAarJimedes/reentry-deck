@@ -19,8 +19,8 @@ export class AppStore {
 
   constructor(storage = undefined, now = Date.now(), eventTarget = globalThis.window) {
     this.notices = [];
-    this.#storage = storage === undefined ? defaultStorage() : storage;
     try {
+      this.#storage = storage === undefined ? globalThis.localStorage ?? null : storage;
       this.#persistedRaw = this.#storage?.getItem(STORAGE_KEY) ?? null;
     } catch (error) {
       this.#storage = null;
@@ -278,14 +278,6 @@ export class AppStore {
   #emit(source = "local") {
     const event = Object.freeze({ source });
     for (const listener of this.#listeners) listener(this.#state, event);
-  }
-}
-
-function defaultStorage() {
-  try {
-    return globalThis.localStorage ?? null;
-  } catch {
-    return null;
   }
 }
 

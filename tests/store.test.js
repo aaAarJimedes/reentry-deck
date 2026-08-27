@@ -108,6 +108,24 @@ describe("AppStore loading and recovery", () => {
     assert.throws(() => store.update(() => {}, T1), /没有提供可用的本地存储/u);
   });
 
+  test("reports a denied default storage property without crashing construction", () => {
+    const original = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      get() {
+        throw new Error("origin storage blocked");
+      }
+    });
+    try {
+      const store = new AppStore(undefined, T0, null);
+      assert.deepEqual(store.getState().projects, []);
+      assert.match(store.drainNotices().join("；"), /本地存储不可访问.*origin storage blocked/u);
+    } finally {
+      if (original) Object.defineProperty(globalThis, "localStorage", original);
+      else delete globalThis.localStorage;
+    }
+  });
+
   test("keeps the current state when a later external read is denied", () => {
     class DeniedLaterStorage extends MemoryStorage {
       denied = false;
