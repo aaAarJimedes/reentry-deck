@@ -85,6 +85,7 @@ export class ReentryApp {
   #searchIndex = null;
   #toasts = [];
   #toastSequence = 0;
+  #pendingArchiveId = null;
 
   constructor(root, store) {
     this.#root = root;
@@ -97,6 +98,7 @@ export class ReentryApp {
     this.#root.addEventListener("input", (event) => this.#onInput(event));
     this.#root.addEventListener("cancel", (event) => {
       if (event.target.id === "import-preview-dialog") this.#pendingImport = null;
+      if (event.target.id === "archive-confirm-dialog") this.#pendingArchiveId = null;
     });
     window.addEventListener("hashchange", () => {
       this.#focusSelector = "#main-content";
@@ -578,6 +580,7 @@ export class ReentryApp {
     const colors = { fern: "#2f6b61", amber: "#d99752", clay: "#b9644d", sky: "#568695", plum: "#785e76", slate: "#65736f" };
     const state = this.#store.getState();
     const captureProjects = state.projects.filter((item) => item.status !== "archived");
+    const pendingArchiveProject = state.projects.find((item) => item.id === this.#pendingArchiveId);
     const captureProjectId = captureProjects.some((item) => item.id === project?.id)
       ? project.id
       : captureProjects.some((item) => item.id === activeSession?.projectId)
@@ -639,6 +642,13 @@ export class ReentryApp {
         <div class="dialog-body">
           <label class="search-field">${icon("search")}<span class="sr-only">搜索所有工作现场或筛选动作</span><input type="search" data-control="workspace-search" placeholder="输入项目、决定、问题或下一步…" autocomplete="off" autofocus /></label>
           <div class="search-results" data-search-results aria-live="polite">${this.#renderSearchResults("")}</div>
+        </div>
+      </dialog>
+      <dialog id="archive-confirm-dialog" aria-labelledby="archive-confirm-title" aria-describedby="archive-confirm-description">
+        <div class="dialog-header"><div><h2 id="archive-confirm-title">移入归档舱？</h2><p id="archive-confirm-description">项目会变为只读，但所有会话、轨迹和检查点都会保留，之后可随时恢复。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="取消归档并关闭">${icon("close")}</button></div>
+        <div class="dialog-body">
+          <p class="import-rollback-note">准备归档：<strong data-archive-project-title>${pendingArchiveProject ? `“${escapeHTML(pendingArchiveProject.title)}”` : ""}</strong></p>
+          <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog" autofocus>取消</button><button class="danger-button" type="button" data-action="confirm-archive">确认移入归档</button></div>
         </div>
       </dialog>
       ${this.#renderImportPreviewDialog()}`;
@@ -709,7 +719,8 @@ export class ReentryApp {
     if (action === "quick-dock") this.#quickDock(control.dataset.sessionId, false);
     if (action === "interrupt-and-continue") this.#quickDock(control.dataset.sessionId, true);
     if (action === "continue-session") this.#continueStaleSession(control.dataset.sessionId);
-    if (action === "archive-project") this.#archiveProject(control.dataset.projectId);
+    if (action === "archive-project") this.#prepareArchive(control.dataset.projectId);
+    if (action === "confirm-archive") this.#confirmArchive();
     if (action === "restore-project") this.#restoreProject(control.dataset.projectId);
     if (action === "load-sample") this.#loadSample();
     if (action === "export-data") this.#exportData();
@@ -1057,22 +1068,45 @@ export class ReentryApp {
     this.#toast(pinned ? "已加入复航卡的置顶航标。" : "已从置顶航标移除。 ");
   }
 
-  #archiveProject(projectId) {
+  #prepareArchive(projectId) {
     const state = this.#store.getState();
     if (state.sessions.some((item) => item.projectId === projectId && item.status === "active")) {
       this.#toast("请先结束活动会话，再归档项目。", "error");
       return;
     }
     const project = state.projects.find((item) => item.id === projectId);
-    if (!project || !window.confirm(`把“${project.title}”移入归档舱？所有轨迹都会保留。`)) return;
-    this.#store.update((next) => {
-      const item = next.projects.find((candidate) => candidate.id === projectId);
-      item.status = "archived";
-      item.archivedAt = isoNow();
-      item.updatedAt = item.archivedAt;
-    });
-    location.hash = "#/";
-    this.#toast("项目已移入归档舱。 ");
+    if (!project || project.status === "archived") return;
+    this.#pendingArchiveId = projectId;
+    const dialog = this.#root.querySelector("#archive-confirm-dialog");
+    const title = dialog?.querySelector("[data-archive-project-title]");
+    if (title) title.textContent = `“${project.title}”`;
+    this.#openDialog("archive-confirm-dialog");
+  }
+
+  #confirmArchive() {
+    const projectId = this.#pendingArchiveId;
+    if (!projectId) return;
+    try {
+      const state = this.#store.getState();
+      const project = state.projects.find((item) => item.id === projectId);
+      if (!project || project.status === "archived") throw new Error("这个项目已经不在当前舰桥。 ");
+      if (state.sessions.some((item) => item.projectId === projectId && item.status === "active")) {
+        throw new Error("项目已有活动会话，请先留下检查点再归档。 ");
+      }
+      this.#pendingArchiveId = null;
+      this.#store.update((next) => {
+        const item = next.projects.find((candidate) => candidate.id === projectId);
+        item.status = "archived";
+        item.archivedAt = isoNow();
+        item.updatedAt = item.archivedAt;
+      });
+      location.hash = "#/";
+      this.#toast("项目已移入归档舱。 ");
+    } catch (error) {
+      this.#pendingArchiveId = null;
+      this.#root.querySelector("#archive-confirm-dialog")?.close();
+      this.#toast(error.message, "error");
+    }
   }
 
   #restoreProject(projectId) {
@@ -1223,6 +1257,7 @@ export class ReentryApp {
   #closeDialog(control) {
     const dialog = control.closest("dialog");
     if (dialog?.id === "import-preview-dialog") this.#pendingImport = null;
+    if (dialog?.id === "archive-confirm-dialog") this.#pendingArchiveId = null;
     dialog?.close();
   }
 
