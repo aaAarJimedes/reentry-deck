@@ -1,7 +1,7 @@
 import { createEmptyState, isoNow, normalizeState, validateImportCandidate, validateState } from "./model.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.5.0";
+export const APP_VERSION = "0.6.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {
@@ -93,6 +93,25 @@ export class AppStore {
     };
   }
 
+  hasPreviousSnapshot(now = Date.now()) {
+    try {
+      this.#readPrevious(now);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  restorePrevious(now = Date.now()) {
+    const restored = this.#readPrevious(now);
+    restored.meta.updatedAt = isoNow(now);
+    restored.meta.revision = this.#state.meta.revision + 1;
+    this.#persist(restored);
+    this.#state = restored;
+    this.#emit();
+    return restored;
+  }
+
   importSnapshot(value, now = Date.now()) {
     if (value && typeof value === "object" && "format" in value) {
       if (value.format !== "reentry-deck-backup") throw new Error("导入失败：无法识别这份备份的格式。 ");
@@ -120,6 +139,23 @@ export class AppStore {
       this.notices.push(`本地数据无法读取，已用空白工作区启动：${error.message}`);
       return createEmptyState(now);
     }
+  }
+
+  #readPrevious(now) {
+    const raw = this.#storage?.getItem(PREVIOUS_KEY);
+    if (!raw) throw new Error("没有可恢复的上一次保存。 ");
+    let value;
+    try {
+      value = JSON.parse(raw);
+    } catch {
+      throw new Error("上一次保存已损坏，无法安全恢复。 ");
+    }
+    const candidateErrors = validateImportCandidate(value);
+    if (candidateErrors.length) throw new Error(`上一次保存无效：${candidateErrors.join("；")}`);
+    const restored = normalizeState(value, now);
+    const errors = validateState(restored);
+    if (errors.length) throw new Error(`上一次保存无效：${errors.join("；")}`);
+    return restored;
   }
 
   #persist(next) {

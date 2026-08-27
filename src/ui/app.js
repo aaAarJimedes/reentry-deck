@@ -60,7 +60,8 @@ const ICONS = {
   pin: '<path d="m9 4 6 0 1 5 3 3v1H5v-1l3-3ZM12 13v8"/>',
   external: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6H5V6h6"/>',
   box: '<path d="M4 7 12 3l8 4v10l-8 4-8-4Z"/><path d="m4 7 8 4 8-4M12 11v10"/>',
-  search: '<circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/>'
+  search: '<circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/>',
+  undo: '<path d="M9 7 4 12l5 5"/><path d="M5 12h8a6 6 0 0 1 6 6"/>'
 };
 
 export class ReentryApp {
@@ -157,12 +158,14 @@ export class ReentryApp {
   #renderTopbar(route, project, activeSession) {
     const context = project ? "项目现场" : route.name === "archive" ? "历史项目" : route.name === "settings" ? "隐私与迁移" : "本地工作区";
     const title = project?.title ?? routeTitle(route);
+    const canUndo = this.#store.hasPreviousSnapshot();
     return `
       <header class="topbar">
         <div class="topbar-context"><span class="topbar-eyebrow">${escapeHTML(context)}</span><span class="topbar-title">${escapeHTML(title)}</span></div>
         <div class="topbar-actions">
           ${activeSession ? `<span class="soft-pill"><span class="dock-pulse"></span> 会话中</span>` : ""}
           <button class="ghost-button search-trigger" type="button" data-action="open-search" aria-label="搜索所有工作现场">${icon("search")}<span>搜索</span><kbd>Ctrl K</kbd></button>
+          <button class="icon-button" type="button" data-action="undo-last" data-undo-context="topbar" aria-label="撤销上一次保存" title="撤销上一次保存（Ctrl/⌘ Z）" ${canUndo ? "" : "disabled"}>${icon("undo")}</button>
           <button class="ghost-button" type="button" data-action="open-new-project">${icon("plus")}<span>新项目</span></button>
         </div>
       </header>`;
@@ -463,7 +466,8 @@ export class ReentryApp {
         <section class="panel"><div class="panel-header"><h2>外观与数据</h2><p>设置同样只保存在当前浏览器。</p></div><div class="panel-body">
           <div class="setting-row"><div class="setting-copy"><h3>界面主题</h3><p>跟随系统，或固定使用明亮/深色外观。</p></div><div class="segmented-control" aria-label="界面主题">${[["system", "跟随系统"], ["light", "明亮"], ["dark", "深色"]].map(([value, label]) => `<button type="button" data-action="set-theme" data-theme="${value}" aria-pressed="${theme === value}">${label}</button>`).join("")}</div></div>
           <div class="setting-row"><div class="setting-copy"><h3>导出完整备份</h3><p>包含项目、会话、轨迹、检查点和设置。当前约 ${size}。</p></div><button class="secondary-button" type="button" data-action="export-data">${icon("download")} 导出 JSON</button></div>
-          <div class="setting-row"><div class="setting-copy"><h3>从备份恢复</h3><p>文件会先在本机校验；有效备份将替换当前工作区。</p></div><button class="secondary-button" type="button" data-action="choose-import">${icon("upload")} 选择文件</button><input class="sr-only" id="import-file" type="file" accept="application/json,.json" data-control="import-file" /></div>
+          <div class="setting-row"><div class="setting-copy"><h3>从备份恢复</h3><p>文件会先在本机校验；有效备份将替换当前工作区。</p></div><button class="secondary-button" type="button" data-action="choose-import">${icon("upload")} 选择文件</button><input class="sr-only" id="import-file" type="file" accept="application/json,.json" data-control="import-file" aria-label="选择 JSON 备份文件" /></div>
+          <div class="setting-row"><div class="setting-copy"><h3>滚动安全快照</h3><p>只保留上一次保存；恢复后再次切换可返回当前版本。重要历史仍应导出备份。</p></div><button class="secondary-button" type="button" data-action="undo-last" data-undo-context="settings" ${this.#store.hasPreviousSnapshot() ? "" : "disabled"}>${icon("undo")} 回到上次保存</button></div>
         </div></section>
         <aside class="panel storage-visual">${brandMark()}<strong>本地优先</strong><p>${state.projects.length} 个项目 · ${state.crumbs.length} 条轨迹<br>没有任何数据被发送到外部服务。</p></aside>
       </div>`;
@@ -541,6 +545,7 @@ export class ReentryApp {
 
     if (action === "open-new-project") this.#openDialog("new-project-dialog");
     if (action === "open-search") this.#openDialog("search-dialog");
+    if (action === "undo-last") this.#restorePrevious(control.dataset.undoContext);
     if (action === "close-dialog") control.closest("dialog")?.close();
     if (action === "edit-project") this.#openDialog("edit-project-dialog");
     if (action === "open-checkpoint") this.#openDialog("checkpoint-dialog");
@@ -599,6 +604,11 @@ export class ReentryApp {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
       this.#openDialog("search-dialog");
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !isTypingTarget(event.target)) {
+      event.preventDefault();
+      this.#restorePrevious("topbar");
       return;
     }
     if (event.ctrlKey || event.metaKey || event.altKey) return;
@@ -847,6 +857,18 @@ export class ReentryApp {
     if (!["system", "light", "dark"].includes(theme)) return;
     this.#focusSelector = `[data-action="set-theme"][data-theme="${theme}"]`;
     this.#store.update((state) => { state.settings.theme = theme; });
+  }
+
+  #restorePrevious(context = "topbar") {
+    try {
+      if (!this.#store.hasPreviousSnapshot()) throw new Error("没有可恢复的上一次保存。 ");
+      this.#focusSelector = `[data-action="undo-last"][data-undo-context="${CSS.escape(context)}"]`;
+      this.#store.restorePrevious();
+      this.#announce("已恢复到上一次保存；再次操作可切换回来");
+      this.#toast("已恢复上一次保存；需要时可再次撤销。 ");
+    } catch (error) {
+      this.#toast(error.message, "error");
+    }
   }
 
   #loadSample() {

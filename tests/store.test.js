@@ -291,6 +291,54 @@ describe("AppStore updates and persistence", () => {
 });
 
 describe("AppStore replacement, snapshots, and reset", () => {
+  test("rolling snapshots support safe undo and redo with monotonic revisions", () => {
+    const storage = new MemoryStorage();
+    const store = new AppStore(storage, T0, null);
+    let emissions = 0;
+    store.subscribe(() => emissions += 1);
+
+    store.update((draft) => draft.projects.push(createProject({ id: "p1", title: "First" }, T0)), T0);
+    assert.equal(store.hasPreviousSnapshot(), false, "the first write has no older persisted state");
+    store.update((draft) => { draft.projects[0].title = "Second"; }, T1);
+    assert.equal(store.hasPreviousSnapshot(), true);
+
+    const undone = store.restorePrevious(T2);
+    assert.equal(undone.projects[0].title, "First");
+    assert.equal(undone.meta.revision, 3);
+    assert.equal(persisted(storage, PREVIOUS_KEY).projects[0].title, "Second");
+
+    const redone = store.restorePrevious(T2 + 1);
+    assert.equal(redone.projects[0].title, "Second");
+    assert.equal(redone.meta.revision, 4);
+    assert.equal(emissions, 4);
+  });
+
+  test("missing or damaged rolling snapshots never replace current data", () => {
+    const storage = new MemoryStorage();
+    const store = new AppStore(storage, T0, null);
+    const before = store.getState();
+    assert.equal(store.hasPreviousSnapshot(), false);
+    assert.throws(() => store.restorePrevious(T1), /没有可恢复/);
+
+    storage.setItem(PREVIOUS_KEY, "{broken");
+    assert.equal(store.hasPreviousSnapshot(), false);
+    assert.throws(() => store.restorePrevious(T1), /已损坏/);
+    assert.strictEqual(store.getState(), before);
+  });
+
+  test("a stale tab cannot restore an old snapshot over a newer external write", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(STORAGE_KEY, JSON.stringify(stateWithProject("p1", "Initial")));
+    storage.setItem(PREVIOUS_KEY, JSON.stringify(stateWithProject("p1", "Older")));
+    const firstTab = new AppStore(storage, T0, null);
+    const staleTab = new AppStore(storage, T0, null);
+    firstTab.update((draft) => { draft.projects[0].title = "External"; }, T1);
+
+    assert.throws(() => staleTab.restorePrevious(T2), /另一个标签页刚刚更新了数据/);
+    assert.equal(staleTab.getState().projects[0].title, "External");
+    assert.equal(persisted(storage).projects[0].title, "External");
+  });
+
   test("replace normalizes input, increments imported revision, persists, and emits", () => {
     const storage = new MemoryStorage();
     const store = new AppStore(storage, T0);
