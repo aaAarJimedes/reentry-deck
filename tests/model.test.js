@@ -453,6 +453,23 @@ describe("validateImportCandidate", () => {
     assert.match(errors.join("；"), /面包屑置顶状态无效：bad-pin/);
   });
 
+  test("accepts only canonical millisecond UTC timestamps", () => {
+    const state = createEmptyState(NOW);
+    state.projects.push(createProject({ id: "p1" }, NOW));
+    assert.deepEqual(validateImportCandidate(state), []);
+
+    for (const ambiguous of [
+      "2026-08-28T08:00:00Z",
+      "2026-08-28T16:00:00.000+08:00",
+      "08/28/2026 08:00:00",
+      "Fri, 28 Aug 2026 08:00:00 GMT"
+    ]) {
+      const changed = structuredClone(state);
+      changed.meta.updatedAt = ambiguous;
+      assert.match(validateImportCandidate(changed).join("；"), /元数据时间无效：工作区.updatedAt/, ambiguous);
+    }
+  });
+
   test("rejects pathological record counts before traversing individual records", () => {
     const state = createEmptyState(NOW);
     state.crumbs = new Array(IMPORT_LIMITS.records + 1).fill({ id: "duplicate" });

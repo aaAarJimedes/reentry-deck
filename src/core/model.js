@@ -332,5 +332,7 @@ function safeInteger(value, fallback) {
 }
 
 function isValidDate(value) {
-  return typeof value === "string" && Number.isFinite(Date.parse(value));
+  if (typeof value !== "string") return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
