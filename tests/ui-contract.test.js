@@ -58,6 +58,18 @@ test("session lifecycle warnings refresh after time boundaries without erasing a
   assert.match(source, /health\.staleReasons\.join\(","\)/u);
 });
 
+test("dialog redraw restoration preserves button focus as well as field values and selections", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.doesNotMatch(source, /dialog\.id === "import-preview-dialog"\) return null/u);
+  assert.match(source, /querySelectorAll\("button, input, select, textarea"\)/u);
+  assert.match(source, /const activeFocusableIndex = focusables\.indexOf\(document\.activeElement\)/u);
+  assert.match(source, /activeControlIndex,\s+activeFocusableIndex,/u);
+  assert.match(source, /const active = focusables\[snapshot\.activeFocusableIndex\]/u);
+  assert.match(source, /active === controls\[snapshot\.activeControlIndex\]/u);
+  assert.match(source, /transientDialog\?\.id === "import-preview-dialog"/u);
+});
+
 test("quick checkpoint review is an accessible explicit upgrade flow", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

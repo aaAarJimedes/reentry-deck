@@ -208,7 +208,9 @@ export class ReentryApp {
     this.#refreshTimers();
 
     if (reopenImportPreview && this.#pendingImport) {
-      requestAnimationFrame(() => this.#openDialog("import-preview-dialog"));
+      requestAnimationFrame(() => transientDialog?.id === "import-preview-dialog"
+        ? this.#restoreTransientDialog(transientDialog)
+        : this.#openDialog("import-preview-dialog"));
     } else if (transientDialog) {
       requestAnimationFrame(() => this.#restoreTransientDialog(transientDialog));
     }
@@ -222,13 +224,17 @@ export class ReentryApp {
 
   #captureTransientDialog() {
     const dialog = this.#root.querySelector("dialog[open]");
-    if (!dialog?.id || dialog.id === "import-preview-dialog") return null;
+    if (!dialog?.id) return null;
     const controls = [...dialog.querySelectorAll("input, select, textarea")]
       .filter((control) => control.type !== "file" && control.type !== "hidden");
-    const activeIndex = controls.indexOf(document.activeElement);
+    const focusables = [...dialog.querySelectorAll("button, input, select, textarea")]
+      .filter((control) => control.type !== "hidden");
+    const activeControlIndex = controls.indexOf(document.activeElement);
+    const activeFocusableIndex = focusables.indexOf(document.activeElement);
     return {
       id: dialog.id,
-      activeIndex,
+      activeControlIndex,
+      activeFocusableIndex,
       controls: controls.map((control) => ({
         tag: control.tagName,
         type: control.type,
@@ -245,6 +251,8 @@ export class ReentryApp {
     if (!dialog) return;
     const controls = [...dialog.querySelectorAll("input, select, textarea")]
       .filter((control) => control.type !== "file" && control.type !== "hidden");
+    const focusables = [...dialog.querySelectorAll("button, input, select, textarea")]
+      .filter((control) => control.type !== "hidden");
     snapshot.controls.forEach((saved, index) => {
       const control = controls[index];
       if (!control || control.tagName !== saved.tag || control.type !== saved.type) return;
@@ -255,11 +263,13 @@ export class ReentryApp {
       }
     });
     dialog.showModal();
-    const active = controls[snapshot.activeIndex];
+    const active = focusables[snapshot.activeFocusableIndex];
     if (!active || active.disabled) return;
     active.focus();
-    const saved = snapshot.controls[snapshot.activeIndex];
-    if (saved?.selectionStart !== null && typeof active.setSelectionRange === "function") {
+    const saved = snapshot.controls[snapshot.activeControlIndex];
+    if (active === controls[snapshot.activeControlIndex]
+      && saved?.selectionStart !== null
+      && typeof active.setSelectionRange === "function") {
       active.setSelectionRange(saved.selectionStart, saved.selectionEnd);
     }
   }
