@@ -2,7 +2,8 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.34.0";
+export const APP_VERSION = "0.35.0";
+export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {
@@ -35,6 +36,10 @@ export class AppStore {
 
   getState() {
     return this.#state;
+  }
+
+  getStorageUsage(referenceBytes = STORAGE_REFERENCE_BYTES) {
+    return inspectStorageUsage(this.#storage, referenceBytes);
   }
 
   subscribe(listener) {
@@ -269,6 +274,14 @@ function parseSavedState(raw, now) {
 export class MemoryStorage {
   #values = new Map();
 
+  get length() {
+    return this.#values.size;
+  }
+
+  key(index) {
+    return [...this.#values.keys()][index] ?? null;
+  }
+
   getItem(key) {
     return this.#values.has(key) ? this.#values.get(key) : null;
   }
@@ -283,5 +296,42 @@ export class MemoryStorage {
 
   clear() {
     this.#values.clear();
+  }
+}
+
+export function inspectStorageUsage(storage, referenceBytes = STORAGE_REFERENCE_BYTES) {
+  const unavailable = Object.freeze({
+    available: false,
+    appBytes: 0,
+    totalBytes: 0,
+    referenceBytes: STORAGE_REFERENCE_BYTES,
+    ratio: 0,
+    status: "unavailable"
+  });
+  if (!storage || !Number.isSafeInteger(storage.length) || typeof storage.key !== "function") return unavailable;
+  if (!Number.isSafeInteger(referenceBytes) || referenceBytes <= 0) return unavailable;
+  try {
+    let appBytes = 0;
+    let totalBytes = 0;
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (typeof key !== "string") continue;
+      const value = storage.getItem(key);
+      if (value === null) continue;
+      const bytes = (key.length + value.length) * 2;
+      totalBytes += bytes;
+      if (key.startsWith("reentry-deck/")) appBytes += bytes;
+    }
+    const ratio = totalBytes / referenceBytes;
+    return Object.freeze({
+      available: true,
+      appBytes,
+      totalBytes,
+      referenceBytes,
+      ratio,
+      status: ratio >= 1 ? "critical" : ratio >= 0.8 ? "warning" : "ok"
+    });
+  } catch {
+    return unavailable;
   }
 }

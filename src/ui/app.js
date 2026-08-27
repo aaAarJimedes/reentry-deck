@@ -566,7 +566,16 @@ export class ReentryApp {
 
   #renderSettings(state) {
     const size = this.#getBackupSize(state);
+    const storageUsage = this.#store.getStorageUsage();
     const theme = state.settings.theme;
+    const storagePressure = storageUsage.status === "critical"
+      ? "已达到 5 MiB 保守参考线，请立即导出备份并减少浏览器内数据。"
+      : storageUsage.status === "warning"
+        ? "已超过 5 MiB 保守参考线的 80%，建议现在导出备份。"
+        : "低于 5 MiB 保守参考线；浏览器实际配额可能不同。";
+    const storageSummary = storageUsage.available
+      ? `本应用约 ${formatBytes(storageUsage.appBytes)} · 此来源合计约 ${formatBytes(storageUsage.totalBytes)}`
+      : "浏览器未开放可用的本地占用信息";
     return `
       <section class="page-heading"><div><p class="eyebrow">数据保险箱</p><h1>你的工作轨迹，只属于你。</h1><p class="lede">复航台没有账户和云端数据库。请主动导出备份，尤其是在清理浏览器数据之前。</p></div></section>
       <div class="settings-grid">
@@ -576,7 +585,7 @@ export class ReentryApp {
           <div class="setting-row"><div class="setting-copy"><h3>从备份恢复</h3><p>文件会先在本机校验；有效备份将替换当前工作区。</p></div><button class="secondary-button" type="button" data-action="choose-import">${icon("upload")} 选择文件</button><input class="sr-only" id="import-file" type="file" accept="application/json,.json" data-control="import-file" aria-label="选择 JSON 备份文件" /></div>
           <div class="setting-row"><div class="setting-copy"><h3>滚动安全快照</h3><p>只保留上一次保存；恢复后再次切换可返回当前版本。重要历史仍应导出备份。</p></div><button class="secondary-button" type="button" data-action="undo-last" data-undo-context="settings" ${this.#store.hasPreviousSnapshot() ? "" : "disabled"}>${icon("undo")} 回到上次保存</button></div>
         </div></section>
-        <aside class="panel storage-visual">${brandMark()}<strong>本地优先</strong><p>${state.projects.length} 个项目 · ${state.crumbs.length} 条轨迹<br>没有任何数据被发送到外部服务。</p></aside>
+        <aside class="panel storage-visual" data-pressure="${attr(storageUsage.status)}">${brandMark()}<strong>本地优先</strong><p>${state.projects.length} 个项目 · ${state.crumbs.length} 条轨迹<br>${escapeHTML(storageSummary)}<br>${escapeHTML(storagePressure)}<br>没有任何数据被发送到外部服务。</p></aside>
       </div>`;
   }
 

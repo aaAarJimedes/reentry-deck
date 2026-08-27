@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import { createProject } from "../src/core/model.js";
-import { APP_VERSION, AppStore, MemoryStorage, STORAGE_KEY } from "../src/core/store.js";
+import {
+  APP_VERSION,
+  AppStore,
+  MemoryStorage,
+  STORAGE_KEY,
+  inspectStorageUsage
+} from "../src/core/store.js";
 
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 const T0 = Date.parse("2026-08-28T00:00:00.000Z");
@@ -42,9 +48,47 @@ describe("MemoryStorage", () => {
     assert.equal(storage.getItem("number"), null);
     storage.setItem("a", "A");
     storage.setItem("b", "B");
+    assert.equal(storage.length, 2);
+    assert.equal(storage.key(0), "a");
+    assert.equal(storage.key(99), null);
     storage.clear();
     assert.equal(storage.getItem("a"), null);
     assert.equal(storage.getItem("b"), null);
+  });
+
+  test("estimates UTF-16 origin and app storage against a conservative boundary", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(STORAGE_KEY, "四");
+    storage.setItem("another-app", "AB");
+    const appBytes = (STORAGE_KEY.length + 1) * 2;
+    const totalBytes = appBytes + ("another-app".length + 2) * 2;
+
+    assert.deepEqual(inspectStorageUsage(storage, totalBytes), {
+      available: true,
+      appBytes,
+      totalBytes,
+      referenceBytes: totalBytes,
+      ratio: 1,
+      status: "critical"
+    });
+    assert.equal(inspectStorageUsage(storage, totalBytes + 1).status, "warning");
+    assert.equal(inspectStorageUsage(storage, Math.floor(totalBytes / 0.8)).status, "warning");
+    assert.equal(inspectStorageUsage(storage, Math.ceil(totalBytes / 0.8)).status, "ok");
+    assert.equal(inspectStorageUsage(storage, totalBytes * 2).status, "ok");
+  });
+
+  test("storage inspection fails closed for unavailable, invalid, or unreadable storage", () => {
+    const broken = {
+      length: 1,
+      key() { return "reentry-deck/broken"; },
+      getItem() { throw new Error("denied"); }
+    };
+
+    for (const result of [inspectStorageUsage(null), inspectStorageUsage(new MemoryStorage(), 0), inspectStorageUsage(broken)]) {
+      assert.equal(result.available, false);
+      assert.equal(result.status, "unavailable");
+      assert.equal(Object.isFrozen(result), true);
+    }
   });
 });
 

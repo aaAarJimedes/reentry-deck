@@ -1058,6 +1058,8 @@ textarea:focus { border-color: var(--forest-soft); box-shadow: 0 0 0 3px color-m
 .storage-visual .brand-mark { color: var(--forest-soft); }
 .storage-visual strong { margin-top: 14px; font-size: 16px; }
 .storage-visual p { max-width: 240px; margin: 4px 0 0; color: var(--ink-soft); font-size: 11px; }
+.storage-visual[data-pressure="warning"] { border-color: color-mix(in srgb, var(--amber) 58%, var(--line)); }
+.storage-visual[data-pressure="critical"] { border-color: color-mix(in srgb, var(--danger) 68%, var(--line)); }
 
 dialog {
   width: min(580px, calc(100vw - 32px));
