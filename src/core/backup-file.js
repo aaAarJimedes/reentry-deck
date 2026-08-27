@@ -1,5 +1,19 @@
 export const MAX_BACKUP_FILE_BYTES = 25 * 1024 * 1024;
 
+export function createLatestRequestGate() {
+  let latest = null;
+  return Object.freeze({
+    begin() {
+      const token = {};
+      latest = token;
+      return () => latest === token;
+    },
+    invalidate() {
+      latest = null;
+    }
+  });
+}
+
 export async function readBackupFile(file) {
   if (!file || typeof file.text !== "function") {
     throw new Error("没有可读取的备份文件。 ");

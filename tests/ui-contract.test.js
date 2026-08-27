@@ -63,3 +63,12 @@ test("form length boundaries come from the persisted model contract", async () =
     assert.match(source, new RegExp(`maxlength="\\$\\{IMPORT_LIMITS\\.${field}\\}"`, "u"));
   }
 });
+
+test("backup reads ignore stale completions and are invalidated on app destruction", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /const isCurrentRequest = this\.#importRequestGate\.begin\(\)/);
+  assert.match(source, /if \(!isCurrentRequest\(\)\) return/);
+  assert.match(source, /if \(isCurrentRequest\(\)\) this\.#toast/);
+  assert.match(source, /this\.#importRequestGate\.invalidate\(\)/);
+});

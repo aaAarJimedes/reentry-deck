@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { MAX_BACKUP_FILE_BYTES, readBackupFile } from "../src/core/backup-file.js";
+import { MAX_BACKUP_FILE_BYTES, createLatestRequestGate, readBackupFile } from "../src/core/backup-file.js";
 
 function fakeFile({ size, text = "{}", readError = null } = {}) {
   let reads = 0;
@@ -46,4 +46,18 @@ describe("readBackupFile", () => {
     );
     await assert.rejects(readBackupFile(fakeFile({ size: 1, text: "{" })), /不是有效的 JSON 文件/);
   });
+});
+
+test("createLatestRequestGate lets only the newest asynchronous request commit", () => {
+  const gate = createLatestRequestGate();
+  const first = gate.begin();
+  assert.equal(first(), true);
+
+  const second = gate.begin();
+  assert.equal(first(), false);
+  assert.equal(second(), true);
+
+  gate.invalidate();
+  assert.equal(first(), false);
+  assert.equal(second(), false);
 });

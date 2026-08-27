@@ -7,7 +7,7 @@ import {
   isoAtOrAfter
 } from "../core/model.js";
 import { prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture.js";
-import { readBackupFile } from "../core/backup-file.js";
+import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { buildAttentionDeck, buildWeeklyReview } from "../core/insights.js";
 import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
 import { buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
@@ -81,6 +81,7 @@ export class ReentryApp {
   #noticeQueue = [];
   #acknowledgedStaleSessions = new Set();
   #pendingImport = null;
+  #importRequestGate = createLatestRequestGate();
   #timelineLimits = new Map();
   #collectionLimits = new Map();
   #searchIndexState = null;
@@ -121,6 +122,8 @@ export class ReentryApp {
 
   destroy() {
     window.clearInterval(this.#timerId);
+    this.#importRequestGate.invalidate();
+    this.#pendingImport = null;
     this.#eventController.abort();
     this.#unsubscribeStore?.();
     this.#unsubscribeStore = null;
@@ -1296,8 +1299,10 @@ export class ReentryApp {
   }
 
   async #importData(file, input) {
+    const isCurrentRequest = this.#importRequestGate.begin();
     try {
       const parsed = await readBackupFile(file);
+      if (!isCurrentRequest()) return;
       this.#pendingImport = {
         value: parsed,
         preview: this.#store.previewImport(parsed),
@@ -1309,9 +1314,9 @@ export class ReentryApp {
       this.render();
       this.#openDialog("import-preview-dialog");
     } catch (error) {
-      this.#toast(`无法导入：${error.message}`, "error");
+      if (isCurrentRequest()) this.#toast(`无法导入：${error.message}`, "error");
     } finally {
-      input.value = "";
+      if (isCurrentRequest()) input.value = "";
     }
   }
 
