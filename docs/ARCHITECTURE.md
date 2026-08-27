@@ -10,8 +10,8 @@
 src/ui/app.js
   页面投影、事件委托、对话框、键盘与焦点
         ↓
-src/core/session.js + reentry.js
-  会话不变量、应急停靠、复航卡与排序纯函数
+src/core/session.js + reentry.js + search.js
+  会话不变量、应急停靠、复航卡、排序、搜索与链接识别纯函数
         ↓
 src/core/model.js
   工厂、归一化、导入前校验和数据枚举

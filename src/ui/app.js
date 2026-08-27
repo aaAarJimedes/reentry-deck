@@ -6,6 +6,7 @@ import {
   isoNow
 } from "../core/model.js";
 import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
+import { getProjectResources, searchWorkspace } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession } from "../core/session.js";
 import { elapsedSeconds, formatDateTime, formatDuration, formatRelative } from "../core/time.js";
 
@@ -77,6 +78,7 @@ export class ReentryApp {
     this.#root.addEventListener("click", (event) => this.#onClick(event));
     this.#root.addEventListener("submit", (event) => this.#onSubmit(event));
     this.#root.addEventListener("change", (event) => this.#onChange(event));
+    this.#root.addEventListener("input", (event) => this.#onInput(event));
     window.addEventListener("hashchange", () => {
       this.#focusSelector = "#main-content";
       this.render();
@@ -159,6 +161,7 @@ export class ReentryApp {
         <div class="topbar-context"><span class="topbar-eyebrow">${escapeHTML(context)}</span><span class="topbar-title">${escapeHTML(title)}</span></div>
         <div class="topbar-actions">
           ${activeSession ? `<span class="soft-pill"><span class="dock-pulse"></span> 会话中</span>` : ""}
+          <button class="ghost-button search-trigger" type="button" data-action="open-search" aria-label="搜索所有工作现场">${icon("search")}<span>搜索</span><kbd>Ctrl K</kbd></button>
           <button class="ghost-button" type="button" data-action="open-new-project">${icon("plus")}<span>新项目</span></button>
         </div>
       </header>`;
@@ -274,6 +277,7 @@ export class ReentryApp {
         ${isRunning ? this.#renderFocusPanel(project, activeSession) : this.#renderReentryPanel(card, anotherRunning)}
         <aside class="side-stack">
           ${this.#renderProjectControls(project)}
+          ${this.#renderResourcesPanel(state, project.id)}
           ${this.#renderStatsPanel(stats)}
         </aside>
       </div>
@@ -368,6 +372,17 @@ export class ReentryApp {
         <div class="panel-body"><div class="mini-stats">
           ${miniStat(stats.completedSessions, "完成会话")}${miniStat(stats.checkpoints, "检查点")}${miniStat(stats.decisions, "决定")}${miniStat(stats.crumbs, "总轨迹")}
         </div></div>
+      </section>`;
+  }
+
+  #renderResourcesPanel(state, projectId) {
+    const resources = getProjectResources(state, projectId);
+    if (!resources.length) return "";
+    const sourceLabels = { project: "项目说明", crumb: "工作轨迹", checkpoint: "检查点" };
+    return `
+      <section class="panel resource-panel">
+        <div class="panel-header"><h2>复航资源</h2><p>从现有记录中识别，只打开 HTTP(S) 链接。</p></div>
+        <div class="panel-body"><ul>${resources.map((resource) => `<li><a href="${attr(resource.url)}" target="_blank" rel="noopener noreferrer">${icon("external")}<span><strong>${escapeHTML(resource.label)}</strong><small>${escapeHTML(sourceLabels[resource.sourceType] ?? "记录")} · ${formatDateTime(resource.createdAt)}</small></span></a></li>`).join("")}</ul></div>
       </section>`;
   }
 
@@ -476,6 +491,13 @@ export class ReentryApp {
           <label class="field"><span>当前第一动作</span><textarea name="nextAction" maxlength="600">${escapeHTML(project?.nextAction ?? "")}</textarea></label>
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">保存修改</button></div>
         </form>
+      </dialog>
+      <dialog id="search-dialog" class="search-dialog" aria-labelledby="search-title">
+        <div class="dialog-header"><div><h2 id="search-title">找回工作现场</h2><p>搜索项目、轨迹与检查点；数据不会离开浏览器。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
+        <div class="dialog-body">
+          <label class="search-field">${icon("search")}<span class="sr-only">搜索所有工作现场</span><input type="search" data-control="workspace-search" placeholder="输入项目、决定、问题或下一步…" autocomplete="off" autofocus /></label>
+          <div class="search-results" data-search-results aria-live="polite"><p class="search-empty">输入一个或多个词，所有词都匹配才会出现。</p></div>
+        </div>
       </dialog>`;
   }
 
@@ -491,6 +513,7 @@ export class ReentryApp {
     const action = control.dataset.action;
 
     if (action === "open-new-project") this.#openDialog("new-project-dialog");
+    if (action === "open-search") this.#openDialog("search-dialog");
     if (action === "close-dialog") control.closest("dialog")?.close();
     if (action === "edit-project") this.#openDialog("edit-project-dialog");
     if (action === "open-checkpoint") this.#openDialog("checkpoint-dialog");
@@ -529,8 +552,29 @@ export class ReentryApp {
     if (control.matches('[data-control="import-file"]') && control.files?.[0]) this.#importData(control.files[0], control);
   }
 
+  #onInput(event) {
+    const control = event.target;
+    if (!control.matches('[data-control="workspace-search"]')) return;
+    const output = this.#root.querySelector("[data-search-results]");
+    if (output) output.innerHTML = this.#renderSearchResults(control.value);
+  }
+
+  #renderSearchResults(query) {
+    const results = searchWorkspace(this.#store.getState(), query);
+    if (!String(query).trim()) return '<p class="search-empty">输入一个或多个词，所有词都匹配才会出现。</p>';
+    if (!results.length) return `<p class="search-empty">没有找到“${escapeHTML(query)}”。试试更短或更具体的词。</p>`;
+    const kindLabels = { project: "项目", crumb: "轨迹", checkpoint: "检查点" };
+    return `<p class="search-count">找到 ${results.length} 条匹配</p><ul>${results.map((result) => `<li><a href="#/project/${encodeURIComponent(result.projectId)}"><span class="search-result-kind">${escapeHTML(result.kind === "crumb" ? CRUMB_LABELS[result.subtype] ?? "轨迹" : kindLabels[result.kind] ?? "记录")}${result.projectStatus === "archived" ? " · 已归档" : ""}</span><strong>${escapeHTML(result.title || result.projectTitle)}</strong>${result.kind !== "project" ? `<small>${escapeHTML(result.projectTitle)} · ${formatDateTime(result.createdAt)}</small>` : ""}${result.snippet && result.snippet !== result.title ? `<p>${escapeHTML(result.snippet)}</p>` : ""}</a></li>`).join("")}</ul>`;
+  }
+
   #onKeydown(event) {
-    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.defaultPrevented) return;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      this.#openDialog("search-dialog");
+      return;
+    }
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
     if (isTypingTarget(event.target)) return;
     if (event.key.toLowerCase() === "n") {
       event.preventDefault();
@@ -542,6 +586,10 @@ export class ReentryApp {
         event.preventDefault();
         capture.focus();
       }
+    }
+    if (event.key === "/") {
+      event.preventDefault();
+      this.#openDialog("search-dialog");
     }
   }
 
@@ -830,6 +878,10 @@ export class ReentryApp {
   #openDialog(id) {
     const dialog = this.#root.querySelector(`#${id}`);
     if (!dialog) return;
+    if (dialog.open) {
+      dialog.querySelector('[data-control="workspace-search"], [autofocus], input:not([type=hidden]), textarea, button')?.focus();
+      return;
+    }
     dialog.showModal();
     requestAnimationFrame(() => dialog.querySelector("[autofocus], input:not([type=hidden]), textarea, button")?.focus());
   }

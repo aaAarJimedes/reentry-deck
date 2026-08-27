@@ -42,6 +42,7 @@ describe("public path resolution", () => {
   test("accepts only explicit application-shell files", () => {
     assert.equal(resolvePublicFile("/", projectRoot).path, resolve(projectRoot, "index.html"));
     assert.equal(resolvePublicFile("/src/core/session.js?cache=1", projectRoot).path, resolve(projectRoot, "src/core/session.js"));
+    assert.equal(resolvePublicFile("/src/core/search.js", projectRoot).path, resolve(projectRoot, "src/core/search.js"));
     for (const path of ["/.git/config", "/package.json", "/tests/model.test.js", "/tools/server.mjs", "/missing.js"]) {
       assert.equal(resolvePublicFile(path, projectRoot).error, 404);
     }
