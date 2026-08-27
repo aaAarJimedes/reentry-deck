@@ -5,11 +5,31 @@ const DETAIL_LIMIT = 6;
 const CHECKSUM_PATTERN = /^fnv1a32:[0-9a-f]{8}$/u;
 
 export function checksumSnapshotData(value) {
-  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  const serialized = JSON.stringify(value) ?? "";
   let hash = 0x811c9dc5;
-  for (const byte of bytes) {
-    hash ^= byte;
-    hash = Math.imul(hash, 0x01000193);
+  for (let index = 0; index < serialized.length; index += 1) {
+    let codePoint = serialized.charCodeAt(index);
+    if (codePoint >= 0xd800 && codePoint <= 0xdbff && index + 1 < serialized.length) {
+      const low = serialized.charCodeAt(index + 1);
+      if (low >= 0xdc00 && low <= 0xdfff) {
+        codePoint = 0x10000 + ((codePoint - 0xd800) << 10) + (low - 0xdc00);
+        index += 1;
+      }
+    }
+    if (codePoint <= 0x7f) hash = hashByte(hash, codePoint);
+    else if (codePoint <= 0x7ff) {
+      hash = hashByte(hash, 0xc0 | (codePoint >> 6));
+      hash = hashByte(hash, 0x80 | (codePoint & 0x3f));
+    } else if (codePoint <= 0xffff) {
+      hash = hashByte(hash, 0xe0 | (codePoint >> 12));
+      hash = hashByte(hash, 0x80 | ((codePoint >> 6) & 0x3f));
+      hash = hashByte(hash, 0x80 | (codePoint & 0x3f));
+    } else {
+      hash = hashByte(hash, 0xf0 | (codePoint >> 18));
+      hash = hashByte(hash, 0x80 | ((codePoint >> 12) & 0x3f));
+      hash = hashByte(hash, 0x80 | ((codePoint >> 6) & 0x3f));
+      hash = hashByte(hash, 0x80 | (codePoint & 0x3f));
+    }
   }
   return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
@@ -82,8 +102,10 @@ export function buildImportPreview(value, currentState, now = Date.now()) {
 }
 
 function diffCollection(current = [], incoming = []) {
-  const currentById = new Map(current.map((item) => [item.id, item]));
-  const incomingById = new Map(incoming.map((item) => [item.id, item]));
+  const currentById = new Map();
+  const incomingById = new Map();
+  for (const item of current) currentById.set(item.id, item);
+  for (const item of incoming) incomingById.set(item.id, item);
   let added = 0;
   let removed = 0;
   let changed = 0;
@@ -104,34 +126,48 @@ function diffCollection(current = [], incoming = []) {
 }
 
 function diffProjects(current, incoming) {
-  const currentById = new Map(current.map((project) => [project.id, project]));
-  const incomingById = new Map(incoming.map((project) => [project.id, project]));
-  const added = incoming
-    .filter((project) => !currentById.has(project.id))
-    .map(projectSummary);
-  const removed = current
-    .filter((project) => !incomingById.has(project.id))
-    .map(projectSummary);
-  const changed = incoming
-    .filter((project) => currentById.has(project.id) && !sameValue(currentById.get(project.id), project))
-    .map((project) => {
-      const before = currentById.get(project.id);
-      return {
+  const currentById = new Map();
+  const incomingById = new Map();
+  for (const project of current) currentById.set(project.id, project);
+  for (const project of incoming) incomingById.set(project.id, project);
+  const added = [];
+  const removed = [];
+  const changed = [];
+  let addedTotal = 0;
+  let removedTotal = 0;
+  let changedTotal = 0;
+
+  for (const project of incoming) {
+    if (!currentById.has(project.id)) {
+      addedTotal += 1;
+      if (added.length < DETAIL_LIMIT) added.push(projectSummary(project));
+      continue;
+    }
+    const before = currentById.get(project.id);
+    if (!sameValue(before, project)) {
+      changedTotal += 1;
+      if (changed.length < DETAIL_LIMIT) changed.push({
         id: project.id,
         beforeTitle: before.title,
         afterTitle: project.title,
         beforeStatus: before.status,
         afterStatus: project.status
-      };
-    });
+      });
+    }
+  }
+  for (const project of current) {
+    if (incomingById.has(project.id)) continue;
+    removedTotal += 1;
+    if (removed.length < DETAIL_LIMIT) removed.push(projectSummary(project));
+  }
 
   return {
-    added: added.slice(0, DETAIL_LIMIT),
-    removed: removed.slice(0, DETAIL_LIMIT),
-    changed: changed.slice(0, DETAIL_LIMIT),
-    addedTotal: added.length,
-    removedTotal: removed.length,
-    changedTotal: changed.length,
+    added,
+    removed,
+    changed,
+    addedTotal,
+    removedTotal,
+    changedTotal,
     detailLimit: DETAIL_LIMIT
   };
 }
@@ -163,4 +199,8 @@ function validDate(value) {
 
 function sameValue(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function hashByte(hash, byte) {
+  return Math.imul(hash ^ byte, 0x01000193);
 }

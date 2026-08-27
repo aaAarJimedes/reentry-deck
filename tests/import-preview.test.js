@@ -87,6 +87,33 @@ describe("import snapshot inspection", () => {
     );
   });
 
+  test("streams Unicode checksum bytes without requiring a whole TextEncoder buffer", () => {
+    const cases = [
+      { ascii: "plain", number: 42 },
+      { chinese: "复航台", emoji: "👩‍💻🚀" },
+      { escaped: "line\nquote\"slash\\", lone: "\ud800" }
+    ];
+    const reference = (value) => {
+      let hash = 0x811c9dc5;
+      for (const byte of new TextEncoder().encode(JSON.stringify(value))) hash = Math.imul(hash ^ byte, 0x01000193);
+      return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, "0")}`;
+    };
+
+    for (const value of cases) assert.equal(checksumSnapshotData(value), reference(value));
+
+    const NativeTextEncoder = globalThis.TextEncoder;
+    globalThis.TextEncoder = class {
+      constructor() {
+        throw new Error("whole-buffer encoder must not be used");
+      }
+    };
+    try {
+      assert.equal(checksumSnapshotData(cases[1]), referenceWith(NativeTextEncoder, cases[1]));
+    } finally {
+      globalThis.TextEncoder = NativeTextEncoder;
+    }
+  });
+
   test("rejects malformed envelopes and invalid references before previewing", () => {
     assert.throws(() => readImportSnapshot({ format: "unknown", data: {} }, T1), /无法识别/);
     assert.throws(() => readImportSnapshot({ format: "reentry-deck-backup" }, T1), /缺少数据内容/);
@@ -96,6 +123,12 @@ describe("import snapshot inspection", () => {
     assert.throws(() => buildImportPreview(orphan, workspace(), T1), /会话引用了不存在的项目/);
   });
 });
+
+function referenceWith(TextEncoderClass, value) {
+  let hash = 0x811c9dc5;
+  for (const byte of new TextEncoderClass().encode(JSON.stringify(value))) hash = Math.imul(hash ^ byte, 0x01000193);
+  return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
 
 describe("import difference preview", () => {
   test("counts additions, removals, same-id updates, and unchanged records", () => {
@@ -166,11 +199,22 @@ describe("import difference preview", () => {
   });
 
   test("limits project-name detail without losing total counts", () => {
-    const incoming = workspace(Array.from({ length: 10 }, (_, index) => createProject({ id: `p${index}`, title: `Project ${index}` }, T0)));
-    const preview = buildImportPreview(incoming, workspace(), T1);
+    const current = workspace([
+      ...Array.from({ length: 10 }, (_, index) => createProject({ id: `remove-${index}`, title: `Remove ${index}` }, T0)),
+      ...Array.from({ length: 10 }, (_, index) => createProject({ id: `change-${index}`, title: `Before ${index}` }, T0))
+    ]);
+    const incoming = workspace([
+      ...Array.from({ length: 10 }, (_, index) => createProject({ id: `change-${index}`, title: `After ${index}` }, T0)),
+      ...Array.from({ length: 10 }, (_, index) => createProject({ id: `add-${index}`, title: `Add ${index}` }, T0))
+    ]);
+    const preview = buildImportPreview(incoming, current, T1);
 
     assert.equal(preview.projectChanges.addedTotal, 10);
+    assert.equal(preview.projectChanges.removedTotal, 10);
+    assert.equal(preview.projectChanges.changedTotal, 10);
     assert.equal(preview.projectChanges.added.length, 6);
+    assert.equal(preview.projectChanges.removed.length, 6);
+    assert.equal(preview.projectChanges.changed.length, 6);
     assert.equal(preview.projectChanges.detailLimit, 6);
   });
 });
