@@ -2,7 +2,7 @@ import { createEmptyState, isoNow, normalizeState, validateImportCandidate, vali
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.18.0";
+export const APP_VERSION = "0.19.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {
@@ -180,13 +180,30 @@ export class AppStore {
       throw new Error("检测到另一个标签页刚刚更新了数据；已阻止覆盖，请重试刚才的操作。 ");
     }
     const serialized = JSON.stringify(next);
+    let releasedPrevious = false;
     try {
       this.#storage.setItem(STORAGE_KEY, serialized);
     } catch (error) {
-      throw new Error(`本地保存失败，原数据仍然保留：${error.message}`);
+      const previous = this.#storage.getItem(PREVIOUS_KEY);
+      if (!isQuotaExceeded(error) || previous === null) {
+        throw new Error(`本地保存失败，原数据仍然保留：${error.message}`);
+      }
+      try {
+        this.#storage.removeItem(PREVIOUS_KEY);
+        this.#storage.setItem(STORAGE_KEY, serialized);
+        releasedPrevious = true;
+        this.notices.push("浏览器存储空间接近上限，已释放可再生的滚动撤销快照以完成本次保存；请尽快导出完整备份。 ");
+      } catch (retryError) {
+        try {
+          this.#storage.setItem(PREVIOUS_KEY, previous);
+        } catch {
+          // Best effort only: the primary value was never committed.
+        }
+        throw new Error(`本地保存失败，原数据仍然保留：${retryError.message}`);
+      }
     }
     this.#persistedRaw = serialized;
-    const shouldSavePrevious = current && !this.#skipNextPreviousWrite;
+    const shouldSavePrevious = current && !this.#skipNextPreviousWrite && !releasedPrevious;
     this.#skipNextPreviousWrite = false;
     if (shouldSavePrevious) {
       try {
@@ -202,6 +219,14 @@ export class AppStore {
     const event = Object.freeze({ source });
     for (const listener of this.#listeners) listener(this.#state, event);
   }
+}
+
+function isQuotaExceeded(error) {
+  return Boolean(error) && (
+    error.name === "QuotaExceededError"
+    || error.code === 22
+    || error.code === 1014
+  );
 }
 
 function parseSavedState(raw, now) {

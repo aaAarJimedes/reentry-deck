@@ -341,6 +341,65 @@ describe("AppStore updates and persistence", () => {
     assert.equal(next.projects[0].title, "Still writable");
     assert.equal(persisted(storage).projects[0].title, "Still writable");
   });
+
+  test("a main-write quota error can release the rolling snapshot and retry once", () => {
+    class ReclaimableQuotaStorage extends MemoryStorage {
+      quotaMode = false;
+
+      setItem(key, value) {
+        if (this.quotaMode && key === STORAGE_KEY && this.getItem(PREVIOUS_KEY) !== null) {
+          const error = new Error("storage full");
+          error.name = "QuotaExceededError";
+          throw error;
+        }
+        super.setItem(key, value);
+      }
+    }
+    const storage = new ReclaimableQuotaStorage();
+    const store = new AppStore(storage, T0, null);
+    store.update((draft) => draft.projects.push(createProject({ id: "p1", title: "First" }, T0)), T0);
+    store.update((draft) => { draft.projects[0].title = "Second"; }, T1);
+    assert.notEqual(storage.getItem(PREVIOUS_KEY), null);
+    storage.quotaMode = true;
+
+    const saved = store.update((draft) => { draft.projects[0].title = "Saved after reclaim"; }, T2);
+
+    assert.equal(saved.projects[0].title, "Saved after reclaim");
+    assert.equal(persisted(storage).projects[0].title, "Saved after reclaim");
+    assert.equal(storage.getItem(PREVIOUS_KEY), null);
+    assert.match(store.notices.at(-1), /释放.*滚动撤销快照/);
+  });
+
+  test("a failed quota retry restores the rolling snapshot and leaves the primary state unchanged", () => {
+    class PersistentQuotaStorage extends MemoryStorage {
+      quotaMode = false;
+
+      setItem(key, value) {
+        if (this.quotaMode && key === STORAGE_KEY) {
+          const error = new Error("still full");
+          error.name = "QuotaExceededError";
+          throw error;
+        }
+        super.setItem(key, value);
+      }
+    }
+    const storage = new PersistentQuotaStorage();
+    const store = new AppStore(storage, T0, null);
+    store.update((draft) => draft.projects.push(createProject({ id: "p1", title: "First" }, T0)), T0);
+    store.update((draft) => { draft.projects[0].title = "Second"; }, T1);
+    const beforeState = store.getState();
+    const beforePrimary = storage.getItem(STORAGE_KEY);
+    const beforePrevious = storage.getItem(PREVIOUS_KEY);
+    storage.quotaMode = true;
+
+    assert.throws(
+      () => store.update((draft) => { draft.projects[0].title = "Must not commit"; }, T2),
+      /本地保存失败，原数据仍然保留：still full/
+    );
+    assert.strictEqual(store.getState(), beforeState);
+    assert.equal(storage.getItem(STORAGE_KEY), beforePrimary);
+    assert.equal(storage.getItem(PREVIOUS_KEY), beforePrevious);
+  });
 });
 
 describe("AppStore replacement, snapshots, and reset", () => {
