@@ -4,6 +4,7 @@ import { extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const defaultRoot = resolve(import.meta.dirname, "..");
+export const MAX_REQUEST_TARGET_LENGTH = 8_192;
 
 export const PUBLIC_FILES = Object.freeze(new Map([
   ["/", "index.html"],
@@ -39,7 +40,7 @@ const mimeTypes = {
 };
 
 export function resolvePublicFile(rawUrl, root = defaultRoot) {
-  const requestTarget = rawUrl || "/";
+  const requestTarget = rawUrl ?? "/";
   if (typeof requestTarget !== "string"
     || !requestTarget.startsWith("/")
     || requestTarget.startsWith("//")
@@ -47,6 +48,7 @@ export function resolvePublicFile(rawUrl, root = defaultRoot) {
     || /[\u0000-\u0020\u007f-\u009f]/u.test(requestTarget)) {
     return { error: 400, path: null };
   }
+  if (requestTarget.length > MAX_REQUEST_TARGET_LENGTH) return { error: 414, path: null };
   let pathname;
   try {
     const parsed = new URL(requestTarget, "http://localhost");
@@ -73,7 +75,8 @@ export function createRequestHandler(root = defaultRoot) {
 
     const resolved = resolvePublicFile(request.url, root);
     if (resolved.error) {
-      sendText(response, resolved.error, resolved.error === 400 ? "Bad request" : "Not found", {}, request.method === "HEAD");
+      const message = { 400: "Bad request", 404: "Not found", 414: "URI too long" }[resolved.error] ?? "Request failed";
+      sendText(response, resolved.error, message, {}, request.method === "HEAD");
       return;
     }
     let descriptor = null;

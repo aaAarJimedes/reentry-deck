@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, before, describe, test } from "node:test";
 
-import { createAppServer, parseServerPort, resolvePublicFile } from "../tools/server.mjs";
+import { MAX_REQUEST_TARGET_LENGTH, createAppServer, parseServerPort, resolvePublicFile } from "../tools/server.mjs";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 let server;
@@ -85,6 +85,9 @@ describe("public path resolution", () => {
     ]) {
       assert.equal(resolvePublicFile(target, projectRoot).error, 400, target);
     }
+    assert.equal(resolvePublicFile("", projectRoot).error, 400);
+    assert.equal(resolvePublicFile(0, projectRoot).error, 400);
+    assert.equal(resolvePublicFile(`/${"a".repeat(MAX_REQUEST_TARGET_LENGTH)}`, projectRoot).error, 414);
   });
 });
 
@@ -104,6 +107,15 @@ describe("local HTTP server", () => {
     assert.equal((await send("/%")).status, 400);
     assert.equal((await send("http://attacker.invalid/src/main.js")).status, 400);
     assert.equal((await send("/src/main.js#fragment")).status, 400);
+    assert.equal((await send("/")).status, 200);
+  });
+
+  test("oversized request targets return 414 without reaching URL resolution", async () => {
+    const response = await send(`/${"a".repeat(MAX_REQUEST_TARGET_LENGTH)}`);
+
+    assert.equal(response.status, 414);
+    assert.equal(response.body, "URI too long");
+    assert.equal(response.headers["cache-control"], "no-store");
     assert.equal((await send("/")).status, 200);
   });
 
