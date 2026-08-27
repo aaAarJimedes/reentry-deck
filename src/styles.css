@@ -1118,6 +1118,16 @@ dialog::backdrop { background: rgb(10 25 23 / 58%); backdrop-filter: blur(4px); 
 .search-results p { margin: 0; color: var(--ink-soft); font-size: 10px; }
 .search-empty { padding: 48px 20px; color: var(--ink-soft); text-align: center; }
 .search-count { margin: 0 0 8px; color: var(--ink-soft); font-size: 10px; }
+.command-panel { display: grid; gap: 2px; }
+.command-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.command-grid button { display: grid; min-width: 0; grid-template-columns: 26px minmax(0, 1fr); align-items: center; gap: 9px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper-raised); color: var(--ink); cursor: pointer; text-align: left; }
+.command-grid button:hover { border-color: var(--forest-soft); background: var(--paper-deep); }
+.command-grid button:disabled { cursor: not-allowed; opacity: .42; }
+.command-grid button > svg { color: var(--forest-soft); }
+.command-grid strong,
+.command-grid small { display: block; overflow-wrap: anywhere; }
+.command-grid strong { font-size: 11px; }
+.command-grid small { margin-top: 1px; color: var(--ink-soft); font-size: 9px; }
 .dialog-header { display: flex; align-items: start; justify-content: space-between; gap: 20px; padding: 25px 26px 0; }
 .dialog-header h2 { margin-bottom: 5px; font-size: 24px; }
 .dialog-header p { margin: 0; color: var(--ink-soft); font-size: 12px; }
@@ -1252,6 +1262,7 @@ dialog::backdrop { background: rgb(10 25 23 / 58%); backdrop-filter: blur(4px); 
   .dialog-header { padding: 21px 20px 0; }
   .dialog-body { padding: 20px; }
   .import-project-changes { grid-template-columns: 1fr; }
+  .command-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 420px) {

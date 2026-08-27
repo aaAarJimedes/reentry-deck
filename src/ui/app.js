@@ -569,10 +569,10 @@ export class ReentryApp {
         </form>
       </dialog>
       <dialog id="search-dialog" class="search-dialog" aria-labelledby="search-title">
-        <div class="dialog-header"><div><h2 id="search-title">找回工作现场</h2><p>搜索项目、轨迹与检查点；数据不会离开浏览器。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
+        <div class="dialog-header"><div><h2 id="search-title">找回工作现场</h2><p>搜索项目、轨迹与检查点，或直接执行常用动作；数据不会离开浏览器。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <div class="dialog-body">
-          <label class="search-field">${icon("search")}<span class="sr-only">搜索所有工作现场</span><input type="search" data-control="workspace-search" placeholder="输入项目、决定、问题或下一步…" autocomplete="off" autofocus /></label>
-          <div class="search-results" data-search-results aria-live="polite"><p class="search-empty">输入一个或多个词，所有词都匹配才会出现。</p></div>
+          <label class="search-field">${icon("search")}<span class="sr-only">搜索所有工作现场或筛选动作</span><input type="search" data-control="workspace-search" placeholder="输入项目、决定、问题或下一步…" autocomplete="off" autofocus /></label>
+          <div class="search-results" data-search-results aria-live="polite">${this.#renderSearchResults("")}</div>
         </div>
       </dialog>
       ${this.#renderImportPreviewDialog()}`;
@@ -635,6 +635,7 @@ export class ReentryApp {
     if (action === "undo-last") this.#restorePrevious(control.dataset.undoContext);
     if (action === "close-dialog") this.#closeDialog(control);
     if (action === "confirm-import") this.#confirmImport();
+    if (action === "run-command") this.#runCommand(control.dataset.command, control.closest("dialog"));
     if (action === "edit-project") this.#openDialog("edit-project-dialog");
     if (action === "open-checkpoint") this.#openDialog("checkpoint-dialog");
     if (action === "start-session") this.#prepareSessionDialog(control.dataset.projectId);
@@ -684,10 +685,25 @@ export class ReentryApp {
 
   #renderSearchResults(query) {
     const results = searchWorkspace(this.#store.getState(), query);
-    if (!String(query).trim()) return '<p class="search-empty">输入一个或多个词，所有词都匹配才会出现。</p>';
+    if (!String(query).trim()) return this.#renderQuickCommands();
     if (!results.length) return `<p class="search-empty">没有找到“${escapeHTML(query)}”。试试更短或更具体的词。</p>`;
     const kindLabels = { project: "项目", crumb: "轨迹", checkpoint: "检查点" };
     return `<p class="search-count">找到 ${results.length} 条匹配</p><ul>${results.map((result) => `<li><a href="#/project/${encodeURIComponent(result.projectId)}"><span class="search-result-kind">${escapeHTML(result.kind === "crumb" ? CRUMB_LABELS[result.subtype] ?? "轨迹" : kindLabels[result.kind] ?? "记录")}${result.projectStatus === "archived" ? " · 已归档" : ""}</span><strong>${escapeHTML(result.title || result.projectTitle)}</strong>${result.kind !== "project" ? `<small>${escapeHTML(result.projectTitle)} · ${formatDateTime(result.createdAt)}</small>` : ""}${result.snippet && result.snippet !== result.title ? `<p>${escapeHTML(result.snippet)}</p>` : ""}</a></li>`).join("")}</ul>`;
+  }
+
+  #renderQuickCommands() {
+    const hasProjects = this.#store.getState().projects.some((item) => item.status !== "archived");
+    const canUndo = this.#store.hasPreviousSnapshot();
+    const commands = [
+      ["quick-capture", "trail", "快捷记录", "选择项目并保存一条证据", !hasProjects],
+      ["new-project", "plus", "建立项目", "创建一个新的工作现场", false],
+      ["undo", "undo", "撤销上次保存", "可再次操作切回", !canUndo],
+      ["export", "download", "导出完整备份", "下载本地 JSON 信封", false],
+      ["home", "home", "项目舰桥", "查看所有未归档项目", false],
+      ["archive", "archive", "归档舱", "查看只读历史现场", false],
+      ["settings", "settings", "数据保险箱", "主题、备份与滚动快照", false]
+    ];
+    return `<div class="command-panel" aria-label="快捷动作"><p class="search-count">快捷动作 · 输入文字可搜索全部证据</p><div class="command-grid">${commands.map(([value, iconName, label, detail, disabled]) => `<button type="button" data-action="run-command" data-command="${value}" ${disabled ? "disabled" : ""}>${icon(iconName)}<span><strong>${label}</strong><small>${detail}</small></span></button>`).join("")}</div></div>`;
   }
 
   #onKeydown(event) {
@@ -720,10 +736,23 @@ export class ReentryApp {
         capture.focus();
       }
     }
-    if (event.key === "/") {
+    if (event.key === "/" || event.key === "?") {
       event.preventDefault();
       this.#openDialog("search-dialog");
     }
+  }
+
+  #runCommand(command, dialog) {
+    dialog?.close();
+    requestAnimationFrame(() => {
+      if (command === "quick-capture") this.#openDialog("quick-capture-dialog");
+      if (command === "new-project") this.#openDialog("new-project-dialog");
+      if (command === "undo") this.#restorePrevious("topbar");
+      if (command === "export") this.#exportData();
+      if (command === "home") location.hash = "#/";
+      if (command === "archive") location.hash = "#/archive";
+      if (command === "settings") location.hash = "#/settings";
+    });
   }
 
   #createProject(data, form) {
