@@ -72,3 +72,12 @@ test("backup reads ignore stale completions and are invalidated on app destructi
   assert.match(source, /if \(isCurrentRequest\(\)\) this\.#toast/);
   assert.match(source, /this\.#importRequestGate\.invalidate\(\)/);
 });
+
+test("attention threshold is an accessible validated local setting", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /<select data-control="stale-days" aria-label="离开提醒阈值">/);
+  assert.match(source, /this\.#setStaleAfterDays\(control\.value\)/);
+  assert.match(source, /Number\.isSafeInteger\(days\) \|\| days < 1 \|\| days > 365/);
+  assert.match(source, /state\.settings\.staleAfterDays = days/);
+});

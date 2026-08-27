@@ -573,6 +573,7 @@ export class ReentryApp {
     const size = this.#getBackupSize(state);
     const storageUsage = this.#store.getStorageUsage();
     const theme = state.settings.theme;
+    const staleOptions = [...new Set([1, 3, 7, 14, 30, 90, state.settings.staleAfterDays])].sort((a, b) => a - b);
     const storagePressure = storageUsage.status === "critical"
       ? "已达到 5 MiB 保守参考线，请立即导出备份并减少浏览器内数据。"
       : storageUsage.status === "warning"
@@ -586,6 +587,7 @@ export class ReentryApp {
       <div class="settings-grid">
         <section class="panel"><div class="panel-header"><h2>外观与数据</h2><p>设置同样只保存在当前浏览器。</p></div><div class="panel-body">
           <div class="setting-row"><div class="setting-copy"><h3>界面主题</h3><p>跟随系统，或固定使用明亮/深色外观。</p></div><div class="segmented-control" aria-label="界面主题">${[["system", "跟随系统"], ["light", "明亮"], ["dark", "深色"]].map(([value, label]) => `<button type="button" data-action="set-theme" data-theme="${value}" aria-pressed="${theme === value}">${label}</button>`).join("")}</div></div>
+          <div class="setting-row"><div class="setting-copy"><h3>离开提醒阈值</h3><p>项目超过这段时间没有新现场时，关注清单会提示核对。</p></div><label class="field"><span class="sr-only">离开提醒阈值</span><select data-control="stale-days" aria-label="离开提醒阈值">${staleOptions.map((days) => `<option value="${days}" ${days === state.settings.staleAfterDays ? "selected" : ""}>${days} 天</option>`).join("")}</select></label></div>
           <div class="setting-row"><div class="setting-copy"><h3>导出完整备份</h3><p>包含项目、会话、轨迹、检查点和设置。当前约 ${size}。</p></div><button class="secondary-button" type="button" data-action="export-data">${icon("download")} 导出 JSON</button></div>
           <div class="setting-row"><div class="setting-copy"><h3>从备份恢复</h3><p>文件会先在本机校验；有效备份将替换当前工作区。</p></div><button class="secondary-button" type="button" data-action="choose-import">${icon("upload")} 选择文件</button><input class="sr-only" id="import-file" type="file" accept="application/json,.json" data-control="import-file" aria-label="选择 JSON 备份文件" /></div>
           <div class="setting-row"><div class="setting-copy"><h3>滚动安全快照</h3><p>只保留上一次保存；恢复后再次切换可返回当前版本。重要历史仍应导出备份。</p></div><button class="secondary-button" type="button" data-action="undo-last" data-undo-context="settings" ${this.#store.hasPreviousSnapshot() ? "" : "disabled"}>${icon("undo")} 回到上次保存</button></div>
@@ -804,6 +806,7 @@ export class ReentryApp {
   #onChange(event) {
     const control = event.target;
     if (control.matches('[data-control="project-status"]')) this.#changeProjectStatus(control.dataset.projectId, control.value);
+    if (control.matches('[data-control="stale-days"]')) this.#setStaleAfterDays(control.value);
     if (control.matches('[data-control="import-file"]') && control.files?.[0]) this.#importData(control.files[0], control);
   }
 
@@ -1219,6 +1222,15 @@ export class ReentryApp {
     if (!["system", "light", "dark"].includes(theme)) return;
     this.#focusSelector = `[data-action="set-theme"][data-theme="${theme}"]`;
     this.#store.update((state) => { state.settings.theme = theme; });
+  }
+
+  #setStaleAfterDays(value) {
+    const days = Number(value);
+    if (!Number.isSafeInteger(days) || days < 1 || days > 365) throw new Error("离开提醒阈值必须在 1 到 365 天之间。");
+    this.#focusSelector = '[data-control="stale-days"]';
+    this.#store.update((state) => { state.settings.staleAfterDays = days; });
+    this.#announce(`离开提醒阈值已设为 ${days} 天`);
+    this.#toast(`关注清单将在离开 ${days} 天后提示核对。`);
   }
 
   #restorePrevious(context = "topbar") {

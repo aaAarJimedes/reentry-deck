@@ -367,6 +367,12 @@ describe("AppStore updates and persistence", () => {
           draft.projects[0].updatedAt = "2026-08-28T00:00:00Z";
         },
         pattern: /项目时间无效：p1.updatedAt/
+      },
+      {
+        mutate(draft) {
+          draft.settings.staleAfterDays = 366;
+        },
+        pattern: /陈旧阈值必须在 1 到 365 天之间/
       }
     ];
 
@@ -381,6 +387,16 @@ describe("AppStore updates and persistence", () => {
       assert.strictEqual(store.getState(), beforeState);
       assert.equal(storage.getItem(STORAGE_KEY), beforeStorage);
     }
+  });
+
+  test("a valid attention threshold persists as a numeric setting", () => {
+    const storage = new MemoryStorage();
+    const store = new AppStore(storage, T0, null);
+
+    const saved = store.update((draft) => { draft.settings.staleAfterDays = 14; }, T1);
+
+    assert.equal(saved.settings.staleAfterDays, 14);
+    assert.equal(persisted(storage).settings.staleAfterDays, 14);
   });
 
   test("a current-value write failure restores serialized data and does not commit or emit", () => {
