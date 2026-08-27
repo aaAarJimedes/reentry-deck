@@ -792,6 +792,9 @@ h3 { font-size: 17px; }
   content: "";
 }
 
+.reentry-card-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+.reentry-card-tools .ghost-button { min-height: 34px; padding: 7px 10px; }
+
 .reentry-section {
   padding: 18px 0;
   border-top: 1px solid var(--line);

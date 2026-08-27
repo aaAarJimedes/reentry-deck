@@ -12,6 +12,7 @@ import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js"
 import { triggerBlobDownload } from "../core/download.js";
 import { buildAttentionDeck, buildWeeklyReview } from "../core/insights.js";
 import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
+import { buildReentryBrief, copyPlainText } from "../core/share.js";
 import { buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession, prepareQuickCheckpointReview } from "../core/session.js";
 import {
@@ -77,7 +78,8 @@ const ICONS = {
   external: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6H5V6h6"/>',
   box: '<path d="M4 7 12 3l8 4v10l-8 4-8-4Z"/><path d="m4 7 8 4 8-4M12 11v10"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/>',
-  undo: '<path d="M9 7 4 12l5 5"/><path d="M5 12h8a6 6 0 0 1 6 6"/>'
+  undo: '<path d="M9 7 4 12l5 5"/><path d="M5 12h8a6 6 0 0 1 6 6"/>',
+  copy: '<rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>'
 };
 
 export class ReentryApp {
@@ -89,6 +91,7 @@ export class ReentryApp {
   #acknowledgedStaleSessions = new Set();
   #pendingImport = null;
   #importRequestGate = createLatestRequestGate();
+  #clipboardRequestGate = createLatestRequestGate();
   #timelineLimits = new Map();
   #collectionLimits = new Map();
   #searchIndexState = null;
@@ -137,6 +140,7 @@ export class ReentryApp {
   destroy() {
     window.clearInterval(this.#timerId);
     this.#importRequestGate.invalidate();
+    this.#clipboardRequestGate.invalidate();
     this.#pendingImport = null;
     this.#eventController.abort();
     this.#colorSchemeQuery?.removeEventListener?.("change", this.#colorSchemeListener);
@@ -440,7 +444,7 @@ export class ReentryApp {
       : "尚无检查点";
     return `
       <section class="panel reentry-card" aria-labelledby="reentry-card-heading">
-        <div class="panel-header inline-between"><div><h2 id="reentry-card-heading">60 秒复航卡</h2><p>${card.checkpoint ? (card.checkpoint.captureMode === "quick" ? `快速停靠 · ${formatDateTime(card.checkpoint.createdAt)} · 请先复核` : `来自 ${formatDateTime(card.checkpoint.createdAt)} 的可靠检查点`) : "信息不足时，从三问校准开始"}</p></div><span class="soft-pill">${icon("compass")} ${card.completeness}%</span></div>
+        <div class="panel-header inline-between"><div><h2 id="reentry-card-heading">60 秒复航卡</h2><p>${card.checkpoint ? (card.checkpoint.captureMode === "quick" ? `快速停靠 · ${formatDateTime(card.checkpoint.createdAt)} · 请先复核` : `来自 ${formatDateTime(card.checkpoint.createdAt)} 的可靠检查点`) : "信息不足时，从三问校准开始"}</p></div><div class="reentry-card-tools"><button class="ghost-button" type="button" data-action="copy-reentry-brief" data-project-id="${attr(card.project.id)}">${icon("copy")} 复制简报</button><span class="soft-pill">${icon("compass")} ${card.completeness}%</span></div></div>
         <div class="panel-body">
           ${card.contextGapSessions.length ? `<div class="evidence-warning" role="status">${icon("alert")} 检查点之后还有 ${card.contextGapSessions.length} 段未收拢或中断的会话，完整度已下调；请先核对现场。</div>` : ""}
           ${card.readinessGaps.length ? `<div class="reentry-gaps" role="note"><strong>${icon("compass")} 复航缺口</strong><ul>${card.readinessGaps.map((gap) => `<li>${escapeHTML(gap)}</li>`).join("")}</ul>${card.checkpoint?.captureMode === "quick" ? '<button class="secondary-button" type="button" data-action="review-quick-checkpoint">复核并升级检查点</button>' : ""}</div>` : ""}
@@ -796,6 +800,7 @@ export class ReentryApp {
     if (action === "restore-project") this.#restoreProject(control.dataset.projectId);
     if (action === "load-sample") this.#loadSample();
     if (action === "export-data") this.#exportData();
+    if (action === "copy-reentry-brief") this.#copyReentryBrief(control.dataset.projectId);
     if (action === "choose-import") this.#root.querySelector("#import-file")?.click();
     if (action === "set-theme") this.#setTheme(control.dataset.theme);
     if (action === "set-motion") this.#setReducedMotion(control.dataset.reducedMotion);
@@ -1337,6 +1342,20 @@ export class ReentryApp {
     const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
     triggerBlobDownload(blob, `reentry-backup-${new Date().toISOString().slice(0, 10)}.json`);
     this.#toast("完整备份已生成。 ");
+  }
+
+  async #copyReentryBrief(projectId) {
+    const isCurrentRequest = this.#clipboardRequestGate.begin();
+    try {
+      const card = buildReentryCard(this.#store.getState(), projectId);
+      if (!card) throw new Error("找不到可复制的项目现场。 ");
+      await copyPlainText(buildReentryBrief(card));
+      if (!isCurrentRequest()) return;
+      this.#announce("复航简报已复制");
+      this.#toast("复航简报已复制到剪贴板。 ");
+    } catch (error) {
+      if (isCurrentRequest()) this.#toast(`无法复制简报：${error.message}`, "error");
+    }
   }
 
   async #importData(file, input) {

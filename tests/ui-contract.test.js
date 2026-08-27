@@ -114,3 +114,14 @@ test("global keyboard shortcuts do not escape an open modal boundary", async () 
   assert.match(handler, /this\.#restorePrevious\("topbar"\)/);
   assert.ok(handler.indexOf('querySelector("dialog[open]")') < handler.indexOf("#restorePrevious") || handler.indexOf('querySelector("dialog[open]")') < handler.indexOf("this.#restorePrevious"));
 });
+
+test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /data-action="copy-reentry-brief"[^>]*data-project-id=/u);
+  assert.match(source, /if \(action === "copy-reentry-brief"\) this\.#copyReentryBrief/u);
+  assert.match(source, /const isCurrentRequest = this\.#clipboardRequestGate\.begin\(\)/u);
+  assert.match(source, /await copyPlainText\(buildReentryBrief\(card\)\)/u);
+  assert.match(source, /if \(!isCurrentRequest\(\)\) return/u);
+  assert.match(source, /this\.#clipboardRequestGate\.invalidate\(\)/u);
+});
