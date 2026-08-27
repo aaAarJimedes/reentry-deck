@@ -399,6 +399,21 @@ describe("AppStore replacement, snapshots, and reset", () => {
     assert.equal(fromRaw.projects[0].id, "raw");
   });
 
+  test("previewImport validates and compares without changing state or storage", () => {
+    const storage = new MemoryStorage();
+    const store = new AppStore(storage, T0, null);
+    store.update((draft) => draft.projects.push(createProject({ id: "current", title: "Current" }, T0)), T0);
+    const beforeState = store.getState();
+    const beforeStorage = storage.getItem(STORAGE_KEY);
+
+    const preview = store.previewImport(stateWithProject("incoming", "Incoming"), T1);
+
+    assert.equal(preview.projectChanges.addedTotal, 1);
+    assert.equal(preview.projectChanges.removedTotal, 1);
+    assert.strictEqual(store.getState(), beforeState);
+    assert.equal(storage.getItem(STORAGE_KEY), beforeStorage);
+  });
+
   test("a recognized backup envelope without data is rejected without clearing existing data", () => {
     const store = new AppStore(new MemoryStorage(), T0);
     store.update((draft) => draft.projects.push(createProject({ id: "p1" }, T0)), T0);

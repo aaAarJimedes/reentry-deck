@@ -71,6 +71,7 @@ export class ReentryApp {
   #focusSelector = null;
   #noticeQueue = [];
   #acknowledgedStaleSessions = new Set();
+  #pendingImport = null;
 
   constructor(root, store) {
     this.#root = root;
@@ -81,6 +82,9 @@ export class ReentryApp {
     this.#root.addEventListener("submit", (event) => this.#onSubmit(event));
     this.#root.addEventListener("change", (event) => this.#onChange(event));
     this.#root.addEventListener("input", (event) => this.#onInput(event));
+    this.#root.addEventListener("cancel", (event) => {
+      if (event.target.id === "import-preview-dialog") this.#pendingImport = null;
+    });
     window.addEventListener("hashchange", () => {
       this.#focusSelector = "#main-content";
       this.render();
@@ -98,6 +102,12 @@ export class ReentryApp {
 
   render() {
     const state = this.#store.getState();
+    const reopenImportPreview = Boolean(this.#root.querySelector("#import-preview-dialog")?.open && this.#pendingImport);
+    if (this.#pendingImport && this.#pendingImport.baseState !== state) {
+      this.#pendingImport.preview = this.#store.previewImport(this.#pendingImport.value);
+      this.#pendingImport.baseState = state;
+      this.#pendingImport.refreshed = true;
+    }
     const route = parseRoute(location.hash);
     const currentProject = route.name === "project" ? state.projects.find((item) => item.id === route.id) : null;
     const activeSession = state.sessions.find((item) => item.status === "active") ?? null;
@@ -126,6 +136,10 @@ export class ReentryApp {
     `;
     this.#root.setAttribute("aria-busy", "false");
     this.#refreshTimers();
+
+    if (reopenImportPreview && this.#pendingImport) {
+      requestAnimationFrame(() => this.#openDialog("import-preview-dialog"));
+    }
 
     if (this.#focusSelector) {
       const selector = this.#focusSelector;
@@ -529,6 +543,47 @@ export class ReentryApp {
           <label class="search-field">${icon("search")}<span class="sr-only">搜索所有工作现场</span><input type="search" data-control="workspace-search" placeholder="输入项目、决定、问题或下一步…" autocomplete="off" autofocus /></label>
           <div class="search-results" data-search-results aria-live="polite"><p class="search-empty">输入一个或多个词，所有词都匹配才会出现。</p></div>
         </div>
+      </dialog>
+      ${this.#renderImportPreviewDialog()}`;
+  }
+
+  #renderImportPreviewDialog() {
+    const pending = this.#pendingImport;
+    if (!pending) return "";
+    const { preview } = pending;
+    const labels = { projects: "项目", sessions: "会话", crumbs: "轨迹", checkpoints: "检查点" };
+    const rows = Object.entries(preview.collections).map(([name, change]) => `
+      <tr><th scope="row">${labels[name]}</th><td>${change.current}</td><td>${change.incoming}</td><td class="change-add">+${change.added}</td><td class="change-remove">−${change.removed}</td><td>${change.changed}</td></tr>`).join("");
+    const sourceDetails = [
+      preview.source.envelope ? "标准备份信封" : "原始工作区数据",
+      preview.source.appVersion ? `应用 ${preview.source.appVersion}` : null,
+      preview.source.exportedAt ? `导出于 ${formatDateTime(preview.source.exportedAt)}` : null,
+      formatBytes(pending.fileSize)
+    ].filter(Boolean).join(" · ");
+    const projectSections = [
+      renderProjectChangeList("将新增", preview.projectChanges.added, preview.projectChanges.addedTotal, "added"),
+      renderProjectChangeList("将移除", preview.projectChanges.removed, preview.projectChanges.removedTotal, "removed"),
+      renderChangedProjectList(preview.projectChanges.changed, preview.projectChanges.changedTotal)
+    ].filter(Boolean).join("");
+    const warnings = [];
+    if (preview.currentActiveSession) warnings.push(`当前“${preview.currentActiveSession.projectTitle}”的活动会话将被备份内容替换。`);
+    if (preview.incomingActiveSession) warnings.push(`导入后会恢复“${preview.incomingActiveSession.projectTitle}”的活动会话：${preview.incomingActiveSession.intention || "未记录意图"}。`);
+    if (preview.projectChanges.removedTotal) warnings.push(`${preview.projectChanges.removedTotal} 个仅存在于当前工作区的项目不会出现在导入结果中。`);
+    if (pending.refreshed) warnings.push("预览期间工作区发生了变化，差异已按最新状态重新计算。请再次核对。 ");
+
+    return `
+      <dialog id="import-preview-dialog" class="import-preview-dialog" aria-labelledby="import-preview-title" aria-describedby="import-preview-description">
+        <div class="dialog-header"><div><h2 id="import-preview-title">核对导入影响</h2><p id="import-preview-description">文件已在本机通过完整结构校验；确认后才会替换工作区。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="取消导入并关闭">${icon("close")}</button></div>
+        <div class="dialog-body">
+          <div class="import-file-summary"><span>${icon("shield")}</span><div><strong>${escapeHTML(pending.fileName)}</strong><small>${escapeHTML(sourceDetails)}</small></div></div>
+          ${preview.hasContentChanges ? "" : `<div class="import-identical">${icon("check")}<span>项目、记录和设置与当前工作区一致，无需重复导入。</span></div>`}
+          ${warnings.length ? `<div class="import-warnings" role="note">${warnings.map((warning) => `<p>${icon("alert")}<span>${escapeHTML(warning)}</span></p>`).join("")}</div>` : ""}
+          <div class="import-table-wrap"><table class="import-diff-table"><caption class="sr-only">当前工作区与导入结果的记录差异</caption><thead><tr><th scope="col">记录</th><th scope="col">当前</th><th scope="col">导入后</th><th scope="col">新增</th><th scope="col">移除</th><th scope="col">更新</th></tr></thead><tbody>${rows}</tbody></table></div>
+          ${projectSections ? `<div class="import-project-changes">${projectSections}</div>` : ""}
+          ${(preview.settingsChanged || preview.selectionChanged || preview.orderChangedCollections.length) ? `<p class="import-meta-note">${icon("info")}<span>${preview.settingsChanged ? "界面设置会采用备份版本。" : ""}${preview.selectionChanged ? " 当前选中的项目也会更新。" : ""}${preview.orderChangedCollections.length ? " 同 ID 记录的排列顺序存在变化。" : ""}</span></p>` : ""}
+          <p class="import-rollback-note">当前工作区会自动成为滚动安全快照；导入后可使用“撤销上一次保存”切回。</p>
+          <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="danger-button" type="button" data-action="confirm-import" ${preview.hasContentChanges ? "" : "disabled"}>确认替换工作区</button></div>
+        </div>
       </dialog>`;
   }
 
@@ -546,7 +601,8 @@ export class ReentryApp {
     if (action === "open-new-project") this.#openDialog("new-project-dialog");
     if (action === "open-search") this.#openDialog("search-dialog");
     if (action === "undo-last") this.#restorePrevious(control.dataset.undoContext);
-    if (action === "close-dialog") control.closest("dialog")?.close();
+    if (action === "close-dialog") this.#closeDialog(control);
+    if (action === "confirm-import") this.#confirmImport();
     if (action === "edit-project") this.#openDialog("edit-project-dialog");
     if (action === "open-checkpoint") this.#openDialog("checkpoint-dialog");
     if (action === "start-session") this.#prepareSessionDialog(control.dataset.projectId);
@@ -912,16 +968,56 @@ export class ReentryApp {
     try {
       if (file.size > 25 * 1024 * 1024) throw new Error("备份超过 25 MB，已停止导入以保护页面稳定性。 ");
       const parsed = JSON.parse(await file.text());
-      const projectCount = parsed?.data?.projects?.length ?? parsed?.projects?.length ?? 0;
-      if (!window.confirm(`用这份备份替换当前工作区？检测到 ${projectCount} 个项目。当前数据可先取消并导出。`)) return;
-      this.#store.importSnapshot(parsed);
-      location.hash = "#/";
-      this.#toast("备份已校验并恢复。 ");
+      this.#pendingImport = {
+        value: parsed,
+        preview: this.#store.previewImport(parsed),
+        baseState: this.#store.getState(),
+        fileName: file.name || "未命名备份.json",
+        fileSize: file.size,
+        refreshed: false
+      };
+      this.render();
+      this.#openDialog("import-preview-dialog");
     } catch (error) {
       this.#toast(`无法导入：${error.message}`, "error");
     } finally {
       input.value = "";
     }
+  }
+
+  #confirmImport() {
+    const pending = this.#pendingImport;
+    if (!pending || !pending.preview.hasContentChanges) return;
+    const currentState = this.#store.getState();
+    if (currentState !== pending.baseState) {
+      pending.preview = this.#store.previewImport(pending.value);
+      pending.baseState = currentState;
+      pending.refreshed = true;
+      this.render();
+      this.#openDialog("import-preview-dialog");
+      this.#toast("工作区刚刚有变化，已刷新导入差异，请重新核对。", "error");
+      return;
+    }
+
+    this.#pendingImport = null;
+    this.#focusSelector = "#main-content";
+    try {
+      this.#store.importSnapshot(pending.value);
+      if (location.hash !== "#/") location.hash = "#/";
+      this.#toast("备份已按预览结果恢复；上一个工作区仍可撤销回来。 ");
+    } catch (error) {
+      this.#pendingImport = pending;
+      pending.refreshed = true;
+      this.render();
+      this.#openDialog("import-preview-dialog");
+      this.#toast(`无法导入：${error.message}`, "error");
+    }
+  }
+
+  #closeDialog(control) {
+    const dialog = control.closest("dialog");
+    if (dialog?.id === "import-preview-dialog") this.#pendingImport = null;
+    dialog?.close();
   }
 
   #openDialog(id) {
@@ -1002,6 +1098,18 @@ function metric(label, value, detail) {
 
 function miniStat(value, label) {
   return `<div class="mini-stat"><strong>${value}</strong><span>${escapeHTML(label)}</span></div>`;
+}
+
+function renderProjectChangeList(label, projects, total, kind) {
+  if (!total) return "";
+  const hidden = total - projects.length;
+  return `<section data-kind="${kind}"><h3>${escapeHTML(label)} <span>${total}</span></h3><ul>${projects.map((project) => `<li><strong>${escapeHTML(project.title)}</strong><small>${escapeHTML(PROJECT_STATUS_LABELS[project.status] ?? project.status)}</small></li>`).join("")}</ul>${hidden ? `<p>另有 ${hidden} 个项目未逐项展开</p>` : ""}</section>`;
+}
+
+function renderChangedProjectList(projects, total) {
+  if (!total) return "";
+  const hidden = total - projects.length;
+  return `<section data-kind="changed"><h3>同 ID 更新 <span>${total}</span></h3><ul>${projects.map((project) => `<li><strong>${escapeHTML(project.beforeTitle === project.afterTitle ? project.afterTitle : `${project.beforeTitle} → ${project.afterTitle}`)}</strong><small>${escapeHTML(project.beforeStatus === project.afterStatus ? PROJECT_STATUS_LABELS[project.afterStatus] ?? project.afterStatus : `${PROJECT_STATUS_LABELS[project.beforeStatus] ?? project.beforeStatus} → ${PROJECT_STATUS_LABELS[project.afterStatus] ?? project.afterStatus}`)}</small></li>`).join("")}</ul>${hidden ? `<p>另有 ${hidden} 个项目未逐项展开</p>` : ""}</section>`;
 }
 
 function pulseMetric(value, label, detail) {

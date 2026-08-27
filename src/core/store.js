@@ -1,7 +1,8 @@
 import { createEmptyState, isoNow, normalizeState, validateImportCandidate, validateState } from "./model.js";
+import { buildImportPreview, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.6.0";
+export const APP_VERSION = "0.7.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {
@@ -113,12 +114,11 @@ export class AppStore {
   }
 
   importSnapshot(value, now = Date.now()) {
-    if (value && typeof value === "object" && "format" in value) {
-      if (value.format !== "reentry-deck-backup") throw new Error("导入失败：无法识别这份备份的格式。 ");
-      if (!value.data || typeof value.data !== "object") throw new Error("导入失败：备份信封缺少数据内容。 ");
-      return this.replace(value.data, now);
-    }
-    return this.replace(value, now);
+    return this.replace(readImportSnapshot(value, now).state, now);
+  }
+
+  previewImport(value, now = Date.now()) {
+    return buildImportPreview(value, this.#state, now);
   }
 
   #load(now, current) {

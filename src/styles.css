@@ -413,7 +413,8 @@ svg {
 .ghost-button:hover { background: var(--paper-deep); color: var(--ink); }
 .icon-button:disabled,
 .ghost-button:disabled,
-.secondary-button:disabled { cursor: not-allowed; opacity: .42; transform: none; }
+.secondary-button:disabled,
+.danger-button:disabled { cursor: not-allowed; opacity: .42; transform: none; }
 
 .ghost-button,
 .secondary-button,
@@ -1055,6 +1056,40 @@ dialog {
 
 dialog::backdrop { background: rgb(10 25 23 / 58%); backdrop-filter: blur(4px); }
 .search-dialog { width: min(720px, calc(100vw - 32px)); }
+.import-preview-dialog { width: min(760px, calc(100vw - 32px)); }
+.import-file-summary { display: flex; align-items: center; gap: 12px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 13px; background: var(--paper-deep); }
+.import-file-summary > span { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; border-radius: 10px; background: var(--mint); color: var(--forest-soft); }
+.import-file-summary strong,
+.import-file-summary small { display: block; overflow-wrap: anywhere; }
+.import-file-summary small { margin-top: 2px; color: var(--ink-soft); font-size: 10px; }
+.import-identical { display: flex; gap: 9px; padding: 13px 15px; border-radius: 12px; background: var(--mint); color: var(--forest-soft); }
+.import-warnings { display: grid; gap: 7px; }
+.import-warnings p { display: flex; align-items: start; gap: 9px; margin: 0; padding: 11px 13px; border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--line)); border-radius: 11px; background: var(--amber-soft); font-size: 11px; }
+.import-warnings svg { flex: 0 0 auto; margin-top: 1px; }
+.import-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 13px; }
+.import-diff-table { width: 100%; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
+.import-diff-table th,
+.import-diff-table td { padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.import-diff-table thead th { background: var(--paper-deep); color: var(--ink-soft); font-size: 9px; letter-spacing: .06em; }
+.import-diff-table tbody tr:last-child > * { border-bottom: 0; }
+.import-diff-table th:first-child { text-align: left; }
+.import-diff-table .change-add { color: var(--forest-soft); font-weight: 800; }
+.import-diff-table .change-remove { color: var(--danger); font-weight: 800; }
+.import-project-changes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.import-project-changes section { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.import-project-changes h3 { display: flex; justify-content: space-between; gap: 8px; margin: 0 0 8px; font-size: 11px; }
+.import-project-changes h3 span { color: var(--ink-soft); }
+.import-project-changes ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.import-project-changes li { min-width: 0; padding-top: 7px; border-top: 1px solid var(--line); }
+.import-project-changes strong,
+.import-project-changes small { display: block; overflow-wrap: anywhere; }
+.import-project-changes strong { font-size: 10px; }
+.import-project-changes small,
+.import-project-changes section > p { margin: 2px 0 0; color: var(--ink-soft); font-size: 9px; }
+.import-project-changes [data-kind="removed"] h3 { color: var(--danger); }
+.import-meta-note,
+.import-rollback-note { margin: 0; color: var(--ink-soft); font-size: 10px; }
+.import-meta-note { display: flex; align-items: start; gap: 7px; }
 .search-field { display: grid; grid-template-columns: 24px minmax(0, 1fr); align-items: center; gap: 8px; }
 .search-field > svg { color: var(--ink-soft); }
 .search-field input { min-height: 50px; font-size: 16px; }
@@ -1198,6 +1233,7 @@ dialog::backdrop { background: rgb(10 25 23 / 58%); backdrop-filter: blur(4px); 
   dialog { width: calc(100vw - 20px); max-height: calc(100dvh - 20px); border-radius: 18px; }
   .dialog-header { padding: 21px 20px 0; }
   .dialog-body { padding: 20px; }
+  .import-project-changes { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 420px) {
