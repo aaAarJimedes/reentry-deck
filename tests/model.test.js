@@ -5,6 +5,7 @@ import {
   CRUMB_TYPES,
   CHECKPOINT_CAPTURE_MODES,
   PROJECT_STATUSES,
+  IMPORT_LIMITS,
   SCHEMA_VERSION,
   SESSION_CLOSE_REASONS,
   SESSION_STATUSES,
@@ -413,5 +414,83 @@ describe("validateImportCandidate", () => {
       "只有问题或阻塞可以标记为已解决：wrong-type",
       "面包屑解决时间无效：bad-date"
     ]);
+  });
+
+  test("rejects lossy fields, excessive text, invalid dates, and unsafe workspace metadata", () => {
+    const state = createEmptyState(NOW);
+    const project = createProject({ id: "p1" }, NOW);
+    project.title = 42;
+    project.description = "x".repeat(IMPORT_LIMITS.projectDescription + 1);
+    project.updatedAt = "not-a-date";
+    state.projects.push(project);
+    state.sessions.push(createSession({
+      id: "s1",
+      projectId: "p1",
+      startedAt: "2026-08-28T03:00:00.000Z",
+      endedAt: "2026-08-28T02:00:00.000Z",
+      status: "completed"
+    }, NOW));
+    state.settings.theme = "neon";
+    state.settings.staleAfterDays = 0;
+    state.settings.reducedMotion = "no";
+    state.meta.revision = -1;
+    state.ui.selectedProjectId = "missing";
+
+    const errors = validateImportCandidate(state);
+
+    assert.match(errors.join("；"), /项目名称必须是文本/);
+    assert.match(errors.join("；"), /项目说明超过 800 字符上限/);
+    assert.match(errors.join("；"), /项目时间无效：p1.updatedAt/);
+    assert.match(errors.join("；"), /会话结束时间早于开始时间：s1/);
+    assert.match(errors.join("；"), /界面主题无效：neon/);
+    assert.match(errors.join("；"), /陈旧阈值必须在 1 到 365 天之间/);
+    assert.match(errors.join("；"), /减少动态效果设置无效/);
+    assert.match(errors.join("；"), /修订号无效/);
+    assert.match(errors.join("；"), /当前选中项目引用不存在/);
+  });
+
+  test("rejects pathological record counts before traversing individual records", () => {
+    const state = createEmptyState(NOW);
+    state.crumbs = new Array(IMPORT_LIMITS.records + 1).fill({ id: "duplicate" });
+
+    assert.deepEqual(validateImportCandidate(state), [
+      `备份包含 ${IMPORT_LIMITS.records + 1} 条记录，超过 ${IMPORT_LIMITS.records} 条安全上限`
+    ]);
+  });
+
+  test("caps detailed validation errors", () => {
+    const state = createEmptyState(NOW);
+    state.projects.push(...Array.from({ length: IMPORT_LIMITS.reportedErrors + 10 }, (_, index) => createProject({
+      id: `p${index}`,
+      title: "x".repeat(IMPORT_LIMITS.projectTitle + 1)
+    }, NOW)));
+
+    const errors = validateImportCandidate(state);
+
+    assert.equal(errors.length, IMPORT_LIMITS.reportedErrors + 1);
+    assert.equal(errors.at(-1), "备份还包含更多问题，已停止展开错误列表");
+  });
+
+  test("rejects cross-project session, crumb, and checkpoint links", () => {
+    const state = createEmptyState(NOW);
+    const first = createProject({ id: "p1" }, NOW);
+    const second = createProject({ id: "p2" }, NOW);
+    second.color = "invalid-color";
+    const firstSession = createSession({ id: "s1", projectId: "p1", status: "completed", endedAt: NOW_ISO, checkpointId: "cp2", sourceCheckpointId: "cp2" }, NOW);
+    const secondSession = createSession({ id: "s2", projectId: "p2", status: "completed", endedAt: NOW_ISO }, NOW);
+    const secondCheckpoint = createCheckpoint({ id: "cp2", projectId: "p2", sessionId: "s2" }, NOW);
+    state.projects.push(first, second);
+    state.sessions.push(firstSession, secondSession);
+    state.checkpoints.push(secondCheckpoint, createCheckpoint({ id: "cp-wrong", projectId: "p1", sessionId: "s2" }, NOW));
+    state.crumbs.push(createCrumb({ id: "c-wrong", projectId: "p1", sessionId: "s2" }, NOW));
+
+    const errors = validateImportCandidate(state);
+
+    assert.match(errors.join("；"), /项目颜色无效：invalid-color/);
+    assert.match(errors.join("；"), /会话结束检查点属于其他项目：s1/);
+    assert.match(errors.join("；"), /会话结束检查点属于其他会话：s1/);
+    assert.match(errors.join("；"), /会话来源检查点属于其他项目：s1/);
+    assert.match(errors.join("；"), /面包屑会话属于其他项目：c-wrong/);
+    assert.match(errors.join("；"), /检查点会话属于其他项目：cp-wrong/);
   });
 });

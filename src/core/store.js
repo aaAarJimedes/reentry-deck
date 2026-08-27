@@ -2,7 +2,7 @@ import { createEmptyState, isoNow, normalizeState, validateImportCandidate, vali
 import { buildImportPreview, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.8.0";
+export const APP_VERSION = "0.9.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {
@@ -11,6 +11,7 @@ export class AppStore {
   #persistedRaw = null;
   #listeners = new Set();
   #storageListener = null;
+  #skipNextPreviousWrite = false;
 
   constructor(storage = globalThis.localStorage, now = Date.now(), eventTarget = globalThis.window) {
     this.#storage = storage;
@@ -38,9 +39,7 @@ export class AppStore {
     const current = this.#storage?.getItem(STORAGE_KEY) ?? null;
     if (current === this.#persistedRaw) return false;
     try {
-      const next = current ? normalizeState(JSON.parse(current), now) : createEmptyState(now);
-      const errors = validateState(next);
-      if (errors.length) throw new Error(errors.join("；"));
+      const next = current ? parseSavedState(current, now) : createEmptyState(now);
       this.#persistedRaw = current;
       this.#state = next;
       this.#emit();
@@ -124,12 +123,13 @@ export class AppStore {
   #load(now, current) {
     if (!current) return createEmptyState(now);
     try {
-      return normalizeState(JSON.parse(current), now);
+      return parseSavedState(current, now);
     } catch (error) {
+      this.#skipNextPreviousWrite = true;
       const previous = this.#storage?.getItem(PREVIOUS_KEY);
       if (previous) {
         try {
-          const recovered = normalizeState(JSON.parse(previous), now);
+          const recovered = parseSavedState(previous, now);
           this.notices.push("主数据损坏，已自动恢复到上一个可用版本。请尽快导出备份。");
           return recovered;
         } catch {
@@ -172,7 +172,9 @@ export class AppStore {
       throw new Error(`本地保存失败，原数据仍然保留：${error.message}`);
     }
     this.#persistedRaw = serialized;
-    if (current) {
+    const shouldSavePrevious = current && !this.#skipNextPreviousWrite;
+    this.#skipNextPreviousWrite = false;
+    if (shouldSavePrevious) {
       try {
         this.#storage.setItem(PREVIOUS_KEY, current);
       } catch {
@@ -185,6 +187,16 @@ export class AppStore {
   #emit() {
     for (const listener of this.#listeners) listener(this.#state);
   }
+}
+
+function parseSavedState(raw, now) {
+  const value = JSON.parse(raw);
+  const candidateErrors = validateImportCandidate(value);
+  if (candidateErrors.length) throw new Error(candidateErrors.join("；"));
+  const state = normalizeState(value, now);
+  const errors = validateState(state);
+  if (errors.length) throw new Error(errors.join("；"));
+  return state;
 }
 
 export class MemoryStorage {

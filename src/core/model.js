@@ -8,6 +8,20 @@ export const CHECKPOINT_CAPTURE_MODES = Object.freeze(["manual", "quick"]);
 
 const COLOR_PALETTE = ["fern", "amber", "clay", "sky", "plum", "slate"];
 
+export const IMPORT_LIMITS = Object.freeze({
+  records: 50_000,
+  id: 200,
+  projectTitle: 100,
+  projectDescription: 800,
+  nextAction: 600,
+  sessionIntention: 600,
+  crumbText: 1_200,
+  checkpointSummary: 1_200,
+  openLoops: 800,
+  returnHint: 400,
+  reportedErrors: 50
+});
+
 export function makeId(prefix = "item") {
   const randomPart = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `${prefix}_${randomPart}`;
@@ -178,40 +192,126 @@ export function validateState(state) {
 
 export function validateImportCandidate(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return ["备份根数据必须是对象"];
+  const collections = [value.projects, value.sessions, value.crumbs, value.checkpoints];
+  const recordCount = collections.reduce((total, collection) => total + (Array.isArray(collection) ? collection.length : 0), 0);
+  if (recordCount > IMPORT_LIMITS.records) return [`备份包含 ${recordCount} 条记录，超过 ${IMPORT_LIMITS.records} 条安全上限`];
   const errors = validateState(value);
   if (errors.length) return errors;
+
+  if (value.schemaVersion !== undefined && (!Number.isSafeInteger(value.schemaVersion) || value.schemaVersion < 1)) {
+    addImportError(errors, "数据版本号无效");
+  }
+  validateMetadata(errors, value.meta);
+  validateSettings(errors, value.settings);
 
   const projectIds = new Set(value.projects.map((item) => item?.id));
   const sessionIds = new Set(value.sessions.map((item) => item?.id));
   const checkpointIds = new Set(value.checkpoints.map((item) => item?.id));
+  const sessionsById = new Map(value.sessions.map((item) => [item?.id, item]));
+  const checkpointsById = new Map(value.checkpoints.map((item) => [item?.id, item]));
   const projectsById = new Map(value.projects.map((item) => [item?.id, item]));
   for (const project of value.projects) {
-    if (typeof project?.id !== "string" || !project.id) errors.push("存在无效的项目 ID");
-    if (project?.status !== undefined && !PROJECT_STATUSES.includes(project.status)) errors.push(`项目状态无效：${project.status}`);
+    if (typeof project?.id !== "string" || !project.id) addImportError(errors, "存在无效的项目 ID");
+    else validateImportId(errors, project.id, "项目");
+    if (project?.status !== undefined && !PROJECT_STATUSES.includes(project.status)) addImportError(errors, `项目状态无效：${project.status}`);
+    if (project?.color !== undefined && !COLOR_PALETTE.includes(project.color)) addImportError(errors, `项目颜色无效：${project.color}`);
+    validateText(errors, project, "title", "项目名称", IMPORT_LIMITS.projectTitle);
+    validateText(errors, project, "description", "项目说明", IMPORT_LIMITS.projectDescription);
+    validateText(errors, project, "nextAction", "项目下一步", IMPORT_LIMITS.nextAction);
+    validateDates(errors, project, ["createdAt", "updatedAt", "lastOpenedAt", "archivedAt", "descriptionUpdatedAt", "nextActionUpdatedAt"], "项目", project.id);
   }
   for (const session of value.sessions) {
-    if (typeof session?.id !== "string" || !session.id) errors.push("存在无效的会话 ID");
-    if (!projectIds.has(session?.projectId)) errors.push(`会话引用了不存在的项目：${session?.id ?? "未知"}`);
-    if (session?.status !== undefined && !SESSION_STATUSES.includes(session.status)) errors.push(`会话状态无效：${session.status}`);
-    if (session?.closeReason && !SESSION_CLOSE_REASONS.includes(session.closeReason)) errors.push(`会话关闭原因无效：${session.closeReason}`);
-    if (session?.checkpointId && !checkpointIds.has(session.checkpointId)) errors.push(`会话引用了不存在的检查点：${session.id ?? "未知"}`);
-    if (session?.sourceCheckpointId && !checkpointIds.has(session.sourceCheckpointId)) errors.push(`会话来源检查点不存在：${session.id ?? "未知"}`);
-    if (session?.status === "active" && session?.endedAt) errors.push(`活动会话不能包含结束时间：${session.id ?? "未知"}`);
-    if (session?.status === "active" && projectsById.get(session.projectId)?.status === "archived") errors.push(`归档项目不能包含活动会话：${session.id ?? "未知"}`);
+    if (typeof session?.id !== "string" || !session.id) addImportError(errors, "存在无效的会话 ID");
+    else validateImportId(errors, session.id, "会话");
+    if (!projectIds.has(session?.projectId)) addImportError(errors, `会话引用了不存在的项目：${session?.id ?? "未知"}`);
+    if (session?.status !== undefined && !SESSION_STATUSES.includes(session.status)) addImportError(errors, `会话状态无效：${session.status}`);
+    if (session?.closeReason && !SESSION_CLOSE_REASONS.includes(session.closeReason)) addImportError(errors, `会话关闭原因无效：${session.closeReason}`);
+    if (session?.checkpointId && !checkpointIds.has(session.checkpointId)) addImportError(errors, `会话引用了不存在的检查点：${session.id ?? "未知"}`);
+    if (session?.sourceCheckpointId && !checkpointIds.has(session.sourceCheckpointId)) addImportError(errors, `会话来源检查点不存在：${session.id ?? "未知"}`);
+    if (session?.checkpointId && checkpointIds.has(session.checkpointId) && checkpointsById.get(session.checkpointId)?.projectId !== session.projectId) addImportError(errors, `会话结束检查点属于其他项目：${session.id ?? "未知"}`);
+    if (session?.checkpointId && checkpointIds.has(session.checkpointId) && checkpointsById.get(session.checkpointId)?.sessionId && checkpointsById.get(session.checkpointId).sessionId !== session.id) addImportError(errors, `会话结束检查点属于其他会话：${session.id ?? "未知"}`);
+    if (session?.sourceCheckpointId && checkpointIds.has(session.sourceCheckpointId) && checkpointsById.get(session.sourceCheckpointId)?.projectId !== session.projectId) addImportError(errors, `会话来源检查点属于其他项目：${session.id ?? "未知"}`);
+    if (session?.status === "active" && session?.endedAt) addImportError(errors, `活动会话不能包含结束时间：${session.id ?? "未知"}`);
+    if (session?.status === "active" && projectsById.get(session.projectId)?.status === "archived") addImportError(errors, `归档项目不能包含活动会话：${session.id ?? "未知"}`);
+    validateText(errors, session, "intention", "会话意图", IMPORT_LIMITS.sessionIntention);
+    validateDates(errors, session, ["startedAt", "endedAt"], "会话", session.id);
+    if (isValidDate(session?.startedAt) && isValidDate(session?.endedAt) && Date.parse(session.endedAt) < Date.parse(session.startedAt)) {
+      addImportError(errors, `会话结束时间早于开始时间：${session.id ?? "未知"}`);
+    }
   }
   for (const crumb of value.crumbs) {
-    if (typeof crumb?.id !== "string" || !crumb.id) errors.push("存在无效的面包屑 ID");
-    if (!projectIds.has(crumb?.projectId)) errors.push(`面包屑引用了不存在的项目：${crumb?.id ?? "未知"}`);
-    if (crumb?.sessionId && !sessionIds.has(crumb.sessionId)) errors.push(`面包屑引用了不存在的会话：${crumb.id ?? "未知"}`);
-    if (crumb?.type !== undefined && !CRUMB_TYPES.includes(crumb.type)) errors.push(`面包屑类型无效：${crumb.type}`);
+    if (typeof crumb?.id !== "string" || !crumb.id) addImportError(errors, "存在无效的面包屑 ID");
+    else validateImportId(errors, crumb.id, "面包屑");
+    if (!projectIds.has(crumb?.projectId)) addImportError(errors, `面包屑引用了不存在的项目：${crumb?.id ?? "未知"}`);
+    if (crumb?.sessionId && !sessionIds.has(crumb.sessionId)) addImportError(errors, `面包屑引用了不存在的会话：${crumb.id ?? "未知"}`);
+    if (crumb?.sessionId && sessionIds.has(crumb.sessionId) && sessionsById.get(crumb.sessionId)?.projectId !== crumb.projectId) addImportError(errors, `面包屑会话属于其他项目：${crumb.id ?? "未知"}`);
+    if (crumb?.type !== undefined && !CRUMB_TYPES.includes(crumb.type)) addImportError(errors, `面包屑类型无效：${crumb.type}`);
+    validateText(errors, crumb, "text", "面包屑内容", IMPORT_LIMITS.crumbText);
+    validateDates(errors, crumb, ["createdAt", "resolvedAt"], "面包屑", crumb.id);
   }
   for (const checkpoint of value.checkpoints) {
-    if (typeof checkpoint?.id !== "string" || !checkpoint.id) errors.push("存在无效的检查点 ID");
-    if (!projectIds.has(checkpoint?.projectId)) errors.push(`检查点引用了不存在的项目：${checkpoint?.id ?? "未知"}`);
-    if (checkpoint?.sessionId && !sessionIds.has(checkpoint.sessionId)) errors.push(`检查点引用了不存在的会话：${checkpoint.id ?? "未知"}`);
-    if (checkpoint?.captureMode && !CHECKPOINT_CAPTURE_MODES.includes(checkpoint.captureMode)) errors.push(`检查点采集方式无效：${checkpoint.captureMode}`);
+    if (typeof checkpoint?.id !== "string" || !checkpoint.id) addImportError(errors, "存在无效的检查点 ID");
+    else validateImportId(errors, checkpoint.id, "检查点");
+    if (!projectIds.has(checkpoint?.projectId)) addImportError(errors, `检查点引用了不存在的项目：${checkpoint?.id ?? "未知"}`);
+    if (checkpoint?.sessionId && !sessionIds.has(checkpoint.sessionId)) addImportError(errors, `检查点引用了不存在的会话：${checkpoint.id ?? "未知"}`);
+    if (checkpoint?.sessionId && sessionIds.has(checkpoint.sessionId) && sessionsById.get(checkpoint.sessionId)?.projectId !== checkpoint.projectId) addImportError(errors, `检查点会话属于其他项目：${checkpoint.id ?? "未知"}`);
+    if (checkpoint?.captureMode && !CHECKPOINT_CAPTURE_MODES.includes(checkpoint.captureMode)) addImportError(errors, `检查点采集方式无效：${checkpoint.captureMode}`);
+    validateText(errors, checkpoint, "summary", "检查点摘要", IMPORT_LIMITS.checkpointSummary);
+    validateText(errors, checkpoint, "nextAction", "检查点下一步", IMPORT_LIMITS.nextAction);
+    validateText(errors, checkpoint, "openLoops", "检查点未决事项", IMPORT_LIMITS.openLoops);
+    validateText(errors, checkpoint, "returnHint", "检查点复航提示", IMPORT_LIMITS.returnHint);
+    validateDates(errors, checkpoint, ["createdAt"], "检查点", checkpoint.id);
   }
-  return [...new Set(errors)];
+  if (value.ui !== undefined && !isObject(value.ui)) addImportError(errors, "界面状态对象无效");
+  if (value.ui?.selectedProjectId !== undefined && value.ui.selectedProjectId !== null && !projectIds.has(value.ui.selectedProjectId)) {
+    addImportError(errors, "当前选中项目引用不存在");
+  }
+  return [...new Set(errors)].slice(0, IMPORT_LIMITS.reportedErrors + 1);
+}
+
+function validateMetadata(errors, meta) {
+  if (meta !== undefined && !isObject(meta)) {
+    addImportError(errors, "元数据对象无效");
+    return;
+  }
+  if (!meta) return;
+  validateDates(errors, meta, ["createdAt", "updatedAt"], "元数据", "工作区");
+  if (meta.revision !== undefined && (!Number.isSafeInteger(meta.revision) || meta.revision < 0)) addImportError(errors, "修订号无效");
+}
+
+function validateSettings(errors, settings) {
+  if (settings !== undefined && !isObject(settings)) {
+    addImportError(errors, "设置对象无效");
+    return;
+  }
+  if (!settings) return;
+  if (settings.theme !== undefined && !["system", "light", "dark"].includes(settings.theme)) addImportError(errors, `界面主题无效：${settings.theme}`);
+  if (settings.staleAfterDays !== undefined && (!Number.isFinite(settings.staleAfterDays) || settings.staleAfterDays < 1 || settings.staleAfterDays > 365)) addImportError(errors, "陈旧阈值必须在 1 到 365 天之间");
+  if (settings.reducedMotion !== undefined && typeof settings.reducedMotion !== "boolean") addImportError(errors, "减少动态效果设置无效");
+}
+
+function validateImportId(errors, id, label) {
+  if (id.length > IMPORT_LIMITS.id || /[\u0000-\u001f\u007f]/.test(id)) addImportError(errors, `${label} ID 过长或包含控制字符`);
+}
+
+function validateText(errors, record, field, label, maximum) {
+  const value = record?.[field];
+  if (value === undefined) return;
+  const suffix = record?.id ? `：${record.id}` : "";
+  if (typeof value !== "string") addImportError(errors, `${label}必须是文本${suffix}`);
+  else if (value.length > maximum) addImportError(errors, `${label}超过 ${maximum} 字符上限${suffix}`);
+}
+
+function validateDates(errors, record, fields, label, id) {
+  for (const field of fields) {
+    const value = record?.[field];
+    if (value !== undefined && value !== null && !isValidDate(value)) addImportError(errors, `${label}时间无效：${id ?? "未知"}.${field}`);
+  }
+}
+
+function addImportError(errors, message) {
+  if (errors.length < IMPORT_LIMITS.reportedErrors) errors.push(message);
+  else if (errors.length === IMPORT_LIMITS.reportedErrors) errors.push("备份还包含更多问题，已停止展开错误列表");
 }
 
 function cleanText(value) {

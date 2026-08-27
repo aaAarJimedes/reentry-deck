@@ -94,6 +94,24 @@ describe("AppStore loading and recovery", () => {
     assert.match(store.notices[0], /自动恢复/);
   });
 
+  test("recovers the previous state instead of silently dropping corrupt current references", () => {
+    const storage = new MemoryStorage();
+    const corrupt = stateWithProject("current", "Corrupt");
+    corrupt.sessions.push({ id: "orphan", projectId: "missing", status: "completed" });
+    storage.setItem(STORAGE_KEY, JSON.stringify(corrupt));
+    storage.setItem(PREVIOUS_KEY, JSON.stringify(stateWithProject("safe", "Safe")));
+
+    const store = new AppStore(storage, T1, null);
+
+    assert.equal(store.getState().projects[0].id, "safe");
+    assert.match(store.notices[0], /自动恢复/);
+    assert.equal(JSON.parse(storage.getItem(STORAGE_KEY)).sessions[0].id, "orphan");
+
+    store.update((draft) => { draft.projects[0].title = "Repaired"; }, T2);
+    assert.equal(persisted(storage).projects[0].title, "Repaired");
+    assert.equal(persisted(storage, PREVIOUS_KEY).projects[0].id, "safe");
+  });
+
   test("falls back to a clean state when both current and previous values are unreadable", () => {
     const storage = new MemoryStorage();
     storage.setItem(STORAGE_KEY, "not-json");
@@ -270,6 +288,21 @@ describe("AppStore updates and persistence", () => {
 
     secondTab.update((draft) => draft.projects.push(createProject({ id: "from-second" }, T2)), T2);
     assert.deepEqual(persisted(storage).projects.map((item) => item.id), ["from-first", "from-second"]);
+  });
+
+  test("rejects a corrupt external-tab payload without adopting its lossy normalization", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(STORAGE_KEY, JSON.stringify(stateWithProject("safe", "Safe")));
+    const store = new AppStore(storage, T0, null);
+    const corrupt = stateWithProject("external", "External");
+    corrupt.crumbs.push({ id: "orphan", projectId: "missing", text: "would be dropped" });
+    storage.setItem(STORAGE_KEY, JSON.stringify(corrupt));
+
+    const refreshed = store.refreshFromStorage(T1);
+
+    assert.equal(refreshed, false);
+    assert.equal(store.getState().projects[0].id, "safe");
+    assert.match(store.notices.at(-1), /另一个标签页写入的数据无法读取/);
   });
 
   test("a quota failure for the rollback copy does not make successful current writes read-only", () => {
