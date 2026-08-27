@@ -2,7 +2,7 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.32.0";
+export const APP_VERSION = "0.33.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {
@@ -24,7 +24,10 @@ export class AppStore {
     if (eventTarget?.addEventListener) {
       this.#eventTarget = eventTarget;
       this.#storageListener = (event) => {
-        if (event.key === STORAGE_KEY) this.refreshFromStorage();
+        const belongsToStorage = !event.storageArea || event.storageArea === this.#storage;
+        if (belongsToStorage && (event.key === STORAGE_KEY || event.key === null)) {
+          this.refreshFromStorage();
+        }
       };
       eventTarget.addEventListener("storage", this.#storageListener);
     }

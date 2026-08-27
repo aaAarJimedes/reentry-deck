@@ -67,6 +67,47 @@ describe("AppStore loading and recovery", () => {
     assert.deepEqual(store.getState().projects, []);
   });
 
+  test("a storage clear event synchronizes an empty state with a forward revision", () => {
+    const storage = new MemoryStorage();
+    const eventTarget = new EventTarget();
+    storage.setItem(STORAGE_KEY, JSON.stringify(stateWithProject("before-clear", "Before clear")));
+    const store = new AppStore(storage, T0, eventTarget);
+    const previousRevision = store.getState().meta.revision;
+    const sources = [];
+    store.subscribe((_state, event) => sources.push(event.source));
+    storage.clear();
+    const event = new Event("storage");
+    Object.defineProperty(event, "key", { value: null });
+
+    eventTarget.dispatchEvent(event);
+
+    assert.deepEqual(store.getState().projects, []);
+    assert.equal(store.getState().meta.revision, previousRevision + 1);
+    assert.deepEqual(sources, ["external"]);
+  });
+
+  test("storage events from another storage area or unrelated key are ignored", () => {
+    const storage = new MemoryStorage();
+    const eventTarget = new EventTarget();
+    const store = new AppStore(storage, T0, eventTarget);
+    let emissions = 0;
+    store.subscribe(() => emissions += 1);
+    storage.setItem(STORAGE_KEY, JSON.stringify(stateWithProject("external", "External")));
+    const wrongArea = new Event("storage");
+    Object.defineProperties(wrongArea, {
+      key: { value: STORAGE_KEY },
+      storageArea: { value: new MemoryStorage() }
+    });
+    const wrongKey = new Event("storage");
+    Object.defineProperty(wrongKey, "key", { value: "some-other-key" });
+
+    eventTarget.dispatchEvent(wrongArea);
+    eventTarget.dispatchEvent(wrongKey);
+
+    assert.equal(emissions, 0);
+    assert.deepEqual(store.getState().projects, []);
+  });
+
   test("starts with a deterministic empty state when no saved data exists", () => {
     const store = new AppStore(new MemoryStorage(), T0);
 
