@@ -1,0 +1,121 @@
+import assert from "node:assert/strict";
+import { describe, test } from "node:test";
+
+import { DOWNLOAD_REVOKE_DELAY_MS, triggerBlobDownload } from "../src/core/download.js";
+
+function harness({ clickError = null, scheduleError = null } = {}) {
+  const events = [];
+  let scheduled = null;
+  const link = {
+    href: "",
+    download: "",
+    hidden: false,
+    attached: false,
+    click() {
+      events.push(`click:${this.attached}`);
+      if (clickError) throw clickError;
+    },
+    remove() {
+      this.attached = false;
+      events.push("remove");
+    }
+  };
+  return {
+    events,
+    link,
+    dependencies: {
+      document: {
+        body: {
+          append(node) {
+            node.attached = true;
+            events.push("append");
+          }
+        },
+        createElement(name) {
+          assert.equal(name, "a");
+          return link;
+        }
+      },
+      urlApi: {
+        createObjectURL(value) {
+          events.push(`create:${value}`);
+          return "blob:backup";
+        },
+        revokeObjectURL(value) {
+          events.push(`revoke:${value}`);
+        }
+      },
+      schedule(callback, delay) {
+        events.push(`schedule:${delay}`);
+        if (scheduleError) throw scheduleError;
+        scheduled = callback;
+      }
+    },
+    runScheduled() {
+      scheduled?.();
+    }
+  };
+}
+
+describe("triggerBlobDownload", () => {
+  test("clicks an attached link before deferred object-URL cleanup", () => {
+    const context = harness();
+    triggerBlobDownload("backup", "reentry.json", context.dependencies);
+
+    assert.equal(context.link.href, "blob:backup");
+    assert.equal(context.link.download, "reentry.json");
+    assert.equal(context.link.hidden, true);
+    assert.deepEqual(context.events, [
+      "create:backup",
+      "append",
+      "click:true",
+      `schedule:${DOWNLOAD_REVOKE_DELAY_MS}`,
+      "remove"
+    ]);
+
+    context.runScheduled();
+    assert.equal(context.events.at(-1), "revoke:blob:backup");
+  });
+
+  test("revokes immediately when click or cleanup scheduling fails", () => {
+    for (const failure of ["click", "schedule"]) {
+      const context = harness({
+        clickError: failure === "click" ? new Error("blocked") : null,
+        scheduleError: failure === "schedule" ? new Error("scheduler unavailable") : null
+      });
+      assert.throws(
+        () => triggerBlobDownload("backup", "reentry.json", context.dependencies),
+        failure === "click" ? /blocked/u : /scheduler unavailable/u
+      );
+      assert.equal(context.link.attached, false);
+      assert.equal(context.events.filter((event) => event === "revoke:blob:backup").length, 1);
+    }
+  });
+
+  test("revokes an allocated URL when link creation fails", () => {
+    const events = [];
+    const urlApi = {
+      createObjectURL() {
+        events.push("create");
+        return "blob:backup";
+      },
+      revokeObjectURL(value) {
+        events.push(`revoke:${value}`);
+      }
+    };
+    const document = {
+      body: {},
+      createElement() {
+        throw new Error("DOM unavailable");
+      }
+    };
+
+    assert.throws(() => triggerBlobDownload("backup", "reentry.json", { document, urlApi }), /DOM unavailable/u);
+    assert.deepEqual(events, ["create", "revoke:blob:backup"]);
+  });
+
+  test("fails clearly before allocating when browser download primitives are absent", () => {
+    assert.throws(() => triggerBlobDownload("backup", "reentry.json", { document: null }), /无法建立下载链接/u);
+    assert.throws(() => triggerBlobDownload("backup", "reentry.json", { document: { body: {}, createElement() {} }, urlApi: {} }), /不支持本地文件下载/u);
+  });
+});

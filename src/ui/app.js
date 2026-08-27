@@ -8,6 +8,7 @@ import {
 } from "../core/model.js";
 import { prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture.js";
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
+import { triggerBlobDownload } from "../core/download.js";
 import { buildAttentionDeck, buildWeeklyReview } from "../core/insights.js";
 import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
 import { buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
@@ -1333,12 +1334,7 @@ export class ReentryApp {
   #exportData() {
     const snapshot = this.#store.exportSnapshot();
     const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `reentry-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+    triggerBlobDownload(blob, `reentry-backup-${new Date().toISOString().slice(0, 10)}.json`);
     this.#toast("完整备份已生成。 ");
   }
 
