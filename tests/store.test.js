@@ -399,6 +399,16 @@ describe("AppStore updates and persistence", () => {
     assert.equal(persisted(storage).settings.staleAfterDays, 14);
   });
 
+  test("a forced reduced-motion preference persists as a boolean setting", () => {
+    const storage = new MemoryStorage();
+    const store = new AppStore(storage, T0, null);
+
+    const saved = store.update((draft) => { draft.settings.reducedMotion = true; }, T1);
+
+    assert.equal(saved.settings.reducedMotion, true);
+    assert.equal(persisted(storage).settings.reducedMotion, true);
+  });
+
   test("a current-value write failure restores serialized data and does not commit or emit", () => {
     class FailNextCurrentWriteStorage extends MemoryStorage {
       failNextCurrentWrite = false;

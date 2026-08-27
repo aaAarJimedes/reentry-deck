@@ -150,6 +150,7 @@ export class ReentryApp {
     const theme = state.settings.theme ?? "system";
 
     document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.reducedMotion = state.settings.reducedMotion ? "reduce" : "system";
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#111a19" : "#f4efe6");
     document.title = `${currentProject?.title ?? routeTitle(route)} · 复航台`;
 
@@ -587,6 +588,7 @@ export class ReentryApp {
       <div class="settings-grid">
         <section class="panel"><div class="panel-header"><h2>外观与数据</h2><p>设置同样只保存在当前浏览器。</p></div><div class="panel-body">
           <div class="setting-row"><div class="setting-copy"><h3>界面主题</h3><p>跟随系统，或固定使用明亮/深色外观。</p></div><div class="segmented-control" aria-label="界面主题">${[["system", "跟随系统"], ["light", "明亮"], ["dark", "深色"]].map(([value, label]) => `<button type="button" data-action="set-theme" data-theme="${value}" aria-pressed="${theme === value}">${label}</button>`).join("")}</div></div>
+          <div class="setting-row"><div class="setting-copy"><h3>动态效果</h3><p>默认跟随系统辅助功能偏好，也可以在复航台内始终减少动画与平滑滚动。</p></div><div class="segmented-control" aria-label="动态效果">${[["system", "跟随系统"], ["reduce", "减少动效"]].map(([value, label]) => `<button type="button" data-action="set-motion" data-reduced-motion="${value}" aria-pressed="${state.settings.reducedMotion === (value === "reduce")}">${label}</button>`).join("")}</div></div>
           <div class="setting-row"><div class="setting-copy"><h3>离开提醒阈值</h3><p>项目超过这段时间没有新现场时，关注清单会提示核对。</p></div><label class="field"><span class="sr-only">离开提醒阈值</span><select data-control="stale-days" aria-label="离开提醒阈值">${staleOptions.map((days) => `<option value="${days}" ${days === state.settings.staleAfterDays ? "selected" : ""}>${days} 天</option>`).join("")}</select></label></div>
           <div class="setting-row"><div class="setting-copy"><h3>导出完整备份</h3><p>包含项目、会话、轨迹、检查点和设置。当前约 ${size}。</p></div><button class="secondary-button" type="button" data-action="export-data">${icon("download")} 导出 JSON</button></div>
           <div class="setting-row"><div class="setting-copy"><h3>从备份恢复</h3><p>文件会先在本机校验；有效备份将替换当前工作区。</p></div><button class="secondary-button" type="button" data-action="choose-import">${icon("upload")} 选择文件</button><input class="sr-only" id="import-file" type="file" accept="application/json,.json" data-control="import-file" aria-label="选择 JSON 备份文件" /></div>
@@ -779,6 +781,7 @@ export class ReentryApp {
     if (action === "export-data") this.#exportData();
     if (action === "choose-import") this.#root.querySelector("#import-file")?.click();
     if (action === "set-theme") this.#setTheme(control.dataset.theme);
+    if (action === "set-motion") this.#setReducedMotion(control.dataset.reducedMotion);
     if (action === "toggle-crumb-resolution") this.#toggleCrumbResolution(control.dataset.crumbId, control.dataset.resolutionContext);
     if (action === "toggle-crumb-pin") this.#toggleCrumbPin(control.dataset.crumbId);
     if (action === "show-more-timeline") this.#showMoreTimeline(control.dataset.projectId);
@@ -1222,6 +1225,14 @@ export class ReentryApp {
     if (!["system", "light", "dark"].includes(theme)) return;
     this.#focusSelector = `[data-action="set-theme"][data-theme="${theme}"]`;
     this.#store.update((state) => { state.settings.theme = theme; });
+  }
+
+  #setReducedMotion(value) {
+    if (value !== "system" && value !== "reduce") throw new Error("动态效果设置不可用。");
+    const reduced = value === "reduce";
+    this.#focusSelector = `[data-action="set-motion"][data-reduced-motion="${value}"]`;
+    this.#store.update((state) => { state.settings.reducedMotion = reduced; });
+    this.#announce(reduced ? "已始终减少动态效果" : "动态效果已改为跟随系统");
   }
 
   #setStaleAfterDays(value) {

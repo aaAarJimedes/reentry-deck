@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const APP_SOURCE_URL = new URL("../src/ui/app.js", import.meta.url);
+const STYLE_SOURCE_URL = new URL("../src/styles.css", import.meta.url);
 
 test("project archival uses an accessible in-app confirmation instead of window.confirm", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
@@ -80,4 +81,18 @@ test("attention threshold is an accessible validated local setting", async () =>
   assert.match(source, /this\.#setStaleAfterDays\(control\.value\)/);
   assert.match(source, /Number\.isSafeInteger\(days\) \|\| days < 1 \|\| days > 365/);
   assert.match(source, /state\.settings\.staleAfterDays = days/);
+});
+
+test("reduced motion can follow the system or be forced by a persisted setting", async () => {
+  const [source, styles] = await Promise.all([
+    readFile(APP_SOURCE_URL, "utf8"),
+    readFile(STYLE_SOURCE_URL, "utf8")
+  ]);
+
+  assert.match(source, /document\.documentElement\.dataset\.reducedMotion = state\.settings\.reducedMotion \? "reduce" : "system"/);
+  assert.match(source, /<div class="segmented-control" aria-label="动态效果">/);
+  assert.match(source, /this\.#setReducedMotion\(control\.dataset\.reducedMotion\)/);
+  assert.match(source, /state\.settings\.reducedMotion = reduced/);
+  assert.match(styles, /:root\[data-reduced-motion="reduce"\] \*::after/);
+  assert.match(styles, /animation-iteration-count: 1 !important/);
 });
