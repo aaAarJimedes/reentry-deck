@@ -285,6 +285,23 @@ test("buildReentryCard sorts and limits active sessions, signals, decisions, and
   assert.deepEqual(sessions.map((item) => item.id), originalSessionOrder, "building a card must not reorder state sessions");
 });
 
+test("buildReentryCard exposes at most three pinned crumbs in evidence order", () => {
+  const state = makeState({
+    projects: [makeProject("p1")],
+    crumbs: [
+      { id: "old", projectId: "p1", type: "note", text: "old", pinned: true, createdAt: at(-4_000) },
+      { id: "not-pinned", projectId: "p1", type: "decision", text: "skip", pinned: false, createdAt: at(-3_500) },
+      { id: "mid", projectId: "p1", type: "decision", text: "mid", pinned: true, createdAt: at(-3_000) },
+      { id: "new", projectId: "p1", type: "discovery", text: "new", pinned: true, createdAt: at(-2_000) },
+      { id: "newest", projectId: "p1", type: "next", text: "newest", pinned: true, createdAt: at(-1_000) }
+    ]
+  });
+
+  const card = buildReentryCard(state, "p1", NOW);
+
+  assert.deepEqual(card.pinnedCrumbs.map((item) => item.id), ["newest", "new", "mid"]);
+});
+
 test("buildReentryCard reports activity age and returns null for an unknown project", () => {
   const latestActivity = at(-1.5 * DAY);
   const state = makeState({

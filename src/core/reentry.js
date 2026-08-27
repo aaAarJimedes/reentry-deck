@@ -34,6 +34,7 @@ export function buildReentryCard(state, projectId, now = Date.now()) {
     .filter((item) => ["question", "blocker"].includes(item.type) && !item.resolvedAt)
     .slice(0, 3);
   const decisions = projectCrumbs.filter((item) => item.type === "decision").slice(0, 2);
+  const pinnedCrumbs = projectCrumbs.filter((item) => item.pinned).slice(0, 3);
   const checkpointTime = timeOf(checkpoint?.createdAt);
   const changesSinceCheckpoint = projectCrumbs
     .filter((item) => ["note", "discovery", "decision", "next"].includes(item.type) && timeOf(item.createdAt) > checkpointTime)
@@ -78,6 +79,7 @@ export function buildReentryCard(state, projectId, now = Date.now()) {
     returnHint,
     completeness,
     decisions,
+    pinnedCrumbs,
     unresolvedSignals,
     changesSinceCheckpoint,
     contextGapSessions,

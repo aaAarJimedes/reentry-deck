@@ -343,6 +343,7 @@ export class ReentryApp {
         <div class="panel-body">
           ${card.contextGapSessions.length ? `<div class="evidence-warning" role="status">${icon("alert")} 检查点之后还有 ${card.contextGapSessions.length} 段未收拢或中断的会话，完整度已下调；请先核对现场。</div>` : ""}
           <div class="reentry-section"><span class="reentry-label">${icon("trail")} 01 · 可靠检查点</span><p class="reentry-value">${textBlock(card.checkpoint?.summary || "还没有可靠检查点；以下内容来自零散证据。")}</p><p class="evidence-source">${escapeHTML(checkpointLabel)}</p></div>
+          ${card.pinnedCrumbs.length ? `<div class="reentry-section pinned-evidence"><span class="reentry-label">${icon("pin")} 置顶航标</span>${this.#renderEvidenceList(card.pinnedCrumbs, "")}</div>` : ""}
           <div class="reentry-section"><span class="reentry-label">${icon("spark")} 02 · 检查点后发生了什么</span>${this.#renderEvidenceList(card.changesSinceCheckpoint, "检查点之后没有新的状态、决定或下一步记录。")}</div>
           <div class="reentry-section"><span class="reentry-label">${icon("check")} 03 · 最近决定</span>${this.#renderEvidenceList(card.decisions, "还没有记录明确决定。")}</div>
           <div class="reentry-section"><span class="reentry-label">${icon("alert")} 04 · 仍未解决</span>${this.#renderEvidenceList(card.unresolvedSignals, "当前没有未解决的问题或阻塞。", true)}</div>
@@ -438,9 +439,9 @@ export class ReentryApp {
       <article class="timeline-item" data-resolved="${Boolean(crumb.resolvedAt)}" data-crumb-id="${attr(crumb.id)}" tabindex="-1">
         <span class="timeline-dot" data-type="${attr(crumb.type)}" aria-hidden="true"></span>
         <div class="timeline-content">
-          <div class="timeline-meta"><span class="crumb-type">${CRUMB_LABELS[crumb.type] ?? "记录"}</span><time datetime="${attr(crumb.createdAt)}">${formatRelative(crumb.createdAt)} · ${formatDateTime(crumb.createdAt)}</time>${crumb.resolvedAt ? `<span class="resolved-pill">已解决 · ${formatRelative(crumb.resolvedAt)}</span>` : ""}${crumb.pinned ? `<span title="已置顶">${icon("pin")}</span>` : ""}</div>
+          <div class="timeline-meta"><span class="crumb-type">${CRUMB_LABELS[crumb.type] ?? "记录"}</span><time datetime="${attr(crumb.createdAt)}">${formatRelative(crumb.createdAt)} · ${formatDateTime(crumb.createdAt)}</time>${crumb.resolvedAt ? `<span class="resolved-pill">已解决 · ${formatRelative(crumb.resolvedAt)}</span>` : ""}${crumb.pinned ? `<span class="pinned-pill" title="已置顶">${icon("pin")} 航标</span>` : ""}</div>
           <p class="timeline-text">${textBlock(crumb.text)}</p>
-          ${signal && interactive ? `<button class="crumb-resolution" type="button" data-action="toggle-crumb-resolution" data-resolution-context="timeline" data-crumb-id="${attr(crumb.id)}" aria-pressed="${Boolean(crumb.resolvedAt)}">${crumb.resolvedAt ? "重新打开" : "标记已解决"}</button>` : ""}
+          ${interactive ? `<div class="crumb-actions">${signal ? `<button class="crumb-resolution" type="button" data-action="toggle-crumb-resolution" data-resolution-context="timeline" data-crumb-id="${attr(crumb.id)}" aria-pressed="${Boolean(crumb.resolvedAt)}">${crumb.resolvedAt ? "重新打开" : "标记已解决"}</button>` : ""}<button class="crumb-pin" type="button" data-action="toggle-crumb-pin" data-crumb-id="${attr(crumb.id)}" aria-pressed="${Boolean(crumb.pinned)}">${icon("pin")} ${crumb.pinned ? "取消置顶" : "设为航标"}</button></div>` : ""}
         </div>
       </article>`;
   }
@@ -624,6 +625,7 @@ export class ReentryApp {
     if (action === "choose-import") this.#root.querySelector("#import-file")?.click();
     if (action === "set-theme") this.#setTheme(control.dataset.theme);
     if (action === "toggle-crumb-resolution") this.#toggleCrumbResolution(control.dataset.crumbId, control.dataset.resolutionContext);
+    if (action === "toggle-crumb-pin") this.#toggleCrumbPin(control.dataset.crumbId);
     if (action === "show-more-timeline") this.#showMoreTimeline(control.dataset.projectId);
   }
 
@@ -886,6 +888,20 @@ export class ReentryApp {
     const resolved = Boolean(this.#store.getState().crumbs.find((item) => item.id === crumbId)?.resolvedAt);
     this.#announce(resolved ? "事项已标记为解决" : "事项已重新打开");
     this.#toast(resolved ? "已从待解决清单移除。" : "已重新加入待解决清单。");
+  }
+
+  #toggleCrumbPin(crumbId) {
+    this.#focusSelector = `[data-action="toggle-crumb-pin"][data-crumb-id="${CSS.escape(crumbId)}"]`;
+    this.#store.update((state) => {
+      const crumb = state.crumbs.find((item) => item.id === crumbId);
+      if (!crumb) throw new Error("找不到要置顶的轨迹。 ");
+      crumb.pinned = !crumb.pinned;
+      const project = state.projects.find((item) => item.id === crumb.projectId);
+      if (project) project.updatedAt = isoNow();
+    });
+    const pinned = Boolean(this.#store.getState().crumbs.find((item) => item.id === crumbId)?.pinned);
+    this.#announce(pinned ? "轨迹已设为置顶航标" : "轨迹已取消置顶");
+    this.#toast(pinned ? "已加入复航卡的置顶航标。" : "已从置顶航标移除。 ");
   }
 
   #archiveProject(projectId) {

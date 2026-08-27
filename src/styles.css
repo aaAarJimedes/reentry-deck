@@ -809,6 +809,7 @@ h3 { font-size: 17px; }
 .evidence-list small { grid-column: 1; color: var(--ink-soft); font-size: 10px; }
 .evidence-list button { grid-column: 2; grid-row: 1 / span 2; align-self: center; border: 0; background: transparent; color: var(--forest-soft); cursor: pointer; font: inherit; font-size: 11px; font-weight: 750; }
 .evidence-list button:hover { text-decoration: underline; }
+.pinned-evidence .evidence-list li { background: color-mix(in srgb, var(--amber-soft) 72%, var(--paper-deep)); }
 
 .reentry-steps {
   display: grid;
@@ -984,8 +985,14 @@ textarea:focus { border-color: var(--forest-soft); box-shadow: 0 0 0 3px color-m
 .timeline-text { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .timeline-item[data-resolved="true"] .timeline-text { color: var(--ink-soft); text-decoration: line-through; text-decoration-thickness: 1px; }
 .resolved-pill { padding: 2px 6px; border-radius: 999px; background: color-mix(in srgb, var(--forest-soft) 12%, transparent); color: var(--forest-soft); font-weight: 750; }
-.crumb-resolution { margin-top: 7px; padding: 0; border: 0; background: transparent; color: var(--forest-soft); cursor: pointer; font: inherit; font-size: 11px; font-weight: 750; }
-.crumb-resolution:hover { text-decoration: underline; }
+.pinned-pill { display: inline-flex; align-items: center; gap: 3px; padding: 2px 6px; border-radius: 999px; background: var(--amber-soft); color: var(--ink); font-weight: 750; }
+.pinned-pill svg { width: 11px; height: 11px; }
+.crumb-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 7px; }
+.crumb-resolution,
+.crumb-pin { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; color: var(--forest-soft); cursor: pointer; font: inherit; font-size: 11px; font-weight: 750; }
+.crumb-pin svg { width: 13px; height: 13px; }
+.crumb-resolution:hover,
+.crumb-pin:hover { text-decoration: underline; }
 .timeline-empty { padding: 20px; color: var(--ink-soft); text-align: center; }
 .timeline-more { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 0 0 37px; border-top: 1px solid var(--line); }
 .timeline-more p { margin: 0; color: var(--ink-soft); font-size: 10px; }

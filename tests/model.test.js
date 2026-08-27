@@ -423,6 +423,9 @@ describe("validateImportCandidate", () => {
     project.description = "x".repeat(IMPORT_LIMITS.projectDescription + 1);
     project.updatedAt = "not-a-date";
     state.projects.push(project);
+    const invalidPinned = createCrumb({ id: "bad-pin", projectId: "p1" }, NOW);
+    invalidPinned.pinned = "false";
+    state.crumbs.push(invalidPinned);
     state.sessions.push(createSession({
       id: "s1",
       projectId: "p1",
@@ -447,6 +450,7 @@ describe("validateImportCandidate", () => {
     assert.match(errors.join("；"), /减少动态效果设置无效/);
     assert.match(errors.join("；"), /修订号无效/);
     assert.match(errors.join("；"), /当前选中项目引用不存在/);
+    assert.match(errors.join("；"), /面包屑置顶状态无效：bad-pin/);
   });
 
   test("rejects pathological record counts before traversing individual records", () => {

@@ -246,6 +246,7 @@ export function validateImportCandidate(value) {
     if (crumb?.sessionId && !sessionIds.has(crumb.sessionId)) addImportError(errors, `面包屑引用了不存在的会话：${crumb.id ?? "未知"}`);
     if (crumb?.sessionId && sessionIds.has(crumb.sessionId) && sessionsById.get(crumb.sessionId)?.projectId !== crumb.projectId) addImportError(errors, `面包屑会话属于其他项目：${crumb.id ?? "未知"}`);
     if (crumb?.type !== undefined && !CRUMB_TYPES.includes(crumb.type)) addImportError(errors, `面包屑类型无效：${crumb.type}`);
+    if (crumb?.pinned !== undefined && typeof crumb.pinned !== "boolean") addImportError(errors, `面包屑置顶状态无效：${crumb.id ?? "未知"}`);
     validateText(errors, crumb, "text", "面包屑内容", IMPORT_LIMITS.crumbText);
     validateDates(errors, crumb, ["createdAt", "resolvedAt"], "面包屑", crumb.id);
   }
