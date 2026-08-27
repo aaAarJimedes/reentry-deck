@@ -10,14 +10,17 @@ describe("buildReentryBrief", () => {
       summary: "已定位邀请失效\n返回。",
       nextAction: "补画失效分支。",
       openLoops: "确认旧邀请是否可重发。",
-      returnHint: "从接口响应样例继续。"
+      returnHint: "从接口响应样例继续。",
+      completeness: 75,
+      readinessGaps: ["写下材料入口"]
     });
     assert.equal(brief, [
       "【客户门户｜复航简报】",
       "当前状态：已定位邀请失效 返回。",
       "第一动作：补画失效分支。",
       "未决事项：确认旧邀请是否可重发。",
-      "复航提示：从接口响应样例继续。"
+      "复航提示：从接口响应样例继续。",
+      "证据状态：75% · 需补：写下材料入口"
     ].join("\n"));
 
     const bounded = buildReentryBrief({
@@ -25,12 +28,56 @@ describe("buildReentryBrief", () => {
       summary: "state",
       nextAction: "act",
       openLoops: "😀".repeat(500),
-      returnHint: "return"
+      returnHint: "return",
+      completeness: 100,
+      readinessGaps: []
     }).split("\n")[3].slice("未决事项：".length);
     assert.ok(bounded.length <= 800);
     assert.match(bounded, /😀…$/u);
     assert.equal(buildReentryBrief({ project: { title: " A\tB " }, summary: "s", nextAction: "n", openLoops: "", returnHint: "r" }).split("\n")[0], "【A B｜复航简报】");
     assert.throws(() => buildReentryBrief(null), /缺少可生成简报/u);
+  });
+
+  test("prefers live unresolved signals and labels checkpoint-only loops as historical", () => {
+    const base = {
+      project: { title: "P" },
+      summary: "state",
+      nextAction: "next",
+      returnHint: "hint",
+      completeness: 50,
+      readinessGaps: ["核对 1 段未收拢或中断的会话"]
+    };
+    const live = buildReentryBrief({
+      ...base,
+      checkpoint: { id: "cp" },
+      openLoops: "stale checkpoint loop",
+      unresolvedSignals: [{ text: "new blocker" }, { text: "new question" }]
+    });
+    assert.match(live, /未决事项：new blocker；new question/u);
+    assert.doesNotMatch(live, /stale checkpoint loop/u);
+    assert.match(live, /证据状态：50% · 需补：核对 1 段未收拢或中断的会话/u);
+
+    const historical = buildReentryBrief({
+      ...base,
+      checkpoint: { id: "cp" },
+      openLoops: "old loop",
+      unresolvedSignals: []
+    });
+    assert.match(historical, /未决事项：检查点曾记录（待确认）：old loop/u);
+
+    const boundedHistorical = buildReentryBrief({
+      ...base,
+      checkpoint: { id: "cp" },
+      openLoops: "😀".repeat(400),
+      unresolvedSignals: []
+    }).split("\n")[3].slice("未决事项：".length);
+    assert.ok(boundedHistorical.length <= 800);
+    assert.match(boundedHistorical, /^检查点曾记录（待确认）：/u);
+    assert.doesNotMatch(boundedHistorical, /[\uD800-\uDBFF]$/u);
+
+    const clear = buildReentryBrief({ ...base, openLoops: "", unresolvedSignals: [], readinessGaps: [] });
+    assert.match(clear, /未决事项：当前没有未解决的问题或阻塞。/u);
+    assert.match(clear, /证据状态：50% · 无显式复航缺口/u);
   });
 });
 

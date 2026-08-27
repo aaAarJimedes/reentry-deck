@@ -6,9 +6,36 @@ export function buildReentryBrief(card) {
     `【${briefLine(card.project.title, IMPORT_LIMITS.projectTitle)}｜复航简报】`,
     `当前状态：${briefLine(card.summary, IMPORT_LIMITS.checkpointSummary)}`,
     `第一动作：${briefLine(card.nextAction, IMPORT_LIMITS.nextAction)}`,
-    `未决事项：${briefLine(card.openLoops || "当前没有未解决的问题或阻塞。", IMPORT_LIMITS.openLoops)}`,
-    `复航提示：${briefLine(card.returnHint, IMPORT_LIMITS.returnHint)}`
+    `未决事项：${currentOpenLoops(card)}`,
+    `复航提示：${briefLine(card.returnHint, IMPORT_LIMITS.returnHint)}`,
+    `证据状态：${evidenceStatus(card)}`
   ].join("\n");
+}
+
+function currentOpenLoops(card) {
+  if (!Array.isArray(card.unresolvedSignals)) {
+    return briefLine(card.openLoops || "当前没有未解决的问题或阻塞。", IMPORT_LIMITS.openLoops);
+  }
+  const current = card.unresolvedSignals
+    .map((signal) => briefLine(signal?.text, IMPORT_LIMITS.crumbText))
+    .filter(Boolean)
+    .join("；");
+  if (current) return briefLine(current, IMPORT_LIMITS.openLoops);
+  const checkpointLoops = card.checkpoint ? briefLine(card.openLoops, IMPORT_LIMITS.openLoops) : "";
+  if (checkpointLoops) {
+    return briefLine(`检查点曾记录（待确认）：${checkpointLoops}`, IMPORT_LIMITS.openLoops);
+  }
+  return "当前没有未解决的问题或阻塞。";
+}
+
+function evidenceStatus(card) {
+  const completeness = Number.isFinite(card.completeness)
+    ? `${Math.max(0, Math.min(100, Math.round(card.completeness)))}%`
+    : "未评估";
+  const gaps = Array.isArray(card.readinessGaps)
+    ? card.readinessGaps.map((gap) => briefLine(gap, IMPORT_LIMITS.returnHint)).filter(Boolean).join("；")
+    : "";
+  return briefLine(`${completeness} · ${gaps ? `需补：${gaps}` : "无显式复航缺口"}`, IMPORT_LIMITS.checkpointSummary);
 }
 
 function briefLine(value, maximum) {
