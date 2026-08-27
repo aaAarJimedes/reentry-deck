@@ -2,7 +2,7 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.58.0";
+export const APP_VERSION = "0.59.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
@@ -11,6 +11,7 @@ export class AppStore {
   #state;
   #persistedRaw = null;
   #listeners = new Set();
+  #failedListeners = new WeakSet();
   #storageListener = null;
   #eventTarget = null;
   #skipNextPreviousWrite = false;
@@ -48,6 +49,7 @@ export class AppStore {
   }
 
   subscribe(listener) {
+    if (typeof listener !== "function") throw new TypeError("状态订阅者必须是函数。 ");
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
@@ -59,6 +61,7 @@ export class AppStore {
     this.#storageListener = null;
     this.#eventTarget = null;
     this.#listeners.clear();
+    this.#failedListeners = new WeakSet();
   }
 
   drainNotices() {
@@ -277,7 +280,15 @@ export class AppStore {
 
   #emit(source = "local") {
     const event = Object.freeze({ source });
-    for (const listener of this.#listeners) listener(this.#state, event);
+    for (const listener of [...this.#listeners]) {
+      try {
+        listener(this.#state, event);
+      } catch (error) {
+        if (this.#failedListeners.has(listener)) continue;
+        this.#failedListeners.add(listener);
+        this.notices.push(`工作区状态已处理，但一个界面订阅未能响应：${errorMessage(error)}`);
+      }
+    }
   }
 }
 

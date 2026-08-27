@@ -539,6 +539,33 @@ describe("AppStore updates and persistence", () => {
     assert.equal(Object.isFrozen(next.projects[0]), true);
   });
 
+  test("a failing subscriber cannot misreport a committed write or block later subscribers", () => {
+    const storage = new MemoryStorage();
+    const store = new AppStore(storage, T0, null);
+    let failingCalls = 0;
+    let healthyCalls = 0;
+    store.subscribe(() => {
+      failingCalls += 1;
+      throw new Error("render unavailable");
+    });
+    store.subscribe((state, event) => {
+      healthyCalls += 1;
+      assert.equal(Object.isFrozen(state), true);
+      assert.equal(event.source, "local");
+    });
+
+    const first = store.update((draft) => { draft.settings.theme = "dark"; }, T1);
+    const second = store.update((draft) => { draft.settings.theme = "light"; }, T2);
+
+    assert.equal(first.settings.theme, "dark");
+    assert.equal(second.settings.theme, "light");
+    assert.equal(persisted(storage).settings.theme, "light");
+    assert.equal(failingCalls, 2);
+    assert.equal(healthyCalls, 2);
+    assert.equal(store.drainNotices().filter((notice) => notice.includes("render unavailable")).length, 1);
+    assert.throws(() => store.subscribe(null), /订阅者必须是函数/u);
+  });
+
   test("saving without storage reports a clear error and keeps the empty state", () => {
     const store = new AppStore(null, T0);
     const before = store.getState();
