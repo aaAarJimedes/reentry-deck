@@ -8,7 +8,7 @@ import {
 import { prepareQuickCapture } from "../core/capture.js";
 import { buildAttentionDeck, buildWeeklyReview } from "../core/insights.js";
 import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
-import { getProjectResources, searchWorkspace } from "../core/search.js";
+import { buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession } from "../core/session.js";
 import {
   COLLECTION_PAGE_SIZE,
@@ -81,6 +81,8 @@ export class ReentryApp {
   #pendingImport = null;
   #timelineLimits = new Map();
   #collectionLimits = new Map();
+  #searchIndexState = null;
+  #searchIndex = null;
 
   constructor(root, store) {
     this.#root = root;
@@ -747,11 +749,20 @@ export class ReentryApp {
   }
 
   #renderSearchResults(query) {
-    const results = searchWorkspace(this.#store.getState(), query);
     if (!String(query).trim()) return this.#renderQuickCommands();
+    const results = searchWorkspaceIndex(this.#getSearchIndex(), query);
     if (!results.length) return `<p class="search-empty">没有找到“${escapeHTML(query)}”。试试更短或更具体的词。</p>`;
     const kindLabels = { project: "项目", crumb: "轨迹", checkpoint: "检查点" };
     return `<p class="search-count">找到 ${results.length} 条匹配</p><ul>${results.map((result) => `<li><a href="#/project/${encodeURIComponent(result.projectId)}"><span class="search-result-kind">${escapeHTML(result.kind === "crumb" ? CRUMB_LABELS[result.subtype] ?? "轨迹" : kindLabels[result.kind] ?? "记录")}${result.projectStatus === "archived" ? " · 已归档" : ""}</span><strong>${escapeHTML(result.title || result.projectTitle)}</strong>${result.kind !== "project" ? `<small>${escapeHTML(result.projectTitle)} · ${formatDateTime(result.createdAt)}</small>` : ""}${result.snippet && result.snippet !== result.title ? `<p>${escapeHTML(result.snippet)}</p>` : ""}</a></li>`).join("")}</ul>`;
+  }
+
+  #getSearchIndex() {
+    const state = this.#store.getState();
+    if (state !== this.#searchIndexState) {
+      this.#searchIndexState = state;
+      this.#searchIndex = buildWorkspaceSearchIndex(state);
+    }
+    return this.#searchIndex;
   }
 
   #renderQuickCommands() {

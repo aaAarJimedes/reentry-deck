@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { extractHttpLinks, getProjectResources, searchWorkspace } from "../src/core/search.js";
+import {
+  buildWorkspaceSearchIndex,
+  extractHttpLinks,
+  getProjectResources,
+  searchWorkspace,
+  searchWorkspaceIndex
+} from "../src/core/search.js";
 
 const state = {
   projects: [
@@ -33,6 +39,40 @@ test("searchWorkspace normalizes full-width and case variants and is determinist
     { id: "a", projectId: "p1", type: "note", text: "api link", createdAt: "invalid" }
   );
   assert.deepEqual(searchWorkspace(variant, "API LINK").map((item) => item.id), ["a", "b"]);
+});
+
+test("a reusable search index preserves results across queries and snapshots normalized evidence", () => {
+  const indexedState = structuredClone(state);
+  const index = buildWorkspaceSearchIndex(indexedState);
+
+  assert.deepEqual(searchWorkspaceIndex(index, "notebook").map((item) => item.id), ["c2", "p1", "cp1"]);
+  assert.deepEqual(searchWorkspaceIndex(index, "研究结果图", { limit: 1 }).map((item) => item.id), ["p1"]);
+  assert.deepEqual(searchWorkspaceIndex(index, "", { limit: 20 }), []);
+  assert.deepEqual(searchWorkspaceIndex(null, "notebook"), []);
+
+  indexedState.crumbs[1].text = "changed after indexing";
+  assert.deepEqual(searchWorkspaceIndex(index, "notebook 导出").map((item) => item.id), ["c2"]);
+  assert.deepEqual(searchWorkspaceIndex(index, "changed after indexing"), []);
+});
+
+test("a 50,000-record index only materializes matching results", () => {
+  const large = {
+    projects: [{ ...state.projects[0] }],
+    crumbs: Array.from({ length: 49_999 }, (_, index) => ({
+      id: `large-${index}`,
+      projectId: "p1",
+      type: "note",
+      text: index % 5_000 === 0 ? `needle ${index}` : `ordinary evidence ${index}`,
+      createdAt: "2026-01-01T00:00:00.000Z"
+    })),
+    checkpoints: []
+  };
+  const index = buildWorkspaceSearchIndex(large);
+  const results = searchWorkspaceIndex(index, "needle", { limit: 100 });
+
+  assert.equal(index.candidates.length, 50_000);
+  assert.equal(results.length, 10);
+  assert.ok(results.every((item) => item.title.startsWith("needle")));
 });
 
 test("extractHttpLinks accepts only clean HTTP resources and removes prose punctuation and fragments", () => {

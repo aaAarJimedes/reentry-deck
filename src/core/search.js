@@ -2,25 +2,30 @@ const RESULT_LIMIT = 40;
 const RESOURCE_LIMIT = 20;
 
 export function searchWorkspace(state, query, options = {}) {
-  const tokens = tokenize(query);
-  if (!tokens.length) return [];
-  const projectsById = new Map(state.projects.map((project) => [project.id, project]));
+  return searchWorkspaceIndex(buildWorkspaceSearchIndex(state), query, options);
+}
+
+export function buildWorkspaceSearchIndex(state) {
+  const projects = Array.isArray(state?.projects) ? state.projects : [];
+  const crumbs = Array.isArray(state?.crumbs) ? state.crumbs : [];
+  const checkpoints = Array.isArray(state?.checkpoints) ? state.checkpoints : [];
+  const projectsById = new Map(projects.map((project) => [project.id, project]));
   const candidates = [];
 
-  for (const project of state.projects) {
-    candidates.push(makeCandidate({
+  for (const project of projects) {
+    candidates.push(indexCandidate({
       id: project.id,
       kind: "project",
       project,
       title: project.title,
       text: [project.description, project.nextAction].filter(Boolean).join(" · "),
       createdAt: project.updatedAt ?? project.createdAt
-    }, tokens));
+    }));
   }
-  for (const crumb of state.crumbs) {
+  for (const crumb of crumbs) {
     const project = projectsById.get(crumb.projectId);
     if (!project) continue;
-    candidates.push(makeCandidate({
+    candidates.push(indexCandidate({
       id: crumb.id,
       kind: "crumb",
       project,
@@ -28,26 +33,34 @@ export function searchWorkspace(state, query, options = {}) {
       text: "",
       createdAt: crumb.resolvedAt ?? crumb.createdAt,
       subtype: crumb.type
-    }, tokens));
+    }));
   }
-  for (const checkpoint of state.checkpoints) {
+  for (const checkpoint of checkpoints) {
     const project = projectsById.get(checkpoint.projectId);
     if (!project) continue;
-    candidates.push(makeCandidate({
+    candidates.push(indexCandidate({
       id: checkpoint.id,
       kind: "checkpoint",
       project,
       title: checkpoint.summary,
       text: [checkpoint.nextAction, checkpoint.openLoops, checkpoint.returnHint].filter(Boolean).join(" · "),
       createdAt: checkpoint.createdAt
-    }, tokens));
+    }));
   }
+  return Object.freeze({ candidates: Object.freeze(candidates) });
+}
 
+export function searchWorkspaceIndex(index, query, options = {}) {
+  const tokens = tokenize(query);
+  if (!tokens.length) return [];
   const limit = boundedLimit(options.limit, RESULT_LIMIT, 100);
-  return candidates
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score || timeOf(b.createdAt) - timeOf(a.createdAt) || a.id.localeCompare(b.id))
-    .slice(0, limit);
+  if (!limit || !Array.isArray(index?.candidates)) return [];
+  const matches = [];
+  for (const candidate of index.candidates) {
+    const score = scoreCandidate(candidate, tokens);
+    if (score > 0) matches.push({ ...candidate.result, score });
+  }
+  return matches.sort((a, b) => b.score - a.score || timeOf(b.createdAt) - timeOf(a.createdAt) || a.id.localeCompare(b.id)).slice(0, limit);
 }
 
 export function extractHttpLinks(text, limit = RESOURCE_LIMIT) {
@@ -102,14 +115,32 @@ export function getProjectResources(state, projectId, limit = RESOURCE_LIMIT) {
   return resources;
 }
 
-function makeCandidate(input, tokens) {
+function indexCandidate(input) {
   const title = String(input.title ?? "");
   const text = String(input.text ?? "");
   const projectTitle = input.project.title;
   const normalizedTitle = normalizeText(title);
   const normalizedText = normalizeText(`${text} ${projectTitle}`);
-  if (!tokens.every((token) => normalizedTitle.includes(token) || normalizedText.includes(token))) return { ...input, score: 0 };
+  return Object.freeze({
+    normalizedTitle,
+    normalizedText,
+    result: Object.freeze({
+      id: input.id,
+      kind: input.kind,
+      subtype: input.subtype ?? null,
+      projectId: input.project.id,
+      projectTitle,
+      projectStatus: input.project.status,
+      title,
+      snippet: compact(text || title),
+      createdAt: input.createdAt
+    })
+  });
+}
 
+function scoreCandidate(candidate, tokens) {
+  const { normalizedTitle, normalizedText } = candidate;
+  if (!tokens.every((token) => normalizedTitle.includes(token) || normalizedText.includes(token))) return 0;
   let score = 0;
   for (const token of tokens) {
     if (normalizedTitle === token) score += 100;
@@ -117,20 +148,9 @@ function makeCandidate(input, tokens) {
     else if (normalizedTitle.includes(token)) score += 40;
     else score += 15;
   }
-  if (input.kind === "project") score += 12;
-  if (input.project.status === "archived") score -= 4;
-  return {
-    id: input.id,
-    kind: input.kind,
-    subtype: input.subtype ?? null,
-    projectId: input.project.id,
-    projectTitle,
-    projectStatus: input.project.status,
-    title,
-    snippet: compact(text || title),
-    createdAt: input.createdAt,
-    score
-  };
+  if (candidate.result.kind === "project") score += 12;
+  if (candidate.result.projectStatus === "archived") score -= 4;
+  return score;
 }
 
 function tokenize(query) {
