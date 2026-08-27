@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  SEARCH_QUERY_LIMIT,
+  SEARCH_TOKEN_LENGTH_LIMIT,
+  SEARCH_TOKEN_LIMIT,
   buildWorkspaceSearchIndex,
   extractHttpLinks,
   getProjectResources,
@@ -39,6 +42,19 @@ test("searchWorkspace normalizes full-width and case variants and is determinist
     { id: "a", projectId: "p1", type: "note", text: "api link", createdAt: "invalid" }
   );
   assert.deepEqual(searchWorkspace(variant, "API LINK").map((item) => item.id), ["a", "b"]);
+});
+
+test("searchWorkspace rejects queries outside the bounded comparison budget", () => {
+  const index = buildWorkspaceSearchIndex(state);
+  const tooManyTokens = Array.from({ length: SEARCH_TOKEN_LIMIT + 1 }, (_, index) => `词${index}`).join(" ");
+
+  assert.deepEqual(searchWorkspaceIndex(index, "n".repeat(SEARCH_TOKEN_LENGTH_LIMIT + 1)), []);
+  assert.deepEqual(searchWorkspaceIndex(index, tooManyTokens), []);
+  assert.deepEqual(searchWorkspaceIndex(index, "x".repeat(SEARCH_QUERY_LIMIT + 1)), []);
+  assert.ok("ﷺ".repeat(30).length < SEARCH_QUERY_LIMIT);
+  assert.ok("ﷺ".repeat(30).normalize("NFKC").length > SEARCH_QUERY_LIMIT);
+  assert.deepEqual(searchWorkspaceIndex(index, "ﷺ".repeat(30)), []);
+  assert.deepEqual(searchWorkspaceIndex(index, `${"notebook ".repeat(SEARCH_TOKEN_LIMIT)}notebook`).map((item) => item.id), ["c2", "p1", "cp1"]);
 });
 
 test("a reusable search index preserves results across queries and snapshots normalized evidence", () => {
@@ -104,6 +120,13 @@ test("extractHttpLinks accepts only clean HTTP resources and removes prose punct
   assert.deepEqual(extractHttpLinks("https://example.com/%C2%85hidden"), []);
   assert.deepEqual(extractHttpLinks("https://example.com/path\u0085hidden"), []);
   assert.deepEqual(extractHttpLinks("https://example.com", 0), []);
+});
+
+test("extractHttpLinks canonicalizes equivalent DNS trailing dots before deduplication", () => {
+  assert.deepEqual(extractHttpLinks("https://example.com./guide#one https://example.com/guide#two https://example.com../guide"), [
+    { url: "https://example.com/guide", host: "example.com", label: "example.com/guide" }
+  ]);
+  assert.deepEqual(extractHttpLinks("https://./guide"), []);
 });
 
 test("getProjectResources deduplicates newest evidence and preserves source metadata", () => {

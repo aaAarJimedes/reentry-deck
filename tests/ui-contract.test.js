@@ -88,6 +88,13 @@ test("form length boundaries come from the persisted model contract", async () =
   }
 });
 
+test("workspace search exposes the same query budget enforced by the core", async () => {
+  const source = await readFile(new URL("../src/ui/app.js", import.meta.url), "utf8");
+
+  assert.match(source, /import \{ SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex/u);
+  assert.match(source, /data-control="workspace-search" maxlength="\$\{SEARCH_QUERY_LIMIT\}"/u);
+});
+
 test("backup reads ignore stale completions and are invalidated on app destruction", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

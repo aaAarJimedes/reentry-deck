@@ -14,7 +14,7 @@ import { triggerBlobDownload } from "../core/download.js";
 import { buildAttentionDeck, buildWeeklyReview } from "../core/insights.js";
 import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
 import { buildReentryBrief, copyPlainText } from "../core/share.js";
-import { buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
+import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession, prepareQuickCheckpointReview } from "../core/session.js";
 import {
   COLLECTION_PAGE_SIZE,
@@ -738,7 +738,7 @@ export class ReentryApp {
       <dialog id="search-dialog" class="search-dialog" aria-labelledby="search-title">
         <div class="dialog-header"><div><h2 id="search-title">找回工作现场</h2><p>搜索项目、轨迹与检查点，或直接执行常用动作；数据不会离开浏览器。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <div class="dialog-body">
-          <label class="search-field">${icon("search")}<span class="sr-only">搜索所有工作现场或筛选动作</span><input type="search" data-control="workspace-search" placeholder="输入项目、决定、问题或下一步…" autocomplete="off" autofocus /></label>
+          <label class="search-field">${icon("search")}<span class="sr-only">搜索所有工作现场或筛选动作</span><input type="search" data-control="workspace-search" maxlength="${SEARCH_QUERY_LIMIT}" placeholder="输入项目、决定、问题或下一步…" autocomplete="off" autofocus /></label>
           <div class="search-results" data-search-results aria-live="polite">${this.#renderSearchResults("")}</div>
         </div>
       </dialog>

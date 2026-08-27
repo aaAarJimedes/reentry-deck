@@ -3,6 +3,9 @@ import { compactText, containsUnsafeIdControl } from "./model.js";
 const RESULT_LIMIT = 40;
 const RESOURCE_LIMIT = 20;
 const MAX_RESOURCE_URL_LENGTH = 2_048;
+export const SEARCH_QUERY_LIMIT = 500;
+export const SEARCH_TOKEN_LIMIT = 24;
+export const SEARCH_TOKEN_LENGTH_LIMIT = 100;
 
 export function searchWorkspace(state, query, options = {}) {
   return searchWorkspaceIndex(buildWorkspaceSearchIndex(state), query, options);
@@ -78,16 +81,18 @@ export function extractHttpLinks(text, limit = RESOURCE_LIMIT) {
     try {
       const url = new URL(candidate);
       const decodedTarget = decodeURIComponent(`${url.pathname}${url.search}`);
+      const canonicalHostname = url.hostname.replace(/\.+$/u, "");
       if (
         candidate.length > MAX_RESOURCE_URL_LENGTH
         || url.href.length > MAX_RESOURCE_URL_LENGTH
         || containsUnsafeIdControl(candidate)
         || containsUnsafeIdControl(decodedTarget)
         || !["http:", "https:"].includes(url.protocol)
-        || !url.hostname
+        || !canonicalHostname
         || url.username
         || url.password
       ) continue;
+      url.hostname = canonicalHostname;
       url.hash = "";
       if (seen.has(url.href)) continue;
       seen.add(url.href);
@@ -167,7 +172,13 @@ function scoreCandidate(candidate, tokens) {
 }
 
 function tokenize(query) {
-  return [...new Set(normalizeText(query).split(/\s+/u).filter(Boolean))];
+  const raw = String(query ?? "");
+  if (raw.length > SEARCH_QUERY_LIMIT) return [];
+  const normalized = normalizeText(raw);
+  if (normalized.length > SEARCH_QUERY_LIMIT) return [];
+  const tokens = [...new Set(normalized.split(/\s+/u).filter(Boolean))];
+  if (tokens.length > SEARCH_TOKEN_LIMIT || tokens.some((token) => token.length > SEARCH_TOKEN_LENGTH_LIMIT)) return [];
+  return tokens;
 }
 
 function normalizeText(value) {
