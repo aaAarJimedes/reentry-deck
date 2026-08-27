@@ -3,7 +3,7 @@
 // The build id provides a clean release boundary. Runtime requests also use a
 // network-first strategy, so a forgotten bump cannot strand online clients on
 // an old shell; the cached release remains the complete offline fallback.
-const BUILD_ID = "2026-08-28.28";
+const BUILD_ID = "2026-08-28.29";
 const CACHE_PREFIX = "reentry-deck-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 
@@ -88,7 +88,17 @@ async function serveNavigation(request) {
   const cache = await caches.open(CACHE_NAME);
   try {
     const response = await fetch(request);
-    if (isUsableResponse(response)) await cache.put(documentURL, response.clone());
+    if (isUsableResponse(response)) {
+      try {
+        await cache.put(documentURL, response.clone());
+      } catch {
+        // A successful network response must not fail because an optional
+        // runtime cache refresh exceeded storage capacity.
+      }
+    } else {
+      const cachedDocument = await cache.match(documentURL);
+      if (cachedDocument) return cachedDocument;
+    }
     return response;
   } catch {
     const cachedDocument = await cache.match(documentURL);
@@ -108,7 +118,16 @@ async function serveShellAsset(request, canonicalURL) {
   const cache = await caches.open(CACHE_NAME);
   try {
     const response = await fetch(request);
-    if (isUsableResponse(response)) await cache.put(canonicalURL, response.clone());
+    if (isUsableResponse(response)) {
+      try {
+        await cache.put(canonicalURL, response.clone());
+      } catch {
+        // Keep serving the network response when cache refresh is unavailable.
+      }
+    } else {
+      const cachedResponse = await cache.match(canonicalURL);
+      if (cachedResponse) return cachedResponse;
+    }
     return response;
   } catch {
     const cachedResponse = await cache.match(canonicalURL);

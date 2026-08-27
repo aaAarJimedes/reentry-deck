@@ -15,6 +15,7 @@ function createHarness() {
   const handlers = new Map();
   const stores = new Map();
   let claimed = false;
+  let failRuntimePut = false;
   let fetchImplementation = async (request) => new Response(`online:${new URL(request.url).pathname}`, { status: 200 });
 
   class MockCache {
@@ -30,6 +31,7 @@ function createHarness() {
     }
 
     async put(request, response) {
+      if (failRuntimePut) throw new Error("cache quota");
       this.entries.set(cacheKey(request), response.clone());
     }
 
@@ -75,7 +77,8 @@ function createHarness() {
     stores,
     cacheStorage,
     get claimed() { return claimed; },
-    setFetch(next) { fetchImplementation = next; }
+    setFetch(next) { fetchImplementation = next; },
+    setRuntimePutFailure(value) { failRuntimePut = value; }
   };
 }
 
@@ -150,6 +153,41 @@ describe("service worker lifecycle", () => {
     });
     assert.equal(asset.status, 200);
     assert.equal(await asset.text(), "online:/src/main.js");
+  });
+
+  test("cached shell survives transient HTTP errors and missing uncached assets do not masquerade as hits", async () => {
+    await lifecyclePromise(harness.handlers.get("install"));
+    const fetchHandler = harness.handlers.get("fetch");
+    harness.setFetch(async (request) => new Response("temporary failure", {
+      status: request.url.endsWith("unlisted.js") ? 404 : 503
+    }));
+
+    const navigation = await interceptedResponse(fetchHandler, { method: "GET", mode: "navigate", url: scope });
+    assert.equal(navigation.status, 200);
+    assert.equal(await navigation.text(), "online:/index.html");
+
+    const cachedAsset = await interceptedResponse(fetchHandler, { method: "GET", mode: "cors", url: `${scope}src/main.js` });
+    assert.equal(cachedAsset.status, 200);
+    assert.equal(await cachedAsset.text(), "online:/src/main.js");
+
+    const unknownAsset = await interceptedResponse(fetchHandler, { method: "GET", mode: "cors", url: `${scope}src/unlisted.js` });
+    assert.equal(unknownAsset.status, 404);
+    assert.equal(await unknownAsset.text(), "temporary failure");
+  });
+
+  test("runtime cache quota failure never hides a successful network response", async () => {
+    await lifecyclePromise(harness.handlers.get("install"));
+    harness.setRuntimePutFailure(true);
+    harness.setFetch(async () => new Response("fresh network copy", { status: 200 }));
+
+    const response = await interceptedResponse(harness.handlers.get("fetch"), {
+      method: "GET",
+      mode: "cors",
+      url: `${scope}src/main.js`
+    });
+
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "fresh network copy");
   });
 
   test("non-GET and cross-origin requests are not intercepted", async () => {
