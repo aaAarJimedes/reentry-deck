@@ -19,3 +19,13 @@ test("project archival uses an accessible in-app confirmation instead of window.
   assert.match(source, /if \(action === "archive-project"\) this\.#prepareArchive/);
   assert.match(source, /if \(action === "confirm-archive"\) this\.#confirmArchive/);
 });
+
+test("user-triggered mutation surfaces are guarded by the shared action boundary", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /addEventListener\("click", \(event\) => this\.#runUserAction\(\(\) => this\.#onClick\(event\)\)\)/);
+  assert.match(source, /addEventListener\("change", \(event\) => this\.#runUserAction\(\(\) => this\.#onChange\(event\)\)\)/);
+  assert.match(source, /addEventListener\("keydown", \(event\) => this\.#runUserAction\(\(\) => this\.#onKeydown\(event\)\)\)/);
+  assert.match(source, /requestAnimationFrame\(\(\) => this\.#runUserAction/);
+  assert.match(source, /操作未完成，请根据最新状态重试/);
+});

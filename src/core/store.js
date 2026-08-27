@@ -2,7 +2,7 @@ import { createEmptyState, isoNow, normalizeState, validateImportCandidate, vali
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.22.0";
+export const APP_VERSION = "0.23.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {

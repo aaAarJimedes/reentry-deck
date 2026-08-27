@@ -95,9 +95,9 @@ export class ReentryApp {
     this.#store = store;
     this.#noticeQueue = store.drainNotices();
 
-    this.#root.addEventListener("click", (event) => this.#onClick(event));
+    this.#root.addEventListener("click", (event) => this.#runUserAction(() => this.#onClick(event)));
     this.#root.addEventListener("submit", (event) => this.#onSubmit(event));
-    this.#root.addEventListener("change", (event) => this.#onChange(event));
+    this.#root.addEventListener("change", (event) => this.#runUserAction(() => this.#onChange(event)));
     this.#root.addEventListener("input", (event) => this.#onInput(event));
     this.#root.addEventListener("cancel", (event) => {
       if (event.target.id === "import-preview-dialog") this.#pendingImport = null;
@@ -107,7 +107,7 @@ export class ReentryApp {
       this.#focusSelector = "#main-content";
       this.render();
     });
-    window.addEventListener("keydown", (event) => this.#onKeydown(event));
+    window.addEventListener("keydown", (event) => this.#runUserAction(() => this.#onKeydown(event)));
     this.#store.subscribe((_state, event) => this.render({ preserveDialog: event?.source === "external" }));
 
     this.#timerId = window.setInterval(() => this.#refreshTimers(), 1000);
@@ -773,6 +773,17 @@ export class ReentryApp {
     if (output) output.innerHTML = this.#renderSearchResults(control.value);
   }
 
+  #runUserAction(action) {
+    try {
+      action();
+    } catch (error) {
+      const message = typeof error?.message === "string" && error.message.trim()
+        ? error.message
+        : "操作未完成，请根据最新状态重试。 ";
+      this.#toast(message, "error");
+    }
+  }
+
   #renderSearchResults(query) {
     if (!String(query).trim()) return this.#renderQuickCommands();
     const results = searchWorkspaceIndex(this.#getSearchIndex(), query);
@@ -843,7 +854,7 @@ export class ReentryApp {
 
   #runCommand(command, dialog) {
     dialog?.close();
-    requestAnimationFrame(() => {
+    requestAnimationFrame(() => this.#runUserAction(() => {
       if (command === "quick-capture") this.#openDialog("quick-capture-dialog");
       if (command === "new-project") this.#openDialog("new-project-dialog");
       if (command === "undo") this.#restorePrevious("topbar");
@@ -851,7 +862,7 @@ export class ReentryApp {
       if (command === "home") location.hash = "#/";
       if (command === "archive") location.hash = "#/archive";
       if (command === "settings") location.hash = "#/settings";
-    });
+    }));
   }
 
   #createProject(data, form) {
