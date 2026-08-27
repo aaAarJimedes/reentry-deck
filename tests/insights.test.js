@@ -78,6 +78,38 @@ test("buildWeeklyReview caps implausibly long sessions and normalizes options", 
   assert.equal(review.cappedSessions, 1);
 });
 
+test("buildWeeklyReview includes sessions that overlap the window and counts only the overlap", () => {
+  const data = state({
+    projects: [project("p1"), project("p2")],
+    sessions: [
+      { id: "outside", projectId: "p1", status: "completed", startedAt: at(-8 * DAY), endedAt: at(-7 * DAY) },
+      { id: "crossing", projectId: "p1", status: "completed", startedAt: at(-7 * DAY - 2 * HOUR), endedAt: at(-7 * DAY + HOUR) },
+      { id: "inside", projectId: "p2", status: "completed", startedAt: at(-7 * DAY + 2 * HOUR), endedAt: at(-7 * DAY + 3 * HOUR) }
+    ]
+  });
+
+  const review = buildWeeklyReview(data, NOW);
+
+  assert.equal(review.sessions, 2);
+  assert.equal(review.focusedMinutes, 120);
+  assert.equal(review.nearbySwitches, 1);
+  assert.deepEqual(review.topProject, { id: "p1", title: "Project p1", minutes: 60 });
+});
+
+test("buildWeeklyReview retains a long-running active session that began before the window", () => {
+  const data = state({
+    projects: [project("p1")],
+    sessions: [{ id: "old-active", projectId: "p1", status: "active", startedAt: at(-8 * DAY), endedAt: null }]
+  });
+
+  const review = buildWeeklyReview(data, NOW);
+
+  assert.equal(review.sessions, 1);
+  assert.equal(review.activeSessions, 1);
+  assert.equal(review.focusedMinutes, 720);
+  assert.equal(review.cappedSessions, 1);
+});
+
 test("buildAttentionDeck explains risk without including healthy or archived work", () => {
   const data = state({
     projects: [

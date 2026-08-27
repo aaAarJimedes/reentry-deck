@@ -364,7 +364,7 @@ export class ReentryApp {
         <div class="panel-body pulse-layout">
           <div>
             <div class="pulse-metrics">
-              ${pulseMetric(formatInsightDuration(review.focusedMinutes), "可计会话时长", review.cappedSessions ? `${review.cappedSessions} 段已封顶` : "按开始与结束时间")}
+              ${pulseMetric(formatInsightDuration(review.focusedMinutes), "可计会话时长", review.cappedSessions ? `${review.cappedSessions} 段已封顶` : "按窗口内相交时长")}
               ${pulseMetric(review.sessions, "会话窗口", `${review.records} 条轨迹`)}
               ${pulseMetric(review.nearbySwitches, "近距项目切换", "4 小时内转到另一项目")}
               ${pulseMetric(`${review.recoverability}%`, "平均复航完整度", "未归档项目")}

@@ -9,7 +9,7 @@ export function buildWeeklyReview(state, now = Date.now(), options = {}) {
   const windowDays = normalizeWindowDays(options.windowDays);
   const windowStart = now - windowDays * DAY_MS;
   const sessions = state.sessions
-    .filter((session) => timeOf(session.startedAt) >= windowStart && timeOf(session.startedAt) <= now)
+    .filter((session) => overlapsWindow(session, windowStart, now))
     .slice()
     .sort((a, b) => timeOf(a.startedAt) - timeOf(b.startedAt) || a.id.localeCompare(b.id));
   const projectMinutes = new Map();
@@ -17,7 +17,7 @@ export function buildWeeklyReview(state, now = Date.now(), options = {}) {
   let cappedSessions = 0;
 
   for (const session of sessions) {
-    const duration = sessionDuration(session, now);
+    const duration = sessionDuration(session, windowStart, now);
     focusedMs += duration.countedMs;
     if (duration.capped) cappedSessions += 1;
     projectMinutes.set(session.projectId, (projectMinutes.get(session.projectId) ?? 0) + duration.countedMs);
@@ -128,9 +128,15 @@ function attentionForProject(project, card, now, staleAfterDays) {
   };
 }
 
-function sessionDuration(session, now) {
+function overlapsWindow(session, windowStart, now) {
   const start = timeOf(session.startedAt);
   const naturalEnd = session.status === "active" ? now : timeOf(session.endedAt);
+  return Boolean(start && naturalEnd && start <= now && naturalEnd >= start && naturalEnd > windowStart);
+}
+
+function sessionDuration(session, windowStart, now) {
+  const start = Math.max(timeOf(session.startedAt), windowStart);
+  const naturalEnd = Math.min(session.status === "active" ? now : timeOf(session.endedAt), now);
   if (!start || !naturalEnd || naturalEnd <= start) return { countedMs: 0, capped: false };
   const rawMs = naturalEnd - start;
   return { countedMs: Math.min(rawMs, MAX_COUNTED_SESSION_MS), capped: rawMs > MAX_COUNTED_SESSION_MS };
