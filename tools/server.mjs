@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -66,14 +66,22 @@ export function createRequestHandler(root = defaultRoot) {
       sendText(response, resolved.error, resolved.error === 400 ? "Bad request" : "Not found", {}, request.method === "HEAD");
       return;
     }
-    if (!existsSync(resolved.path) || !statSync(resolved.path).isFile()) {
+    let fileStats;
+    try {
+      fileStats = statSync(resolved.path);
+    } catch {
+      sendText(response, 404, "Not found", {}, request.method === "HEAD");
+      return;
+    }
+    if (!fileStats.isFile()) {
       sendText(response, 404, "Not found", {}, request.method === "HEAD");
       return;
     }
 
     response.writeHead(200, securityHeaders({
       "Content-Type": mimeTypes[extname(resolved.path)] ?? "application/octet-stream",
-      "Cache-Control": resolved.path.endsWith("sw.js") ? "no-cache" : "no-store"
+      "Cache-Control": resolved.path.endsWith("sw.js") ? "no-cache" : "no-store",
+      "Content-Length": fileStats.size
     }));
     if (request.method === "HEAD") response.end();
     else createReadStream(resolved.path).on("error", () => response.destroy()).pipe(response);
@@ -105,15 +113,16 @@ function sendText(response, status, message, extraHeaders = {}, headOnly = false
   response.writeHead(status, securityHeaders({
     "Content-Type": "text/plain; charset=utf-8",
     "Cache-Control": "no-store",
+    "Content-Length": Buffer.byteLength(message),
     ...extraHeaders
   }));
   response.end(headOnly ? undefined : message);
 }
 
 function runCli() {
-  const port = Number.parseInt(process.env.PORT ?? "4173", 10);
+  const port = parseServerPort(process.env.PORT ?? "4173");
   const host = process.env.HOST ?? "127.0.0.1";
-  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+  if (port === null) {
     console.error("PORT 必须是 0–65535 之间的整数。");
     process.exitCode = 1;
     return;
@@ -127,6 +136,13 @@ function runCli() {
     console.log(`复航台已启动：http://${host}:${port}`);
     console.log("按 Ctrl+C 停止。");
   });
+}
+
+export function parseServerPort(value) {
+  const text = String(value ?? "").trim();
+  if (!/^\d{1,5}$/.test(text)) return null;
+  const port = Number(text);
+  return Number.isInteger(port) && port <= 65_535 ? port : null;
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : null;

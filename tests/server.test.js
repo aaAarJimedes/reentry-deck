@@ -3,7 +3,7 @@ import { request } from "node:http";
 import { resolve } from "node:path";
 import { after, before, describe, test } from "node:test";
 
-import { createAppServer, resolvePublicFile } from "../tools/server.mjs";
+import { createAppServer, parseServerPort, resolvePublicFile } from "../tools/server.mjs";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 let server;
@@ -16,6 +16,17 @@ before(async () => {
     server.listen(0, "127.0.0.1", resolveListen);
   });
   port = server.address().port;
+});
+
+describe("server configuration", () => {
+  test("accepts only complete decimal port values", () => {
+    for (const [value, expected] of [["4173", 4173], [" 0 ", 0], ["65535", 65535], [4173, 4173]]) {
+      assert.equal(parseServerPort(value), expected);
+    }
+    for (const value of ["", "4173abc", "1.5", "-1", "+80", "65536", null, undefined]) {
+      assert.equal(parseServerPort(value), null, String(value));
+    }
+  });
 });
 
 after(async () => {
@@ -84,12 +95,16 @@ describe("local HTTP server", () => {
   });
 
   test("HEAD and unsupported methods follow HTTP semantics", async () => {
+    const get = await send("/src/main.js");
     const head = await send("/src/main.js", "HEAD");
     assert.equal(head.status, 200);
     assert.equal(head.body, "");
+    assert.equal(head.headers["content-length"], get.headers["content-length"]);
+    assert.equal(Number(head.headers["content-length"]), Buffer.byteLength(get.body));
     const post = await send("/", "POST");
     assert.equal(post.status, 405);
     assert.equal(post.headers.allow, "GET, HEAD");
+    assert.equal(Number(post.headers["content-length"]), Buffer.byteLength(post.body));
   });
 
   test("allowed but absent public assets return 404", async () => {
