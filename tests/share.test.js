@@ -44,6 +44,12 @@ describe("copyPlainText", () => {
 
   test("falls back after a denied Clipboard API call and always removes its control", async () => {
     const events = [];
+    const previousFocus = {
+      selectionStart: 2,
+      selectionEnd: 5,
+      focus(options) { events.push(`focus:${options.preventScroll}`); },
+      setSelectionRange(start, end) { events.push(`selection:${start}:${end}`); }
+    };
     const control = {
       style: {},
       setAttribute(name, value) { events.push(`attribute:${name}:${value}`); },
@@ -53,6 +59,7 @@ describe("copyPlainText", () => {
     const result = await copyPlainText("brief", {
       clipboard: { writeText: async () => { throw new Error("permission denied"); } },
       document: {
+        activeElement: previousFocus,
         body: { append(node) { assert.strictEqual(node, control); events.push("append"); } },
         createElement(name) { assert.equal(name, "textarea"); return control; },
         execCommand(command) { events.push(`exec:${command}`); return true; }
@@ -60,7 +67,7 @@ describe("copyPlainText", () => {
     });
     assert.equal(result, "fallback");
     assert.equal(control.value, "brief");
-    assert.deepEqual(events, ["attribute:aria-hidden:true", "append", "select", "exec:copy", "remove"]);
+    assert.deepEqual(events, ["attribute:aria-hidden:true", "append", "select", "exec:copy", "remove", "focus:true", "selection:2:5"]);
   });
 
   test("reports unsupported or rejected copy without leaking a fallback control", async () => {
@@ -79,5 +86,27 @@ describe("copyPlainText", () => {
       }
     }), /无法写入剪贴板：denied/u);
     assert.equal(removed, true);
+  });
+
+  test("does not let fallback cleanup or focus restoration mask a successful copy", async () => {
+    const result = await copyPlainText("brief", {
+      clipboard: null,
+      document: {
+        activeElement: {
+          focus() { throw new Error("detached"); }
+        },
+        body: { append() {} },
+        createElement() {
+          return {
+            style: {},
+            setAttribute() {},
+            select() {},
+            remove() { throw new Error("cleanup denied"); }
+          };
+        },
+        execCommand() { return true; }
+      }
+    });
+    assert.equal(result, "fallback");
   });
 });

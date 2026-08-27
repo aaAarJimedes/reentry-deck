@@ -33,6 +33,7 @@ export async function copyPlainText(value, dependencies = {}) {
   if (!documentRef?.body || typeof documentRef.createElement !== "function") {
     throw new Error(clipboardError ? `无法写入剪贴板：${errorMessage(clipboardError)}` : "当前环境不支持复制。 ");
   }
+  const previousFocus = captureFocus(documentRef.activeElement);
   const control = documentRef.createElement("textarea");
   let attached = false;
   try {
@@ -49,7 +50,35 @@ export async function copyPlainText(value, dependencies = {}) {
     }
     return "fallback";
   } finally {
-    if (attached) control.remove();
+    if (attached || control.isConnected === true) safelyRemove(control);
+    restoreFocus(previousFocus);
+  }
+}
+
+function captureFocus(element) {
+  if (!element || typeof element.focus !== "function") return null;
+  const start = Number.isInteger(element.selectionStart) ? element.selectionStart : null;
+  const end = Number.isInteger(element.selectionEnd) ? element.selectionEnd : null;
+  return { element, start, end };
+}
+
+function restoreFocus(snapshot) {
+  if (!snapshot) return;
+  try {
+    snapshot.element.focus({ preventScroll: true });
+    if (snapshot.start !== null && snapshot.end !== null && typeof snapshot.element.setSelectionRange === "function") {
+      snapshot.element.setSelectionRange(snapshot.start, snapshot.end);
+    }
+  } catch {
+    // A removed or disabled origin control is harmless; copy already completed.
+  }
+}
+
+function safelyRemove(control) {
+  try {
+    control.remove();
+  } catch {
+    // Cleanup failures must not turn a successful copy into a reported failure.
   }
 }
 
