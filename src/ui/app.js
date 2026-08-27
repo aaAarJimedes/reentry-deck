@@ -11,8 +11,8 @@ import {
 import { prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture.js";
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { triggerBlobDownload } from "../core/download.js";
-import { buildAttentionDeck, buildWeeklyReview } from "../core/insights.js";
-import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
+import { buildWorkspaceOverview } from "../core/insights.js";
+import { buildReentryCard, getProjectStats } from "../core/reentry.js";
 import { buildReentryBrief, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession, prepareQuickCheckpointReview } from "../core/session.js";
@@ -324,14 +324,12 @@ export class ReentryApp {
   #renderDashboard(state, activeSession) {
     const projects = state.projects.filter((item) => item.status !== "archived");
     if (!projects.length) return this.#renderEmptyDashboard();
-    const ranked = rankProjectsForReentry(state);
+    const { rankedProjects: ranked, weeklyReview, attentionDeck } = buildWorkspaceOverview(state);
     const projectWindow = buildCollectionWindow(ranked, this.#collectionLimits.get("home"));
     const lead = ranked[0];
     const crumbsToday = state.crumbs.filter((item) => isToday(item.createdAt)).length;
     const activeProjects = projects.filter((item) => item.status === "active").length;
     const blockedProjects = projects.filter((item) => item.status === "blocked").length;
-    const weeklyReview = buildWeeklyReview(state);
-    const attentionDeck = buildAttentionDeck(state);
 
     return `
       <section class="page-heading">
@@ -1322,17 +1320,14 @@ export class ReentryApp {
   #showMoreProjects(scope) {
     if (scope !== "home" && scope !== "archive") return;
     const state = this.#store.getState();
-    const items = scope === "home"
-      ? rankProjectsForReentry(state)
-      : state.projects.filter((item) => item.status === "archived");
+    const total = state.projects.filter((item) => scope === "home" ? item.status !== "archived" : item.status === "archived").length;
     const currentLimit = this.#collectionLimits.get(scope) ?? COLLECTION_PAGE_SIZE;
-    const current = buildCollectionWindow(items, currentLimit);
-    if (!current.remaining) return;
-    const expanded = buildCollectionWindow(items, current.nextLimit);
-    this.#collectionLimits.set(scope, expanded.shown);
-    this.#focusSelector = `[data-project-window="${scope}"] [data-project-window-item="${current.shown}"]`;
+    if (currentLimit >= total) return;
+    const shown = Math.min(total, currentLimit + COLLECTION_PAGE_SIZE);
+    this.#collectionLimits.set(scope, shown);
+    this.#focusSelector = `[data-project-window="${scope}"] [data-project-window-item="${currentLimit}"]`;
     this.render();
-    this.#announce(`已显示 ${expanded.shown} 个${scope === "home" ? "项目" : "归档项目"}，还剩 ${expanded.remaining} 个`);
+    this.#announce(`已显示 ${shown} 个${scope === "home" ? "项目" : "归档项目"}，还剩 ${total - shown} 个`);
   }
 
   #loadSample() {

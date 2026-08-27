@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildAttentionDeck, buildWeeklyReview } from "../src/core/insights.js";
+import { buildAttentionDeck, buildWeeklyReview, buildWorkspaceOverview } from "../src/core/insights.js";
 
 const NOW = Date.parse("2026-08-28T12:00:00.000Z");
 const HOUR = 3_600_000;
@@ -133,4 +133,34 @@ test("buildAttentionDeck explains risk without including healthy or archived wor
   assert.match(deck[1].reasons.join("；"), /受阻/);
   assert.equal(deck.some((item) => item.project.id === "archived"), false);
   assert.deepEqual(buildAttentionDeck(data, NOW, { limit: 0 }), []);
+});
+
+test("buildWorkspaceOverview shares one reentry index across ranking, review, and attention", () => {
+  const projects = Array.from({ length: 1_000 }, (_, index) => project(`p${index}`, {
+    status: index % 17 === 0 ? "blocked" : "active"
+  }));
+  const crumbs = Array.from({ length: 5_000 }, (_, index) => ({
+    id: `c${index}`,
+    projectId: `p${index % projects.length}`,
+    type: index % 11 === 0 ? "blocker" : "note",
+    text: `evidence ${index}`,
+    createdAt: at(-index)
+  }));
+  const originalIterator = crumbs[Symbol.iterator].bind(crumbs);
+  let iteratorCalls = 0;
+  Object.defineProperty(crumbs, Symbol.iterator, {
+    value() {
+      iteratorCalls += 1;
+      return originalIterator();
+    }
+  });
+  const data = state({ projects, crumbs });
+
+  const overview = buildWorkspaceOverview(data, NOW);
+
+  assert.equal(iteratorCalls, 1, "the shared overview must index evidence only once");
+  assert.equal(overview.rankedProjects.length, 1_000);
+  assert.equal(overview.weeklyReview.records, 5_000);
+  assert.equal(overview.attentionDeck.length, 4);
+  assert.equal(overview.attentionDeck[0].project.status, "blocked");
 });

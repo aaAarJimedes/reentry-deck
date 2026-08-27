@@ -1,4 +1,4 @@
-import { buildReentryCards } from "./reentry.js";
+import { buildReentryCards, rankProjectsForReentry } from "./reentry.js";
 import { inspectSession } from "./session.js";
 
 const DAY_MS = 86_400_000;
@@ -6,6 +6,20 @@ const NEARBY_SWITCH_MS = 4 * 3_600_000;
 const MAX_COUNTED_SESSION_MS = 12 * 3_600_000;
 
 export function buildWeeklyReview(state, now = Date.now(), options = {}) {
+  const cardProjectIds = state.projects.filter((project) => project.status !== "archived").map((project) => project.id);
+  return buildWeeklyReviewWithCards(state, now, options, buildReentryCards(state, cardProjectIds, now));
+}
+
+export function buildWorkspaceOverview(state, now = Date.now(), options = {}) {
+  const rankedProjects = rankProjectsForReentry(state, now);
+  return {
+    rankedProjects,
+    weeklyReview: buildWeeklyReviewWithCards(state, now, options.weeklyReview ?? {}, rankedProjects),
+    attentionDeck: buildAttentionDeckWithCards(state, now, options.attentionDeck ?? {}, rankedProjects)
+  };
+}
+
+function buildWeeklyReviewWithCards(state, now, options, cards) {
   const windowDays = normalizeWindowDays(options.windowDays);
   const windowStart = now - windowDays * DAY_MS;
   const sessions = state.sessions
@@ -34,8 +48,6 @@ export function buildWeeklyReview(state, now = Date.now(), options = {}) {
 
   const recentCrumbs = state.crumbs.filter((crumb) => timeOf(crumb.createdAt) >= windowStart && timeOf(crumb.createdAt) <= now);
   const resolvedSignals = state.crumbs.filter((crumb) => timeOf(crumb.resolvedAt) >= windowStart && timeOf(crumb.resolvedAt) <= now);
-  const cardProjectIds = state.projects.filter((project) => project.status !== "archived").map((project) => project.id);
-  const cards = buildReentryCards(state, cardProjectIds, now);
   const recoverability = cards.length
     ? Math.round(cards.reduce((sum, card) => sum + card.completeness, 0) / cards.length)
     : 0;
@@ -63,12 +75,17 @@ export function buildWeeklyReview(state, now = Date.now(), options = {}) {
 }
 
 export function buildAttentionDeck(state, now = Date.now(), options = {}) {
+  const projectIds = state.projects.filter((project) => project.status !== "archived").map((project) => project.id);
+  return buildAttentionDeckWithCards(state, now, options, buildReentryCards(state, projectIds, now));
+}
+
+function buildAttentionDeckWithCards(state, now, options, reentryCards) {
   const staleAfterDays = Number.isFinite(options.staleAfterDays)
     ? Math.max(1, options.staleAfterDays)
     : Math.max(1, Number(state.settings?.staleAfterDays) || 7);
 
   const projects = state.projects.filter((project) => project.status !== "archived");
-  const cards = new Map(buildReentryCards(state, projects.map((project) => project.id), now).map((card) => [card.project.id, card]));
+  const cards = new Map(reentryCards.map((card) => [card.project.id, card]));
   return projects
     .map((project) => attentionForProject(project, cards.get(project.id), now, staleAfterDays))
     .filter((item) => item.score > 0)
