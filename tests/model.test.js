@@ -500,6 +500,24 @@ describe("validateImportCandidate", () => {
     assert.doesNotMatch(errors, /项目名称包含不可见控制字符/u);
   });
 
+  test("accepts only ordinary JSON objects for state containers and records", () => {
+    assert.deepEqual(validateImportCandidate(new Map()), ["备份根数据必须是普通对象"]);
+
+    const state = createEmptyState(NOW);
+    const exoticProject = new Date(NOW);
+    exoticProject.id = "date-project";
+    state.projects.push(exoticProject);
+    state.meta = new Date(NOW);
+    state.settings = new Map();
+    state.ui = new Set();
+
+    const errors = validateImportCandidate(state).join("；");
+    assert.match(errors, /元数据对象无效/u);
+    assert.match(errors, /设置对象无效/u);
+    assert.match(errors, /项目记录必须是普通对象/u);
+    assert.match(errors, /界面状态对象无效/u);
+  });
+
   test("accepts only canonical millisecond UTC timestamps", () => {
     const state = createEmptyState(NOW);
     state.projects.push(createProject({ id: "p1" }, NOW));

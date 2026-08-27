@@ -230,7 +230,7 @@ export function validateState(state) {
 }
 
 export function validateImportCandidate(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return ["备份根数据必须是对象"];
+  if (!isObject(value)) return ["备份根数据必须是普通对象"];
   const collections = [value.projects, value.sessions, value.crumbs, value.checkpoints];
   const recordCount = collections.reduce((total, collection) => total + (Array.isArray(collection) ? collection.length : 0), 0);
   if (recordCount > IMPORT_LIMITS.records) return [`备份包含 ${recordCount} 条记录，超过 ${IMPORT_LIMITS.records} 条安全上限`];
@@ -250,6 +250,10 @@ export function validateImportCandidate(value) {
   const checkpointsById = new Map(value.checkpoints.map((item) => [item?.id, item]));
   const projectsById = new Map(value.projects.map((item) => [item?.id, item]));
   for (const project of value.projects) {
+    if (!isObject(project)) {
+      addImportError(errors, "项目记录必须是普通对象");
+      continue;
+    }
     if (typeof project?.id !== "string" || !project.id) addImportError(errors, "存在无效的项目 ID");
     else validateImportId(errors, project.id, "项目");
     if (project?.status !== undefined && !PROJECT_STATUSES.includes(project.status)) addImportError(errors, `项目状态无效：${project.status}`);
@@ -266,6 +270,10 @@ export function validateImportCandidate(value) {
     }
   }
   for (const session of value.sessions) {
+    if (!isObject(session)) {
+      addImportError(errors, "会话记录必须是普通对象");
+      continue;
+    }
     if (typeof session?.id !== "string" || !session.id) addImportError(errors, "存在无效的会话 ID");
     else validateImportId(errors, session.id, "会话");
     if (!projectIds.has(session?.projectId)) addImportError(errors, `会话引用了不存在的项目：${session?.id ?? "未知"}`);
@@ -300,6 +308,10 @@ export function validateImportCandidate(value) {
     }
   }
   for (const crumb of value.crumbs) {
+    if (!isObject(crumb)) {
+      addImportError(errors, "面包屑记录必须是普通对象");
+      continue;
+    }
     if (typeof crumb?.id !== "string" || !crumb.id) addImportError(errors, "存在无效的面包屑 ID");
     else validateImportId(errors, crumb.id, "面包屑");
     if (!projectIds.has(crumb?.projectId)) addImportError(errors, `面包屑引用了不存在的项目：${crumb?.id ?? "未知"}`);
@@ -322,6 +334,10 @@ export function validateImportCandidate(value) {
     }
   }
   for (const checkpoint of value.checkpoints) {
+    if (!isObject(checkpoint)) {
+      addImportError(errors, "检查点记录必须是普通对象");
+      continue;
+    }
     if (typeof checkpoint?.id !== "string" || !checkpoint.id) addImportError(errors, "存在无效的检查点 ID");
     else validateImportId(errors, checkpoint.id, "检查点");
     if (!projectIds.has(checkpoint?.projectId)) addImportError(errors, `检查点引用了不存在的项目：${checkpoint?.id ?? "未知"}`);
@@ -428,7 +444,9 @@ function arrayOf(value) {
 }
 
 function isObject(value) {
-  return value && typeof value === "object" && !Array.isArray(value);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function safeInteger(value, fallback) {
