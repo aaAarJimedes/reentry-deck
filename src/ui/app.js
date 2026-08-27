@@ -1,0 +1,801 @@
+import {
+  createCheckpoint,
+  createCrumb,
+  createProject,
+  createSession,
+  isoNow
+} from "../core/model.js";
+import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
+import { elapsedSeconds, formatDateTime, formatDuration, formatRelative } from "../core/time.js";
+
+const PROJECT_STATUS_LABELS = {
+  active: "推进中",
+  paused: "暂泊",
+  blocked: "受阻",
+  archived: "已归档"
+};
+
+const CRUMB_LABELS = {
+  note: "随记",
+  discovery: "发现",
+  decision: "决定",
+  question: "问题",
+  blocker: "阻塞",
+  next: "下一步"
+};
+
+const COLOR_LABELS = {
+  fern: "松绿",
+  amber: "琥珀",
+  clay: "陶土",
+  sky: "雾蓝",
+  plum: "梅紫",
+  slate: "岩灰"
+};
+
+const ICONS = {
+  home: '<path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/>',
+  archive: '<path d="M4 7h16v13H4zM3 3h18v4H3zM9 11h6"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  lock: '<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+  arrow: '<path d="M5 12h14m-5-5 5 5-5 5"/>',
+  play: '<path d="m8 5 11 7-11 7Z"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
+  edit: '<path d="m4 20 4.2-1 10.9-10.9a2.1 2.1 0 0 0-3-3L5.2 16Z"/><path d="m14.8 6.4 3 3"/>',
+  close: '<path d="m6 6 12 12M18 6 6 18"/>',
+  spark: '<path d="m12 3 1.2 4.4L17 9l-3.8 1.6L12 15l-1.2-4.4L7 9l3.8-1.6ZM5 15l.7 2.3L8 18l-2.3.7L5 21l-.7-2.3L2 18l2.3-.7Z"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  compass: '<circle cx="12" cy="12" r="9"/><path d="m15 9-2 4-4 2 2-4Z"/>',
+  trail: '<path d="M4 18c2-6 4-9 7-9s4 6 7 6c1.4 0 2.3-.8 3-2"/><circle cx="4" cy="18" r="1.5"/><circle cx="21" cy="13" r="1.5"/>',
+  check: '<path d="m5 12 4 4L19 6"/>',
+  download: '<path d="M12 3v12m-4-4 4 4 4-4M4 19h16"/>',
+  upload: '<path d="M12 15V3m-4 4 4-4 4 4M4 19h16"/>',
+  shield: '<path d="M12 3 5 6v5c0 4.7 2.8 8 7 10 4.2-2 7-5.3 7-10V6Z"/><path d="m9 12 2 2 4-4"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  alert: '<path d="M12 3 2.8 20h18.4Z"/><path d="M12 9v4m0 3h.01"/>',
+  pin: '<path d="m9 4 6 0 1 5 3 3v1H5v-1l3-3ZM12 13v8"/>',
+  external: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 13v6H5V6h6"/>',
+  box: '<path d="M4 7 12 3l8 4v10l-8 4-8-4Z"/><path d="m4 7 8 4 8-4M12 11v10"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/>'
+};
+
+export class ReentryApp {
+  #root;
+  #store;
+  #timerId;
+  #focusSelector = null;
+  #noticeQueue = [];
+
+  constructor(root, store) {
+    this.#root = root;
+    this.#store = store;
+    this.#noticeQueue = [...store.notices];
+
+    this.#root.addEventListener("click", (event) => this.#onClick(event));
+    this.#root.addEventListener("submit", (event) => this.#onSubmit(event));
+    this.#root.addEventListener("change", (event) => this.#onChange(event));
+    window.addEventListener("hashchange", () => this.render());
+    window.addEventListener("keydown", (event) => this.#onKeydown(event));
+    this.#store.subscribe(() => this.render());
+
+    this.#timerId = window.setInterval(() => this.#refreshTimers(), 1000);
+    this.render();
+  }
+
+  destroy() {
+    window.clearInterval(this.#timerId);
+  }
+
+  render() {
+    const state = this.#store.getState();
+    const route = parseRoute(location.hash);
+    const currentProject = route.name === "project" ? state.projects.find((item) => item.id === route.id) : null;
+    const activeSession = state.sessions.find((item) => item.status === "active") ?? null;
+    const activeProject = activeSession ? state.projects.find((item) => item.id === activeSession.projectId) : null;
+    const theme = state.settings.theme ?? "system";
+
+    document.documentElement.dataset.theme = theme;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#111a19" : "#f4efe6");
+    document.title = `${currentProject?.title ?? routeTitle(route)} · 复航台`;
+
+    this.#root.innerHTML = `
+      <div class="app-shell">
+        ${this.#renderSidebar(route, state)}
+        <div class="content-column">
+          ${this.#renderTopbar(route, currentProject, activeSession)}
+          <main class="main-content" id="main-content" tabindex="-1">
+            ${this.#renderNotices()}
+            ${this.#renderRoute(route, state, currentProject, activeSession)}
+          </main>
+        </div>
+      </div>
+      ${activeSession && activeProject && !(route.name === "project" && route.id === activeProject.id) ? this.#renderSessionDock(activeSession, activeProject) : ""}
+      ${this.#renderDialogs(currentProject, activeSession)}
+      <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="false"></div>
+      <div class="sr-only" id="live-region" aria-live="polite"></div>
+    `;
+    this.#root.setAttribute("aria-busy", "false");
+    this.#refreshTimers();
+
+    if (this.#focusSelector) {
+      const selector = this.#focusSelector;
+      this.#focusSelector = null;
+      window.setTimeout(() => this.#root.querySelector(selector)?.focus(), 0);
+    }
+  }
+
+  #renderSidebar(route, state) {
+    const activeCount = state.projects.filter((item) => item.status !== "archived").length;
+    const archivedCount = state.projects.filter((item) => item.status === "archived").length;
+    return `
+      <aside class="sidebar" aria-label="主导航">
+        <a class="brand" href="#/" aria-label="复航台首页">
+          ${brandMark()}
+          <span class="brand-copy"><span class="brand-name">复航台</span><span class="brand-subtitle">REENTRY</span></span>
+        </a>
+        <nav class="side-nav">
+          <a href="#/" ${route.name === "home" || route.name === "project" ? 'aria-current="page"' : ""}>${icon("home")}<span>项目舰桥</span><span class="nav-count">${activeCount}</span></a>
+          <a href="#/archive" ${route.name === "archive" ? 'aria-current="page"' : ""}>${icon("archive")}<span>归档舱</span>${archivedCount ? `<span class="nav-count">${archivedCount}</span>` : ""}</a>
+          <a href="#/settings" ${route.name === "settings" ? 'aria-current="page"' : ""}>${icon("settings")}<span>数据保险箱</span></a>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="privacy-note">${icon("lock")}<span>所有工作轨迹只保存在这个浏览器中</span></div>
+          <button class="new-project-button" type="button" data-action="open-new-project">${icon("plus")}<span>建立新项目</span></button>
+        </div>
+      </aside>`;
+  }
+
+  #renderTopbar(route, project, activeSession) {
+    const context = project ? "项目现场" : route.name === "archive" ? "历史项目" : route.name === "settings" ? "隐私与迁移" : "本地工作区";
+    const title = project?.title ?? routeTitle(route);
+    return `
+      <header class="topbar">
+        <div class="topbar-context"><span class="topbar-eyebrow">${escapeHTML(context)}</span><span class="topbar-title">${escapeHTML(title)}</span></div>
+        <div class="topbar-actions">
+          ${activeSession ? `<span class="soft-pill"><span class="dock-pulse"></span> 会话中</span>` : ""}
+          <button class="ghost-button" type="button" data-action="open-new-project">${icon("plus")}<span>新项目</span></button>
+        </div>
+      </header>`;
+  }
+
+  #renderRoute(route, state, project, activeSession) {
+    if (route.name === "archive") return this.#renderArchive(state);
+    if (route.name === "settings") return this.#renderSettings(state);
+    if (route.name === "project") return project ? this.#renderProject(state, project, activeSession) : this.#renderNotFound();
+    return this.#renderDashboard(state, activeSession);
+  }
+
+  #renderDashboard(state, activeSession) {
+    const projects = state.projects.filter((item) => item.status !== "archived");
+    if (!projects.length) return this.#renderEmptyDashboard();
+    const ranked = rankProjectsForReentry(state);
+    const lead = ranked[0];
+    const crumbsToday = state.crumbs.filter((item) => isToday(item.createdAt)).length;
+    const activeProjects = projects.filter((item) => item.status === "active").length;
+    const blockedProjects = projects.filter((item) => item.status === "blocked").length;
+
+    return `
+      <section class="page-heading">
+        <div>
+          <p class="eyebrow">${greeting()}</p>
+          <h1>从清楚的地方，重新开始。</h1>
+          <p class="lede">这里不催促你做更多，只帮你找回上次离开时已经想清楚的东西。</p>
+        </div>
+      </section>
+      ${lead ? this.#renderHero(lead, activeSession) : ""}
+      <section class="metrics-grid" aria-label="工作区概览">
+        ${metric("航行中", activeProjects, `${projects.length} 个未归档项目`)}
+        ${metric("今日轨迹", crumbsToday, "条面包屑")}
+        ${metric("可靠检查点", state.checkpoints.length, "次可恢复现场")}
+        ${metric("受阻项目", blockedProjects, blockedProjects ? "需要一次澄清" : "目前航路通畅")}
+      </section>
+      <section>
+        <div class="section-heading"><div><h2>项目舰桥</h2><p>按当前最值得复航的顺序排列</p></div><button class="secondary-button" type="button" data-action="open-new-project">${icon("plus")} 建立项目</button></div>
+        <div class="project-grid">${ranked.map((card) => this.#renderProjectCard(card)).join("")}</div>
+      </section>`;
+  }
+
+  #renderHero(card, activeSession) {
+    const isRunning = activeSession?.projectId === card.project.id;
+    return `
+      <section class="reentry-hero" aria-labelledby="recommended-heading">
+        <div>
+          <p class="eyebrow">${isRunning ? "正在进行" : card.project.status === "blocked" ? "值得先解阻" : "建议复航"}</p>
+          <h2 id="recommended-heading">${escapeHTML(card.project.title)}</h2>
+          <p class="hero-summary">${escapeHTML(card.summary)}</p>
+          <p class="hero-action-label">回来后的第一动作</p>
+          <p class="hero-next">${escapeHTML(card.nextAction)}</p>
+          <div class="hero-buttons">
+            <a class="primary-button" href="#/project/${encodeURIComponent(card.project.id)}">${isRunning ? icon("trail") : icon("compass")} ${isRunning ? "返回工作现场" : "打开 60 秒复航卡"}</a>
+            ${!isRunning && !activeSession ? `<button class="secondary-button" type="button" data-action="start-session" data-project-id="${attr(card.project.id)}">${icon("play")} 直接开始会话</button>` : ""}
+          </div>
+        </div>
+        <div class="hero-gauge" aria-label="复航信息完整度 ${card.completeness}%">
+          <div class="gauge-ring" style="--progress:${card.completeness}%"><span class="gauge-value">${card.completeness}%</span></div>
+          <span class="gauge-label">复航信息完整度<br>${awayLabel(card.awayDays)}</span>
+        </div>
+      </section>`;
+  }
+
+  #renderProjectCard(card) {
+    return `
+      <a class="project-card" data-color="${attr(card.project.color)}" href="#/project/${encodeURIComponent(card.project.id)}">
+        <div>
+          <div class="project-card-header"><span class="status-pill" data-status="${attr(card.project.status)}">${PROJECT_STATUS_LABELS[card.project.status]}</span><span class="muted">${formatRelative(card.lastActivityAt)}</span></div>
+          <h3>${escapeHTML(card.project.title)}</h3>
+          <p class="project-description">${escapeHTML(card.project.description || card.summary)}</p>
+          <p class="project-next"><span>下一动作</span>${escapeHTML(card.nextAction)}</p>
+        </div>
+        <div class="project-card-footer"><span>${card.checkpoint ? `检查点 ${formatRelative(card.checkpoint.createdAt)}` : "尚未建立检查点"}</span><span class="open-link">进入 ${icon("arrow")}</span></div>
+      </a>`;
+  }
+
+  #renderEmptyDashboard() {
+    return `
+      <section class="page-heading">
+        <div><p class="eyebrow">欢迎登台</p><h1>下一次离开，不必再从头想起。</h1><p class="lede">先建立一个需要多次推进的项目。复航台会替你保存离开时的认知现场。</p></div>
+      </section>
+      <section class="empty-state">
+        <div class="empty-illustration" aria-hidden="true"><span></span><span></span><span></span></div>
+        <h2>建立第一个工作现场</h2>
+        <p>适合研究、写作、编程、设计等容易被打断、又需要保留思路的工作。</p>
+        <div class="empty-actions"><button class="primary-button" type="button" data-action="open-new-project">${icon("plus")} 建立项目</button><button class="secondary-button" type="button" data-action="load-sample">${icon("spark")} 载入示例现场</button></div>
+      </section>`;
+  }
+
+  #renderProject(state, project, activeSession) {
+    const card = buildReentryCard(state, project.id);
+    const stats = getProjectStats(state, project.id);
+    const isRunning = activeSession?.projectId === project.id;
+    const anotherRunning = activeSession && !isRunning;
+    const crumbs = state.crumbs.filter((item) => item.projectId === project.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return `
+      <section class="project-header">
+        <div>
+          <p class="eyebrow">${PROJECT_STATUS_LABELS[project.status]}</p>
+          <h1>${escapeHTML(project.title)}</h1>
+          <p class="lede">${escapeHTML(project.description || "这个项目还没有目的说明。")}</p>
+          <div class="project-meta"><span>建立于 ${formatDateTime(project.createdAt)}</span><span class="separator">•</span><span>${awayLabel(card.awayDays)}</span>${card.checkpoint ? `<span class="separator">•</span><span>检查点完整度 ${card.completeness}%</span>` : ""}</div>
+        </div>
+        <div class="project-header-actions">
+          <button class="secondary-button" type="button" data-action="edit-project">${icon("edit")} 编辑</button>
+          ${isRunning ? `<button class="primary-button" type="button" data-action="open-checkpoint">${icon("stop")} 留下检查点</button>` : anotherRunning ? `<a class="secondary-button" href="#/project/${encodeURIComponent(activeSession.projectId)}">先处理活动会话</a>` : `<button class="primary-button" type="button" data-action="start-session" data-project-id="${attr(project.id)}">${icon("play")} 开始会话</button>`}
+        </div>
+      </section>
+      <div class="workspace-grid">
+        ${isRunning ? this.#renderFocusPanel(project, activeSession) : this.#renderReentryPanel(card, anotherRunning)}
+        <aside class="side-stack">
+          ${this.#renderProjectControls(project)}
+          ${this.#renderStatsPanel(stats)}
+        </aside>
+      </div>
+      <section class="panel" style="margin-top:18px">
+        <div class="panel-header inline-between"><div><h2>工作轨迹</h2><p>最近的记录在上方；每一条都可以成为下次复航的线索。</p></div><span class="soft-pill">${crumbs.length} 条</span></div>
+        <div class="panel-body">${crumbs.length ? `<div class="timeline">${crumbs.map((crumb) => this.#renderCrumb(crumb)).join("")}</div>` : `<div class="timeline-empty">还没有轨迹。开始会话后，随手留下第一个发现或决定。</div>`}</div>
+      </section>`;
+  }
+
+  #renderReentryPanel(card, anotherRunning) {
+    return `
+      <section class="panel reentry-card" aria-labelledby="reentry-card-heading">
+        <div class="panel-header inline-between"><div><h2 id="reentry-card-heading">60 秒复航卡</h2><p>${card.checkpoint ? `来自 ${formatDateTime(card.checkpoint.createdAt)} 的检查点` : "信息不足时，从三问校准开始"}</p></div><span class="soft-pill">${icon("compass")} ${card.completeness}%</span></div>
+        <div class="panel-body">
+          <div class="reentry-section"><span class="reentry-label">${icon("trail")} 01 · 上次停在哪里</span><p class="reentry-value">${textBlock(card.summary)}</p></div>
+          <div class="reentry-section"><span class="reentry-label">${icon("alert")} 02 · 仍待确认</span><p class="reentry-value ${card.openLoops ? "" : "muted"}">${textBlock(card.openLoops || "没有明确记录。开始前问自己：当前最大的未知是什么？")}</p></div>
+          <div class="reentry-section"><span class="reentry-label">${icon("spark")} 03 · 复航提示</span><p class="reentry-value">${textBlock(card.returnHint)}</p></div>
+          <div class="reentry-section"><span class="reentry-label">${icon("arrow")} 04 · 第一物理动作</span><p class="reentry-value next-action">${textBlock(card.nextAction)}</p></div>
+          <div class="reentry-section">
+            <ol class="reentry-steps"><li>读完上次状态，不急着打开所有材料。</li><li>确认未决事项现在是否仍成立。</li><li>用上面的具体动作开始一段短会话。</li></ol>
+          </div>
+          ${anotherRunning ? `<p class="notice-banner">${icon("info")} 另一个项目仍有活动会话，请先为它留下检查点。</p>` : `<button class="primary-button" type="button" data-action="start-session" data-project-id="${attr(card.project.id)}">${icon("play")} 我已复航，开始会话</button>`}
+        </div>
+      </section>`;
+  }
+
+  #renderFocusPanel(project, session) {
+    return `
+      <section class="panel focus-panel" aria-labelledby="focus-heading">
+        <div class="panel-header inline-between"><div><h2 id="focus-heading">工作现场已展开</h2><p>计时以开始时间为准，关闭页面也不会失真。</p></div><span class="status-pill" data-status="active">会话中</span></div>
+        <div class="panel-body">
+          <div class="session-timer js-session-timer" role="timer" aria-label="本次会话用时" data-started-at="${attr(session.startedAt)}">${formatDuration(elapsedSeconds(session.startedAt))}</div>
+          <p class="session-intention"><span class="muted">本次意图：</span> <strong>${escapeHTML(session.intention || project.nextAction || "先推进一个清楚的下一步")}</strong></p>
+          <form class="capture-form" data-form="capture-crumb" autocomplete="off">
+            <label class="field"><span>留下工作面包屑</span><textarea name="text" rows="3" maxlength="1200" placeholder="一句话就够：刚发现了什么、做了什么决定、卡在哪里…" required></textarea></label>
+            <div class="capture-row">
+              <label class="field"><span class="sr-only">记录类型</span><select name="type" aria-label="记录类型">${Object.entries(CRUMB_LABELS).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></label>
+              <span class="muted" style="align-self:center;font-size:12px">快捷键 C 可随时回到输入框</span>
+              <button class="primary-button" type="submit">${icon("plus")} 记录</button>
+            </div>
+          </form>
+        </div>
+      </section>`;
+  }
+
+  #renderProjectControls(project) {
+    return `
+      <section class="panel">
+        <div class="panel-header"><h2>航行状态</h2><p>状态只帮助筛选，不评价进度。</p></div>
+        <div class="panel-body">
+          <label class="field"><span>项目状态</span><select data-control="project-status" data-project-id="${attr(project.id)}">
+            ${["active", "paused", "blocked"].map((status) => `<option value="${status}" ${project.status === status ? "selected" : ""}>${PROJECT_STATUS_LABELS[status]}</option>`).join("")}
+          </select></label>
+          <div class="button-row" style="margin-top:14px"><button class="ghost-button danger-text" type="button" data-action="archive-project" data-project-id="${attr(project.id)}">${icon("archive")} 移入归档</button></div>
+        </div>
+      </section>`;
+  }
+
+  #renderStatsPanel(stats) {
+    return `
+      <section class="panel">
+        <div class="panel-header"><h2>现场密度</h2><p>记录越准确，复航成本越低。</p></div>
+        <div class="panel-body"><div class="mini-stats">
+          ${miniStat(stats.completedSessions, "完成会话")}${miniStat(stats.checkpoints, "检查点")}${miniStat(stats.decisions, "决定")}${miniStat(stats.crumbs, "总轨迹")}
+        </div></div>
+      </section>`;
+  }
+
+  #renderCrumb(crumb) {
+    return `
+      <article class="timeline-item">
+        <span class="timeline-dot" data-type="${attr(crumb.type)}" aria-hidden="true"></span>
+        <div class="timeline-content">
+          <div class="timeline-meta"><span class="crumb-type">${CRUMB_LABELS[crumb.type] ?? "记录"}</span><time datetime="${attr(crumb.createdAt)}">${formatRelative(crumb.createdAt)} · ${formatDateTime(crumb.createdAt)}</time>${crumb.pinned ? `<span title="已置顶">${icon("pin")}</span>` : ""}</div>
+          <p class="timeline-text">${textBlock(crumb.text)}</p>
+        </div>
+      </article>`;
+  }
+
+  #renderArchive(state) {
+    const projects = state.projects.filter((item) => item.status === "archived");
+    return `
+      <section class="page-heading"><div><p class="eyebrow">归档舱</p><h1>结束的航程，也保留来路。</h1><p class="lede">归档不会删除任何会话、决定或检查点；需要时可以随时恢复。</p></div></section>
+      ${projects.length ? `<div class="project-grid">${projects.map((project) => {
+        const card = buildReentryCard(state, project.id);
+        return `<article class="project-card" data-color="${attr(project.color)}"><div><div class="project-card-header"><span class="status-pill" data-status="archived">已归档</span><span class="muted">${formatRelative(project.archivedAt ?? project.updatedAt)}</span></div><h3>${escapeHTML(project.title)}</h3><p class="project-description">${escapeHTML(project.description || card.summary)}</p></div><div class="project-card-footer"><span>${state.crumbs.filter((item) => item.projectId === project.id).length} 条轨迹</span><button class="ghost-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}">恢复项目</button></div></article>`;
+      }).join("")}</div>` : `<section class="empty-state"><div class="empty-illustration" aria-hidden="true"><span></span><span></span><span></span></div><h2>归档舱还是空的</h2><p>完成或暂时不再关注的项目，可以从项目页移到这里。</p><a class="primary-button" href="#/">返回舰桥</a></section>`}`;
+  }
+
+  #renderSettings(state) {
+    const snapshot = JSON.stringify(this.#store.exportSnapshot());
+    const size = formatBytes(new Blob([snapshot]).size);
+    const theme = state.settings.theme;
+    return `
+      <section class="page-heading"><div><p class="eyebrow">数据保险箱</p><h1>你的工作轨迹，只属于你。</h1><p class="lede">复航台没有账户和云端数据库。请主动导出备份，尤其是在清理浏览器数据之前。</p></div></section>
+      <div class="settings-grid">
+        <section class="panel"><div class="panel-header"><h2>外观与数据</h2><p>设置同样只保存在当前浏览器。</p></div><div class="panel-body">
+          <div class="setting-row"><div class="setting-copy"><h3>界面主题</h3><p>跟随系统，或固定使用明亮/深色外观。</p></div><div class="segmented-control" aria-label="界面主题">${[["system", "跟随系统"], ["light", "明亮"], ["dark", "深色"]].map(([value, label]) => `<button type="button" data-action="set-theme" data-theme="${value}" aria-pressed="${theme === value}">${label}</button>`).join("")}</div></div>
+          <div class="setting-row"><div class="setting-copy"><h3>导出完整备份</h3><p>包含项目、会话、轨迹、检查点和设置。当前约 ${size}。</p></div><button class="secondary-button" type="button" data-action="export-data">${icon("download")} 导出 JSON</button></div>
+          <div class="setting-row"><div class="setting-copy"><h3>从备份恢复</h3><p>文件会先在本机校验；有效备份将替换当前工作区。</p></div><button class="secondary-button" type="button" data-action="choose-import">${icon("upload")} 选择文件</button><input class="sr-only" id="import-file" type="file" accept="application/json,.json" data-control="import-file" /></div>
+        </div></section>
+        <aside class="panel storage-visual">${brandMark()}<strong>本地优先</strong><p>${state.projects.length} 个项目 · ${state.crumbs.length} 条轨迹<br>没有任何数据被发送到外部服务。</p></aside>
+      </div>`;
+  }
+
+  #renderNotFound() {
+    return `<section class="empty-state"><h1>这个项目不在舰桥上</h1><p>它可能来自旧链接、已经被移除，或备份尚未恢复。</p><a class="primary-button" href="#/">返回项目舰桥</a></section>`;
+  }
+
+  #renderSessionDock(session, project) {
+    return `<a class="active-session-dock" href="#/project/${encodeURIComponent(project.id)}" aria-label="返回活动会话：${attr(project.title)}"><span class="dock-pulse"></span><span class="dock-copy"><small>活动会话</small><strong>${escapeHTML(project.title)}</strong></span><span class="dock-time js-session-timer" data-started-at="${attr(session.startedAt)}">${formatDuration(elapsedSeconds(session.startedAt))}</span>${icon("arrow")}</a>`;
+  }
+
+  #renderDialogs(project, activeSession) {
+    const colors = { fern: "#2f6b61", amber: "#d99752", clay: "#b9644d", sky: "#568695", plum: "#785e76", slate: "#65736f" };
+    return `
+      <dialog id="new-project-dialog" aria-labelledby="new-project-title">
+        <div class="dialog-header"><div><h2 id="new-project-title">建立工作现场</h2><p>只需一个清楚的名字；其他信息以后再补也可以。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
+        <form class="dialog-body" data-form="new-project">
+          <label class="field"><span class="required">项目名称</span><input name="title" maxlength="100" placeholder="例如：重构论文结果图" required autofocus /></label>
+          <label class="field"><span>为什么要做</span><textarea name="description" maxlength="800" placeholder="一句话说明目的，帮助未来的自己快速校准。"></textarea></label>
+          <label class="field"><span>已知的第一动作</span><input name="nextAction" maxlength="400" placeholder="例如：打开 figure_03.ipynb，核对配色映射" /></label>
+          <fieldset class="field-group" style="border:0;padding:0;margin:0"><legend class="field-label">识别颜色</legend><div class="color-options">${Object.entries(colors).map(([name, color], index) => `<label class="color-choice" title="${COLOR_LABELS[name]}"><input type="radio" name="color" value="${name}" ${index === 0 ? "checked" : ""}/><span style="--choice-color:${color}"></span></label>`).join("")}</div></fieldset>
+          <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">建立项目</button></div>
+        </form>
+      </dialog>
+      <dialog id="start-session-dialog" aria-labelledby="start-session-title">
+        <div class="dialog-header"><div><h2 id="start-session-title">开始一次有意图的会话</h2><p>意图不是结果承诺，只是这段时间的方向。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
+        <form class="dialog-body" data-form="start-session">
+          <input type="hidden" name="projectId" value="${attr(project?.id ?? "")}" />
+          <label class="field"><span class="required">这次准备推进什么</span><textarea name="intention" maxlength="600" placeholder="例如：先验证图例排序是否与正文一致" required>${escapeHTML(project?.nextAction ?? "")}</textarea></label>
+          <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">${icon("play")} 开始计时</button></div>
+        </form>
+      </dialog>
+      <dialog id="checkpoint-dialog" aria-labelledby="checkpoint-title">
+        <div class="dialog-header"><div><h2 id="checkpoint-title">留下可靠检查点</h2><p>给下次回来的自己一条短而清楚的路。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
+        <form class="dialog-body" data-form="checkpoint">
+          <label class="field"><span class="required">现在停在哪里</span><textarea name="summary" maxlength="1200" placeholder="已经完成什么、当前看到什么结果？" required></textarea></label>
+          <label class="field"><span class="required">回来后的第一物理动作</span><textarea name="nextAction" maxlength="600" placeholder="避免‘继续做’，写成能直接动手的动作。" required>${escapeHTML(project?.nextAction ?? "")}</textarea></label>
+          <label class="field"><span>仍未闭合的事项</span><textarea name="openLoops" maxlength="800" placeholder="问题、依赖、需要确认的人或材料。"></textarea></label>
+          <label class="field"><span>复航提示</span><input name="returnHint" maxlength="400" placeholder="例如：先看 README 的实验 4 小节，不必重跑前两组" /></label>
+          <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">继续工作</button><button class="primary-button" type="submit">${icon("check")} 保存并结束会话</button></div>
+        </form>
+      </dialog>
+      <dialog id="edit-project-dialog" aria-labelledby="edit-project-title">
+        <div class="dialog-header"><div><h2 id="edit-project-title">编辑项目现场</h2><p>项目目的应帮助未来的自己快速判断方向。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
+        <form class="dialog-body" data-form="edit-project">
+          <input type="hidden" name="projectId" value="${attr(project?.id ?? "")}" />
+          <label class="field"><span class="required">项目名称</span><input name="title" maxlength="100" value="${attr(project?.title ?? "")}" required /></label>
+          <label class="field"><span>项目目的</span><textarea name="description" maxlength="800">${escapeHTML(project?.description ?? "")}</textarea></label>
+          <label class="field"><span>当前第一动作</span><textarea name="nextAction" maxlength="600">${escapeHTML(project?.nextAction ?? "")}</textarea></label>
+          <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">保存修改</button></div>
+        </form>
+      </dialog>`;
+  }
+
+  #renderNotices() {
+    if (!this.#noticeQueue.length) return "";
+    const notices = this.#noticeQueue.splice(0);
+    return notices.map((notice) => `<div class="notice-banner">${icon("alert")}<span>${escapeHTML(notice)}</span></div>`).join("");
+  }
+
+  #onClick(event) {
+    const control = event.target.closest("[data-action]");
+    if (!control) return;
+    const action = control.dataset.action;
+
+    if (action === "open-new-project") this.#openDialog("new-project-dialog");
+    if (action === "close-dialog") control.closest("dialog")?.close();
+    if (action === "edit-project") this.#openDialog("edit-project-dialog");
+    if (action === "open-checkpoint") this.#openDialog("checkpoint-dialog");
+    if (action === "start-session") this.#prepareSessionDialog(control.dataset.projectId);
+    if (action === "archive-project") this.#archiveProject(control.dataset.projectId);
+    if (action === "restore-project") this.#restoreProject(control.dataset.projectId);
+    if (action === "load-sample") this.#loadSample();
+    if (action === "export-data") this.#exportData();
+    if (action === "choose-import") this.#root.querySelector("#import-file")?.click();
+    if (action === "set-theme") this.#setTheme(control.dataset.theme);
+  }
+
+  #onSubmit(event) {
+    const form = event.target.closest("form[data-form]");
+    if (!form) return;
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(form));
+    try {
+      if (form.dataset.form === "new-project") this.#createProject(data, form);
+      if (form.dataset.form === "start-session") this.#startSession(data, form);
+      if (form.dataset.form === "capture-crumb") this.#captureCrumb(data);
+      if (form.dataset.form === "checkpoint") this.#saveCheckpoint(data, form);
+      if (form.dataset.form === "edit-project") this.#editProject(data, form);
+    } catch (error) {
+      this.#toast(error.message, "error");
+    }
+  }
+
+  #onChange(event) {
+    const control = event.target;
+    if (control.matches('[data-control="project-status"]')) this.#changeProjectStatus(control.dataset.projectId, control.value);
+    if (control.matches('[data-control="import-file"]') && control.files?.[0]) this.#importData(control.files[0], control);
+  }
+
+  #onKeydown(event) {
+    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isTypingTarget(event.target)) return;
+    if (event.key.toLowerCase() === "n") {
+      event.preventDefault();
+      this.#openDialog("new-project-dialog");
+    }
+    if (event.key.toLowerCase() === "c") {
+      const capture = this.#root.querySelector('[data-form="capture-crumb"] textarea');
+      if (capture) {
+        event.preventDefault();
+        capture.focus();
+      }
+    }
+  }
+
+  #createProject(data, form) {
+    const project = createProject(data);
+    this.#store.update((state) => {
+      state.projects.push(project);
+      state.ui.selectedProjectId = project.id;
+    });
+    form.closest("dialog")?.close();
+    location.hash = `#/project/${encodeURIComponent(project.id)}`;
+    this.#requestPersistentStorage();
+    this.#toast("项目现场已建立。 ");
+  }
+
+  #prepareSessionDialog(projectId) {
+    const state = this.#store.getState();
+    const active = state.sessions.find((item) => item.status === "active");
+    if (active) {
+      const project = state.projects.find((item) => item.id === active.projectId);
+      this.#toast(`“${project?.title ?? "另一个项目"}”仍有活动会话，请先留下检查点。`, "error");
+      return;
+    }
+    const target = state.projects.find((item) => item.id === projectId);
+    if (!target) return;
+    const dialog = this.#root.querySelector("#start-session-dialog");
+    dialog.querySelector('[name="projectId"]').value = target.id;
+    dialog.querySelector('[name="intention"]').value = target.nextAction || "";
+    this.#openDialog("start-session-dialog");
+  }
+
+  #startSession(data, form) {
+    const state = this.#store.getState();
+    if (state.sessions.some((item) => item.status === "active")) throw new Error("已有活动会话，请先为它留下检查点。 ");
+    const project = state.projects.find((item) => item.id === data.projectId);
+    if (!project || project.status === "archived") throw new Error("项目不可用，无法开始会话。 ");
+    const session = createSession({ projectId: project.id, intention: data.intention });
+    this.#store.update((next) => {
+      next.sessions.push(session);
+      const item = next.projects.find((candidate) => candidate.id === project.id);
+      item.lastOpenedAt = session.startedAt;
+      item.updatedAt = session.startedAt;
+      if (item.status === "paused") item.status = "active";
+    });
+    form.closest("dialog")?.close();
+    location.hash = `#/project/${encodeURIComponent(project.id)}`;
+    this.#announce("会话已开始");
+    this.#toast("工作现场已展开。 ");
+  }
+
+  #captureCrumb(data) {
+    const state = this.#store.getState();
+    const session = state.sessions.find((item) => item.status === "active");
+    if (!session) throw new Error("没有活动会话，无法记录现场。 ");
+    const crumb = createCrumb({ projectId: session.projectId, sessionId: session.id, type: data.type, text: data.text });
+    if (!crumb.text) throw new Error("先写下一条记录。 ");
+    this.#focusSelector = '[data-form="capture-crumb"] textarea';
+    this.#store.update((next) => {
+      next.crumbs.push(crumb);
+      const project = next.projects.find((item) => item.id === session.projectId);
+      project.updatedAt = crumb.createdAt;
+      if (crumb.type === "next") project.nextAction = crumb.text;
+    });
+    this.#announce(`${CRUMB_LABELS[crumb.type]}已记录`);
+    this.#toast(`${CRUMB_LABELS[crumb.type]}已留在轨迹中。`);
+  }
+
+  #saveCheckpoint(data, form) {
+    const state = this.#store.getState();
+    const session = state.sessions.find((item) => item.status === "active");
+    if (!session) throw new Error("活动会话已经结束。 ");
+    const checkpoint = createCheckpoint({ ...data, projectId: session.projectId, sessionId: session.id });
+    if (!checkpoint.summary || !checkpoint.nextAction) throw new Error("状态摘要和第一物理动作不能为空。 ");
+    this.#store.update((next) => {
+      next.checkpoints.push(checkpoint);
+      const currentSession = next.sessions.find((item) => item.id === session.id);
+      currentSession.status = "completed";
+      currentSession.endedAt = checkpoint.createdAt;
+      currentSession.checkpointId = checkpoint.id;
+      const project = next.projects.find((item) => item.id === session.projectId);
+      project.nextAction = checkpoint.nextAction;
+      project.updatedAt = checkpoint.createdAt;
+    });
+    form.closest("dialog")?.close();
+    this.#announce("检查点已保存，会话已结束");
+    this.#toast("现场已安全收拢，下次可以从这里复航。 ");
+  }
+
+  #editProject(data, form) {
+    this.#store.update((state) => {
+      const project = state.projects.find((item) => item.id === data.projectId);
+      if (!project) throw new Error("找不到要编辑的项目。 ");
+      project.title = String(data.title).trim();
+      project.description = String(data.description ?? "").trim();
+      project.nextAction = String(data.nextAction ?? "").trim();
+      project.updatedAt = isoNow();
+    });
+    form.closest("dialog")?.close();
+    this.#toast("项目说明已更新。 ");
+  }
+
+  #changeProjectStatus(projectId, status) {
+    if (!["active", "paused", "blocked"].includes(status)) return;
+    try {
+      this.#store.update((state) => {
+        const project = state.projects.find((item) => item.id === projectId);
+        if (!project) throw new Error("找不到项目。 ");
+        project.status = status;
+        project.updatedAt = isoNow();
+      });
+      this.#toast(`项目已标记为“${PROJECT_STATUS_LABELS[status]}”。`);
+    } catch (error) {
+      this.#toast(error.message, "error");
+    }
+  }
+
+  #archiveProject(projectId) {
+    const state = this.#store.getState();
+    if (state.sessions.some((item) => item.projectId === projectId && item.status === "active")) {
+      this.#toast("请先结束活动会话，再归档项目。", "error");
+      return;
+    }
+    const project = state.projects.find((item) => item.id === projectId);
+    if (!project || !window.confirm(`把“${project.title}”移入归档舱？所有轨迹都会保留。`)) return;
+    this.#store.update((next) => {
+      const item = next.projects.find((candidate) => candidate.id === projectId);
+      item.status = "archived";
+      item.archivedAt = isoNow();
+      item.updatedAt = item.archivedAt;
+    });
+    location.hash = "#/";
+    this.#toast("项目已移入归档舱。 ");
+  }
+
+  #restoreProject(projectId) {
+    this.#store.update((state) => {
+      const project = state.projects.find((item) => item.id === projectId);
+      if (!project) throw new Error("找不到项目。 ");
+      project.status = "paused";
+      project.archivedAt = null;
+      project.updatedAt = isoNow();
+    });
+    this.#toast("项目已恢复为暂泊状态。 ");
+  }
+
+  #setTheme(theme) {
+    if (!["system", "light", "dark"].includes(theme)) return;
+    this.#store.update((state) => { state.settings.theme = theme; });
+  }
+
+  #loadSample() {
+    if (this.#store.getState().projects.length) return;
+    const now = Date.now();
+    const visual = createProject({ title: "重构研究结果图", description: "让六张结果图使用一致的视觉语法，并能直接进入论文终稿。", nextAction: "打开 figure_03.ipynb，核对第三组图例顺序", color: "amber", createdAt: new Date(now - 5 * 86_400_000).toISOString(), updatedAt: new Date(now - 22 * 3_600_000).toISOString(), lastOpenedAt: new Date(now - 22 * 3_600_000).toISOString() }, now);
+    const session = createSession({ projectId: visual.id, intention: "统一图例顺序和颜色映射", status: "completed", startedAt: new Date(now - 24 * 3_600_000).toISOString(), endedAt: new Date(now - 22 * 3_600_000).toISOString() }, now);
+    const crumbs = [
+      createCrumb({ projectId: visual.id, sessionId: session.id, type: "decision", text: "主结果统一采用实验组在前、基线组在后的顺序。", createdAt: new Date(now - 23.5 * 3_600_000).toISOString() }, now),
+      createCrumb({ projectId: visual.id, sessionId: session.id, type: "discovery", text: "Figure 3 的配色映射与 Figure 1 相反，是正文描述不一致的来源。", createdAt: new Date(now - 23 * 3_600_000).toISOString() }, now),
+      createCrumb({ projectId: visual.id, sessionId: session.id, type: "question", text: "附录中的灰度打印版本是否也要同步调整？", createdAt: new Date(now - 22.5 * 3_600_000).toISOString() }, now)
+    ];
+    const checkpoint = createCheckpoint({ projectId: visual.id, sessionId: session.id, summary: "Figure 1 和 2 已统一配色；Figure 3 已定位到图例顺序反转，但尚未修改生成脚本。", nextAction: "打开 figure_03.ipynb，核对第三组图例顺序", openLoops: "确认附录灰度版本是否同步；修改后重新导出 SVG。", returnHint: "颜色常量在 notebook 第 4 个单元格，不需要重跑数据预处理。", createdAt: new Date(now - 22 * 3_600_000).toISOString() }, now);
+    session.checkpointId = checkpoint.id;
+
+    const handbook = createProject({ title: "团队上手手册", description: "把新成员第一周最容易卡住的流程整理成可执行手册。", nextAction: "向小林确认测试环境账号的申请入口", color: "sky", status: "blocked", createdAt: new Date(now - 12 * 86_400_000).toISOString(), updatedAt: new Date(now - 4 * 86_400_000).toISOString(), lastOpenedAt: new Date(now - 4 * 86_400_000).toISOString() }, now);
+    const handbookCrumb = createCrumb({ projectId: handbook.id, type: "blocker", text: "测试环境账号申请入口尚未确认，部署章节无法写准。", createdAt: new Date(now - 4 * 86_400_000).toISOString() }, now);
+
+    this.#store.update((state) => {
+      state.projects.push(visual, handbook);
+      state.sessions.push(session);
+      state.crumbs.push(...crumbs, handbookCrumb);
+      state.checkpoints.push(checkpoint);
+    });
+    this.#toast("示例现场已载入，可以放心探索。 ");
+  }
+
+  #exportData() {
+    const snapshot = this.#store.exportSnapshot();
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `reentry-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    this.#toast("完整备份已生成。 ");
+  }
+
+  async #importData(file, input) {
+    try {
+      if (file.size > 25 * 1024 * 1024) throw new Error("备份超过 25 MB，已停止导入以保护页面稳定性。 ");
+      const parsed = JSON.parse(await file.text());
+      const projectCount = parsed?.data?.projects?.length ?? parsed?.projects?.length ?? 0;
+      if (!window.confirm(`用这份备份替换当前工作区？检测到 ${projectCount} 个项目。当前数据可先取消并导出。`)) return;
+      this.#store.importSnapshot(parsed);
+      location.hash = "#/";
+      this.#toast("备份已校验并恢复。 ");
+    } catch (error) {
+      this.#toast(`无法导入：${error.message}`, "error");
+    } finally {
+      input.value = "";
+    }
+  }
+
+  #openDialog(id) {
+    const dialog = this.#root.querySelector(`#${id}`);
+    if (!dialog) return;
+    dialog.showModal();
+    requestAnimationFrame(() => dialog.querySelector("[autofocus], input:not([type=hidden]), textarea, button")?.focus());
+  }
+
+  #refreshTimers() {
+    for (const timer of this.#root.querySelectorAll(".js-session-timer")) {
+      timer.textContent = formatDuration(elapsedSeconds(timer.dataset.startedAt));
+    }
+  }
+
+  #toast(message, kind = "success") {
+    const region = this.#root.querySelector("#toast-region");
+    if (!region) return;
+    const toast = document.createElement("div");
+    toast.className = "toast";
+    toast.dataset.kind = kind;
+    toast.innerHTML = `${icon(kind === "error" ? "alert" : "check")}<span>${escapeHTML(message)}</span>`;
+    region.append(toast);
+    window.setTimeout(() => toast.remove(), 3600);
+  }
+
+  #announce(message) {
+    const region = this.#root.querySelector("#live-region");
+    if (!region) return;
+    region.textContent = "";
+    requestAnimationFrame(() => { region.textContent = message; });
+  }
+
+  async #requestPersistentStorage() {
+    try {
+      if (navigator.storage?.persist) await navigator.storage.persist();
+    } catch {
+      // Persistence is a best-effort enhancement; export remains the reliable backup path.
+    }
+  }
+}
+
+function parseRoute(hash) {
+  const value = hash.replace(/^#\/?/, "");
+  if (!value) return { name: "home" };
+  const [name, encodedId] = value.split("/");
+  if (name === "project" && encodedId) return { name: "project", id: decodeURIComponent(encodedId) };
+  if (name === "archive") return { name: "archive" };
+  if (name === "settings") return { name: "settings" };
+  return { name: "home" };
+}
+
+function routeTitle(route) {
+  return { home: "项目舰桥", archive: "归档舱", settings: "数据保险箱" }[route.name] ?? "项目舰桥";
+}
+
+function brandMark() {
+  return '<span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>';
+}
+
+function icon(name) {
+  return `<svg aria-hidden="true" viewBox="0 0 24 24">${ICONS[name] ?? ICONS.info}</svg>`;
+}
+
+function metric(label, value, detail) {
+  return `<article class="metric-card"><span class="metric-label">${escapeHTML(label)}</span><strong class="metric-value">${value}</strong><span class="metric-detail">${escapeHTML(detail)}</span></article>`;
+}
+
+function miniStat(value, label) {
+  return `<div class="mini-stat"><strong>${value}</strong><span>${escapeHTML(label)}</span></div>`;
+}
+
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour < 6) return "夜深了，保留现场即可";
+  if (hour < 11) return "早上好，准备复航";
+  if (hour < 14) return "中午好，先找回方向";
+  if (hour < 18) return "下午好，继续一段清楚的路";
+  return "晚上好，把思路接回来";
+}
+
+function awayLabel(days) {
+  if (days < 1 / 24) return "刚刚还在这里";
+  if (days < 1) return `离开约 ${Math.max(1, Math.round(days * 24))} 小时`;
+  if (days < 2) return "上次在昨天";
+  return `已离开 ${Math.floor(days)} 天`;
+}
+
+function isToday(isoDate) {
+  const date = new Date(isoDate);
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function isTypingTarget(target) {
+  return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+}
+
+function textBlock(value) {
+  return escapeHTML(value).replaceAll("\n", "<br>");
+}
+
+function escapeHTML(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character]);
+}
+
+function attr(value) {
+  return escapeHTML(value);
+}

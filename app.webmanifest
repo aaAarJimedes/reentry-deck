@@ -1,0 +1,20 @@
+{
+  "name": "复航台 · REENTRY",
+  "short_name": "复航台",
+  "description": "为被打断的工作保存上下文，在 60 秒内重新进入状态。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4efe6",
+  "theme_color": "#f4efe6",
+  "icons": [
+    {
+      "src": "/assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

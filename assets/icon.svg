@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="复航台图标">
+  <rect width="512" height="512" rx="120" fill="#173d3a"/>
+  <path d="M110 337c50-83 105-124 166-124 48 0 89 24 126 72" fill="none" stroke="#f5b971" stroke-width="40" stroke-linecap="round"/>
+  <path d="M116 202h124v124" fill="none" stroke="#f4efe6" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="m117 323 123-121" fill="none" stroke="#f4efe6" stroke-width="40" stroke-linecap="round"/>
+  <circle cx="385" cy="286" r="25" fill="#f4efe6"/>
+</svg>

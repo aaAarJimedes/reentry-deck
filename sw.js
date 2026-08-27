@@ -1,0 +1,150 @@
+"use strict";
+
+// Change this build id whenever any unversioned app-shell file changes. A unique
+// cache per release keeps an active tab on one coherent set of HTML, CSS and JS.
+const BUILD_ID = "2026-08-28.2";
+const CACHE_PREFIX = "reentry-deck-shell-";
+const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
+
+const SHELL_PATHS = Object.freeze([
+  "./",
+  "./index.html",
+  "./app.webmanifest",
+  "./assets/icon.svg",
+  "./src/styles.css",
+  "./src/main.js",
+  "./src/ui/app.js",
+  "./src/core/model.js",
+  "./src/core/store.js",
+  "./src/core/reentry.js",
+  "./src/core/time.js"
+]);
+
+const scopeURL = new URL(self.registration.scope);
+const documentURL = new URL("index.html", scopeURL).href;
+const shellURLs = new Set(
+  SHELL_PATHS.map((path) => new URL(path, scopeURL).href)
+);
+
+function cleanURL(value) {
+  const url = new URL(value);
+  url.hash = "";
+  url.search = "";
+  return url.href;
+}
+
+function isUsableResponse(response) {
+  return response.status === 200 && response.type !== "error";
+}
+
+async function precacheShell() {
+  const requests = [...shellURLs].map(
+    (url) =>
+      new Request(url, {
+        cache: "reload",
+        credentials: "same-origin"
+      })
+  );
+
+  // Fetch every resource before writing any of them. If a deployment is
+  // incomplete, installation fails and the previous worker remains active.
+  const downloaded = await Promise.all(
+    requests.map(async (request) => {
+      const response = await fetch(request);
+      if (!isUsableResponse(response)) {
+        throw new Error(
+          `Unable to precache ${request.url}: HTTP ${response.status}`
+        );
+      }
+      return { request, response };
+    })
+  );
+
+  const cache = await caches.open(CACHE_NAME);
+  await Promise.all(
+    downloaded.map(({ request, response }) => cache.put(request, response))
+  );
+}
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(precacheShell());
+  // Deliberately do not call skipWaiting(): open tabs keep using their complete
+  // current release until the normal service-worker lifecycle can switch safely.
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    (async () => {
+      const cacheNames = await caches.keys();
+      await Promise.all(
+        cacheNames
+          .filter(
+            (cacheName) =>
+              cacheName.startsWith(CACHE_PREFIX) && cacheName !== CACHE_NAME
+          )
+          .map((cacheName) => caches.delete(cacheName))
+      );
+
+      await self.clients.claim();
+    })()
+  );
+});
+
+async function serveNavigation(request) {
+  const cache = await caches.open(CACHE_NAME);
+  const cachedDocument = await cache.match(documentURL);
+
+  // The cached document and its modules come from the same build. Serving this
+  // first avoids mixing a newly deployed index with an older active worker.
+  if (cachedDocument) {
+    return cachedDocument;
+  }
+
+  try {
+    return await fetch(request);
+  } catch {
+    return new Response("离线状态下无法载入复航台，请联网后重试。", {
+      status: 503,
+      statusText: "Service Unavailable",
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store"
+      }
+    });
+  }
+}
+
+async function serveShellAsset(request, canonicalURL) {
+  const cache = await caches.open(CACHE_NAME);
+  const cachedResponse = await cache.match(canonicalURL);
+  if (cachedResponse) {
+    return cachedResponse;
+  }
+
+  // This path is only expected after manual cache clearing or storage eviction.
+  // Network fallback lets the current page recover without caching an unknown
+  // deployment into this build's immutable shell cache.
+  return fetch(request);
+}
+
+self.addEventListener("fetch", (event) => {
+  const { request } = event;
+  if (request.method !== "GET") {
+    return;
+  }
+
+  const requestURL = new URL(request.url);
+  if (requestURL.origin !== scopeURL.origin) {
+    return;
+  }
+
+  if (request.mode === "navigate") {
+    event.respondWith(serveNavigation(request));
+    return;
+  }
+
+  const canonicalURL = cleanURL(requestURL);
+  if (shellURLs.has(canonicalURL)) {
+    event.respondWith(serveShellAsset(request, canonicalURL));
+  }
+});
