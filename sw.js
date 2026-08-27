@@ -3,10 +3,11 @@
 // The build id provides a clean release boundary. Runtime requests also use a
 // network-first strategy, so a forgotten bump cannot strand online clients on
 // an old shell; the cached release remains the complete offline fallback.
-const BUILD_ID = "2026-08-28.65";
+const BUILD_ID = "2026-08-28.66";
 const CACHE_PREFIX = "reentry-deck-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const NETWORK_TIMEOUT_MS = 4_000;
+const RUNTIME_CACHE_TIMEOUT_MS = 750;
 
 const SHELL_PATHS = Object.freeze([
   "./",
@@ -74,10 +75,18 @@ async function precacheShell() {
 }
 
 async function openRuntimeCache() {
+  let timeoutId;
   try {
-    return await caches.open(CACHE_NAME);
+    return await Promise.race([
+      caches.open(CACHE_NAME),
+      new Promise((resolve) => {
+        timeoutId = setTimeout(() => resolve(null), RUNTIME_CACHE_TIMEOUT_MS);
+      })
+    ]);
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -87,6 +96,17 @@ async function matchRuntimeCache(cache, request) {
     return await cache.match(request) ?? null;
   } catch {
     return null;
+  }
+}
+
+async function refreshRuntimeCache(cachePromise, request, response) {
+  const cache = await cachePromise;
+  if (!cache) return;
+  try {
+    await cache.put(request, response);
+  } catch {
+    // A successful network response must not fail because an optional runtime
+    // cache refresh exceeded capacity or lost permission.
   }
 }
 
@@ -114,23 +134,20 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-async function serveNavigation(request) {
-  const cache = await openRuntimeCache();
+async function serveNavigation(request, defer) {
+  const cachePromise = openRuntimeCache();
   try {
     const response = await fetchWithTimeout(request);
-    if (isUsableResponse(response) && cache) {
-      try {
-        await cache.put(documentURL, response.clone());
-      } catch {
-        // A successful network response must not fail because an optional
-        // runtime cache refresh exceeded storage capacity.
-      }
+    if (isUsableResponse(response)) {
+      defer(refreshRuntimeCache(cachePromise, documentURL, response.clone()));
     } else {
+      const cache = await cachePromise;
       const cachedDocument = await matchRuntimeCache(cache, documentURL);
       if (cachedDocument) return cachedDocument;
     }
     return response;
   } catch {
+    const cache = await cachePromise;
     const cachedDocument = await matchRuntimeCache(cache, documentURL);
     if (cachedDocument) return cachedDocument;
     return new Response("离线状态下无法载入复航台，请联网后重试。", {
@@ -144,22 +161,20 @@ async function serveNavigation(request) {
   }
 }
 
-async function serveShellAsset(request, canonicalURL) {
-  const cache = await openRuntimeCache();
+async function serveShellAsset(request, canonicalURL, defer) {
+  const cachePromise = openRuntimeCache();
   try {
     const response = await fetchWithTimeout(request);
-    if (isUsableResponse(response) && cache) {
-      try {
-        await cache.put(canonicalURL, response.clone());
-      } catch {
-        // Keep serving the network response when cache refresh is unavailable.
-      }
+    if (isUsableResponse(response)) {
+      defer(refreshRuntimeCache(cachePromise, canonicalURL, response.clone()));
     } else {
+      const cache = await cachePromise;
       const cachedResponse = await matchRuntimeCache(cache, canonicalURL);
       if (cachedResponse) return cachedResponse;
     }
     return response;
   } catch {
+    const cache = await cachePromise;
     const cachedResponse = await matchRuntimeCache(cache, canonicalURL);
     if (cachedResponse) return cachedResponse;
     return new Response("Offline asset unavailable", {
@@ -167,6 +182,20 @@ async function serveShellAsset(request, canonicalURL) {
       headers: { "Content-Type": "text/plain; charset=utf-8" }
     });
   }
+}
+
+function respondWithLifetime(event, serve) {
+  const backgroundTasks = [];
+  let finishResponse;
+  const responseFinished = new Promise((resolve) => {
+    finishResponse = resolve;
+  });
+  event.waitUntil((async () => {
+    await responseFinished;
+    await Promise.all(backgroundTasks);
+  })());
+  const responsePromise = serve((promise) => backgroundTasks.push(promise));
+  event.respondWith(responsePromise.finally(finishResponse));
 }
 
 self.addEventListener("fetch", (event) => {
@@ -181,7 +210,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    event.respondWith(serveNavigation(request));
+    respondWithLifetime(event, (defer) => serveNavigation(request, defer));
     return;
   }
 
@@ -191,6 +220,6 @@ self.addEventListener("fetch", (event) => {
     || requestURL.pathname.startsWith(`${scopePath}assets/`)
     || requestURL.pathname === `${scopePath}app.webmanifest`;
   if (shellURLs.has(canonicalURL) || isRuntimeAsset) {
-    event.respondWith(serveShellAsset(request, canonicalURL));
+    respondWithLifetime(event, (defer) => serveShellAsset(request, canonicalURL, defer));
   }
 });

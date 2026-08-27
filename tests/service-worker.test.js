@@ -18,6 +18,7 @@ function createHarness() {
   let failRuntimeOpen = false;
   let failRuntimeMatch = false;
   let failRuntimePut = false;
+  let stallRuntimeOpen = false;
   const timers = new Map();
   let timerSequence = 0;
   let fetchImplementation = async (request) => new Response(`online:${new URL(request.url).pathname}`, { status: 200 });
@@ -47,6 +48,7 @@ function createHarness() {
 
   const cacheStorage = {
     async open(name) {
+      if (stallRuntimeOpen) return new Promise(() => {});
       if (failRuntimeOpen) throw new Error("cache storage denied");
       if (!stores.has(name)) stores.set(name, new MockCache());
       return stores.get(name);
@@ -97,6 +99,7 @@ function createHarness() {
     setRuntimeOpenFailure(value) { failRuntimeOpen = value; },
     setRuntimeMatchFailure(value) { failRuntimeMatch = value; },
     setRuntimePutFailure(value) { failRuntimePut = value; },
+    setRuntimeOpenStall(value) { stallRuntimeOpen = value; },
     fireTimers() {
       for (const [id, callback] of [...timers]) {
         timers.delete(id);
@@ -114,9 +117,18 @@ function lifecyclePromise(handler, extra = {}) {
   return pending;
 }
 
-async function interceptedResponse(handler, request) {
+async function interceptedResponse(handler, request, lifetimes = []) {
   let pending;
-  handler({ request, respondWith(value) { pending = value; } });
+  let dispatching = true;
+  handler({
+    request,
+    respondWith(value) { pending = value; },
+    waitUntil(value) {
+      assert.equal(dispatching, true, "waitUntil must be registered during event dispatch");
+      lifetimes.push(value);
+    }
+  });
+  dispatching = false;
   return pending ? pending : null;
 }
 
@@ -246,6 +258,27 @@ describe("service worker lifecycle", () => {
     assert.equal(await unreadableCache.text(), "Offline asset unavailable");
   });
 
+  test("a stalled runtime cache cannot delay an available network response", async () => {
+    await lifecyclePromise(harness.handlers.get("install"));
+    harness.setRuntimeOpenStall(true);
+    harness.setFetch(async () => new Response("fast network", { status: 200 }));
+    const lifetimes = [];
+
+    const response = await interceptedResponse(harness.handlers.get("fetch"), {
+      method: "GET",
+      mode: "cors",
+      url: `${scope}src/main.js`
+    }, lifetimes);
+
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "fast network");
+    assert.equal(lifetimes.length, 1);
+    assert.equal(harness.pendingTimers, 1, "only the bounded cache-open timer remains");
+    harness.fireTimers();
+    await Promise.all(lifetimes);
+    assert.equal(harness.pendingTimers, 0);
+  });
+
   test("stalled navigation and shell fetches abort into the complete cache", async () => {
     await lifecyclePromise(harness.handlers.get("install"));
     harness.setFetch((_request, { signal } = {}) => new Promise((_resolve, reject) => {
@@ -253,14 +286,14 @@ describe("service worker lifecycle", () => {
     }));
     const fetchHandler = harness.handlers.get("fetch");
     const navigationPromise = interceptedResponse(fetchHandler, { method: "GET", mode: "navigate", url: scope });
-    for (let attempt = 0; attempt < 5 && harness.pendingTimers === 0; attempt += 1) await Promise.resolve();
+    for (let attempt = 0; attempt < 10 && harness.pendingTimers !== 1; attempt += 1) await Promise.resolve();
     assert.equal(harness.pendingTimers, 1);
     harness.fireTimers();
     const navigation = await navigationPromise;
     assert.equal(await navigation.text(), "online:/index.html");
 
     const assetPromise = interceptedResponse(fetchHandler, { method: "GET", mode: "cors", url: `${scope}src/main.js` });
-    for (let attempt = 0; attempt < 5 && harness.pendingTimers === 0; attempt += 1) await Promise.resolve();
+    for (let attempt = 0; attempt < 10 && harness.pendingTimers !== 1; attempt += 1) await Promise.resolve();
     assert.equal(harness.pendingTimers, 1);
     harness.fireTimers();
     const asset = await assetPromise;
