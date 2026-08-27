@@ -45,6 +45,11 @@ const COLOR_LABELS = {
   slate: "岩灰"
 };
 
+export function resolveThemeAppearance(theme, prefersDark = false) {
+  const dark = theme === "dark" || (theme === "system" && prefersDark);
+  return Object.freeze({ dark, themeColor: dark ? "#111a19" : "#f4efe6" });
+}
+
 const ICONS = {
   home: '<path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/>',
   archive: '<path d="M4 7h16v13H4zM3 3h18v4H3zM9 11h6"/>',
@@ -94,6 +99,8 @@ export class ReentryApp {
   #eventController = new AbortController();
   #unsubscribeStore = null;
   #toastTimers = new Map();
+  #colorSchemeQuery = null;
+  #colorSchemeListener = null;
 
   constructor(root, store) {
     this.#root = root;
@@ -114,6 +121,11 @@ export class ReentryApp {
       this.render();
     }, listenerOptions);
     window.addEventListener("keydown", (event) => this.#runUserAction(() => this.#onKeydown(event)), listenerOptions);
+    this.#colorSchemeQuery = window.matchMedia?.("(prefers-color-scheme: dark)") ?? null;
+    this.#colorSchemeListener = () => {
+      if (this.#colorSchemeQuery) this.#syncThemeColor();
+    };
+    this.#colorSchemeQuery?.addEventListener?.("change", this.#colorSchemeListener);
     this.#unsubscribeStore = this.#store.subscribe((_state, event) => this.render({ preserveDialog: event?.source === "external" }));
 
     this.#timerId = window.setInterval(() => this.#refreshTimers(), 1000);
@@ -125,6 +137,9 @@ export class ReentryApp {
     this.#importRequestGate.invalidate();
     this.#pendingImport = null;
     this.#eventController.abort();
+    this.#colorSchemeQuery?.removeEventListener?.("change", this.#colorSchemeListener);
+    this.#colorSchemeQuery = null;
+    this.#colorSchemeListener = null;
     this.#unsubscribeStore?.();
     this.#unsubscribeStore = null;
     for (const timerId of this.#toastTimers.values()) window.clearTimeout(timerId);
@@ -151,7 +166,7 @@ export class ReentryApp {
 
     document.documentElement.dataset.theme = theme;
     document.documentElement.dataset.reducedMotion = state.settings.reducedMotion ? "reduce" : "system";
-    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#111a19" : "#f4efe6");
+    this.#syncThemeColor(theme);
     document.title = `${currentProject?.title ?? routeTitle(route)} · 复航台`;
 
     this.#root.innerHTML = `
@@ -1225,6 +1240,11 @@ export class ReentryApp {
     if (!["system", "light", "dark"].includes(theme)) return;
     this.#focusSelector = `[data-action="set-theme"][data-theme="${theme}"]`;
     this.#store.update((state) => { state.settings.theme = theme; });
+  }
+
+  #syncThemeColor(theme = this.#store.getState().settings.theme) {
+    const appearance = resolveThemeAppearance(theme, Boolean(this.#colorSchemeQuery?.matches));
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", appearance.themeColor);
   }
 
   #setReducedMotion(value) {

@@ -96,3 +96,12 @@ test("reduced motion can follow the system or be forced by a persisted setting",
   assert.match(styles, /:root\[data-reduced-motion="reduce"\] \*::after/);
   assert.match(styles, /animation-iteration-count: 1 !important/);
 });
+
+test("system color-scheme changes update browser chrome and release their listener", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /window\.matchMedia\?\.\("\(prefers-color-scheme: dark\)"\)/);
+  assert.match(source, /this\.#colorSchemeQuery\?\.addEventListener\?\.\("change", this\.#colorSchemeListener\)/);
+  assert.match(source, /this\.#colorSchemeQuery\?\.removeEventListener\?\.\("change", this\.#colorSchemeListener\)/);
+  assert.match(source, /resolveThemeAppearance\(theme, Boolean\(this\.#colorSchemeQuery\?\.matches\)\)/);
+});
