@@ -681,6 +681,8 @@ h3 { font-size: 17px; }
 .project-next span { display: block; margin-bottom: 3px; color: var(--ink-soft); font-size: 10px; font-weight: 760; letter-spacing: .1em; text-transform: uppercase; }
 .project-card-footer { color: var(--ink-soft); font-size: 11px; }
 .project-card-footer .open-link { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); font-size: 13px; font-weight: 700; }
+.collection-more { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.collection-more p { margin: 0; color: var(--ink-soft); font-size: 10px; }
 
 .status-pill,
 .crumb-type,
@@ -1256,6 +1258,8 @@ dialog::backdrop { background: rgb(10 25 23 / 58%); backdrop-filter: blur(4px); 
   .setting-row { align-items: start; flex-direction: column; }
   .timeline-more { align-items: stretch; flex-direction: column; padding-left: 37px; }
   .timeline-more .secondary-button { justify-content: center; }
+  .collection-more { align-items: stretch; flex-direction: column; }
+  .collection-more .secondary-button { justify-content: center; }
   .active-session-dock { right: 12px; bottom: 76px; left: 12px; max-width: none; }
   .dock-time { display: none; }
   dialog { width: calc(100vw - 20px); max-height: calc(100dvh - 20px); border-radius: 18px; }

@@ -10,7 +10,12 @@ import { buildAttentionDeck, buildWeeklyReview } from "../core/insights.js";
 import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
 import { getProjectResources, searchWorkspace } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession } from "../core/session.js";
-import { TIMELINE_PAGE_SIZE, buildTimelineWindow } from "../core/timeline.js";
+import {
+  COLLECTION_PAGE_SIZE,
+  TIMELINE_PAGE_SIZE,
+  buildCollectionWindow,
+  buildTimelineWindow
+} from "../core/timeline.js";
 import { elapsedSeconds, formatDateTime, formatDuration, formatRelative } from "../core/time.js";
 
 const PROJECT_STATUS_LABELS = {
@@ -75,6 +80,7 @@ export class ReentryApp {
   #acknowledgedStaleSessions = new Set();
   #pendingImport = null;
   #timelineLimits = new Map();
+  #collectionLimits = new Map();
 
   constructor(root, store) {
     this.#root = root;
@@ -250,6 +256,7 @@ export class ReentryApp {
     const projects = state.projects.filter((item) => item.status !== "archived");
     if (!projects.length) return this.#renderEmptyDashboard();
     const ranked = rankProjectsForReentry(state);
+    const projectWindow = buildCollectionWindow(ranked, this.#collectionLimits.get("home"));
     const lead = ranked[0];
     const crumbsToday = state.crumbs.filter((item) => isToday(item.createdAt)).length;
     const activeProjects = projects.filter((item) => item.status === "active").length;
@@ -275,7 +282,8 @@ export class ReentryApp {
       ${this.#renderWorkspacePulse(weeklyReview, attentionDeck)}
       <section>
         <div class="section-heading"><div><h2>项目舰桥</h2><p>按当前最值得复航的顺序排列</p></div><button class="secondary-button" type="button" data-action="open-new-project">${icon("plus")} 建立项目</button></div>
-        <div class="project-grid">${ranked.map((card) => this.#renderProjectCard(card)).join("")}</div>
+        <div class="project-grid" id="project-window-home" data-project-window="home">${projectWindow.items.map((card, index) => this.#renderProjectCard(card, index)).join("")}</div>
+        ${this.#renderCollectionMore(projectWindow, "home", "项目")}
       </section>`;
   }
 
@@ -324,9 +332,9 @@ export class ReentryApp {
       </section>`;
   }
 
-  #renderProjectCard(card) {
+  #renderProjectCard(card, index) {
     return `
-      <a class="project-card" data-color="${attr(card.project.color)}" href="#/project/${encodeURIComponent(card.project.id)}">
+      <a class="project-card" data-project-window-item="${index}" data-color="${attr(card.project.color)}" href="#/project/${encodeURIComponent(card.project.id)}">
         <div>
           <div class="project-card-header"><span class="status-pill" data-status="${attr(card.project.status)}">${PROJECT_STATUS_LABELS[card.project.status]}</span><span class="muted">${formatRelative(card.lastActivityAt)}</span></div>
           <h3>${escapeHTML(card.project.title)}</h3>
@@ -510,12 +518,18 @@ export class ReentryApp {
 
   #renderArchive(state) {
     const projects = state.projects.filter((item) => item.status === "archived");
+    const projectWindow = buildCollectionWindow(projects, this.#collectionLimits.get("archive"));
     return `
       <section class="page-heading"><div><p class="eyebrow">归档舱</p><h1>结束的航程，也保留来路。</h1><p class="lede">归档不会删除任何会话、决定或检查点；需要时可以随时恢复。</p></div></section>
-      ${projects.length ? `<div class="project-grid">${projects.map((project) => {
+      ${projects.length ? `<div class="project-grid" id="project-window-archive" data-project-window="archive">${projectWindow.items.map((project, index) => {
         const card = buildReentryCard(state, project.id);
-        return `<article class="project-card" data-color="${attr(project.color)}"><div><div class="project-card-header"><span class="status-pill" data-status="archived">已归档</span><span class="muted">${formatRelative(project.archivedAt ?? project.updatedAt)}</span></div><h3>${escapeHTML(project.title)}</h3><p class="project-description">${escapeHTML(project.description || card.summary)}</p></div><div class="project-card-footer"><span>${state.crumbs.filter((item) => item.projectId === project.id).length} 条轨迹</span><button class="ghost-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}">恢复项目</button></div></article>`;
-      }).join("")}</div>` : `<section class="empty-state"><div class="empty-illustration" aria-hidden="true"><span></span><span></span><span></span></div><h2>归档舱还是空的</h2><p>完成或暂时不再关注的项目，可以从项目页移到这里。</p><a class="primary-button" href="#/">返回舰桥</a></section>`}`;
+        return `<article class="project-card" data-project-window-item="${index}" tabindex="-1" data-color="${attr(project.color)}"><div><div class="project-card-header"><span class="status-pill" data-status="archived">已归档</span><span class="muted">${formatRelative(project.archivedAt ?? project.updatedAt)}</span></div><h3>${escapeHTML(project.title)}</h3><p class="project-description">${escapeHTML(project.description || card.summary)}</p></div><div class="project-card-footer"><span>${state.crumbs.filter((item) => item.projectId === project.id).length} 条轨迹</span><button class="ghost-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}">恢复项目</button></div></article>`;
+      }).join("")}</div>${this.#renderCollectionMore(projectWindow, "archive", "归档项目")}` : `<section class="empty-state"><div class="empty-illustration" aria-hidden="true"><span></span><span></span><span></span></div><h2>归档舱还是空的</h2><p>完成或暂时不再关注的项目，可以从项目页移到这里。</p><a class="primary-button" href="#/">返回舰桥</a></section>`}`;
+  }
+
+  #renderCollectionMore(window, scope, label) {
+    if (!window.remaining) return "";
+    return `<div class="collection-more"><p>已显示 ${window.shown} / ${window.total} 个${label}，其余按需载入。</p><button class="secondary-button" type="button" data-action="show-more-projects" data-scope="${scope}" aria-controls="project-window-${scope}">再显示 ${Math.min(COLLECTION_PAGE_SIZE, window.remaining)} 个<span class="sr-only">，还剩 ${window.remaining} 个未显示</span></button></div>`;
   }
 
   #renderArchivedProject(state, project) {
@@ -699,6 +713,7 @@ export class ReentryApp {
     if (action === "toggle-crumb-resolution") this.#toggleCrumbResolution(control.dataset.crumbId, control.dataset.resolutionContext);
     if (action === "toggle-crumb-pin") this.#toggleCrumbPin(control.dataset.crumbId);
     if (action === "show-more-timeline") this.#showMoreTimeline(control.dataset.projectId);
+    if (action === "show-more-projects") this.#showMoreProjects(control.dataset.scope);
   }
 
   #onSubmit(event) {
@@ -1086,6 +1101,22 @@ export class ReentryApp {
     if (firstNewItem) this.#focusSelector = `[data-crumb-id="${CSS.escape(firstNewItem.id)}"]`;
     this.render();
     this.#announce(`已显示 ${expanded.shown} 条轨迹，还剩 ${expanded.remaining} 条`);
+  }
+
+  #showMoreProjects(scope) {
+    if (scope !== "home" && scope !== "archive") return;
+    const state = this.#store.getState();
+    const items = scope === "home"
+      ? rankProjectsForReentry(state)
+      : state.projects.filter((item) => item.status === "archived");
+    const currentLimit = this.#collectionLimits.get(scope) ?? COLLECTION_PAGE_SIZE;
+    const current = buildCollectionWindow(items, currentLimit);
+    if (!current.remaining) return;
+    const expanded = buildCollectionWindow(items, current.nextLimit);
+    this.#collectionLimits.set(scope, expanded.shown);
+    this.#focusSelector = `[data-project-window="${scope}"] [data-project-window-item="${current.shown}"]`;
+    this.render();
+    this.#announce(`已显示 ${expanded.shown} 个${scope === "home" ? "项目" : "归档项目"}，还剩 ${expanded.remaining} 个`);
   }
 
   #loadSample() {

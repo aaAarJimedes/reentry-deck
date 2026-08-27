@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { TIMELINE_PAGE_SIZE, buildTimelineWindow } from "../src/core/timeline.js";
+import {
+  COLLECTION_PAGE_SIZE,
+  TIMELINE_PAGE_SIZE,
+  buildCollectionWindow,
+  buildTimelineWindow
+} from "../src/core/timeline.js";
 
 function crumb(id, projectId, createdAt) {
   return { id, projectId, createdAt };
@@ -63,5 +68,40 @@ describe("buildTimelineWindow", () => {
     assert.equal(result.total, 10_000);
     assert.equal(result.items.length, 30);
     assert.equal(result.remaining, 9_970);
+  });
+});
+
+describe("buildCollectionWindow", () => {
+  test("returns an ordered first page without changing the source", () => {
+    const items = Array.from({ length: 29 }, (_, index) => ({ id: `p${index}` }));
+    const before = [...items];
+
+    const result = buildCollectionWindow(items);
+
+    assert.equal(COLLECTION_PAGE_SIZE, 12);
+    assert.equal(result.total, 29);
+    assert.equal(result.shown, 12);
+    assert.equal(result.remaining, 17);
+    assert.equal(result.nextLimit, 24);
+    assert.deepEqual(result.items.map((item) => item.id), Array.from({ length: 12 }, (_, index) => `p${index}`));
+    assert.deepEqual(items, before);
+  });
+
+  test("expands by a fixed page, caps the final page, and handles invalid input", () => {
+    const items = Array.from({ length: 25 }, (_, index) => index);
+    const middle = buildCollectionWindow(items, 24);
+    const final = buildCollectionWindow(items, middle.nextLimit);
+
+    assert.deepEqual(middle, { items: items.slice(0, 24), total: 25, shown: 24, remaining: 1, nextLimit: 25 });
+    assert.deepEqual(final, { items, total: 25, shown: 25, remaining: 0, nextLimit: 25 });
+    assert.deepEqual(buildCollectionWindow(null, -1), { items: [], total: 0, shown: 0, remaining: 0, nextLimit: 0 });
+  });
+
+  test("keeps a very large collection out of the initial DOM window", () => {
+    const items = Array.from({ length: 50_000 }, (_, index) => index);
+    const result = buildCollectionWindow(items);
+
+    assert.equal(result.items.length, 12);
+    assert.equal(result.remaining, 49_988);
   });
 });
