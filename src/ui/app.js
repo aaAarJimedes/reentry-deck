@@ -89,26 +89,30 @@ export class ReentryApp {
   #pendingArchiveId = null;
   #backupSizeState = null;
   #backupSizeLabel = "0 B";
+  #eventController = new AbortController();
+  #unsubscribeStore = null;
+  #toastTimers = new Map();
 
   constructor(root, store) {
     this.#root = root;
     this.#store = store;
     this.#noticeQueue = store.drainNotices();
+    const listenerOptions = { signal: this.#eventController.signal };
 
-    this.#root.addEventListener("click", (event) => this.#runUserAction(() => this.#onClick(event)));
-    this.#root.addEventListener("submit", (event) => this.#onSubmit(event));
-    this.#root.addEventListener("change", (event) => this.#runUserAction(() => this.#onChange(event)));
-    this.#root.addEventListener("input", (event) => this.#onInput(event));
+    this.#root.addEventListener("click", (event) => this.#runUserAction(() => this.#onClick(event)), listenerOptions);
+    this.#root.addEventListener("submit", (event) => this.#onSubmit(event), listenerOptions);
+    this.#root.addEventListener("change", (event) => this.#runUserAction(() => this.#onChange(event)), listenerOptions);
+    this.#root.addEventListener("input", (event) => this.#onInput(event), listenerOptions);
     this.#root.addEventListener("cancel", (event) => {
       if (event.target.id === "import-preview-dialog") this.#pendingImport = null;
       if (event.target.id === "archive-confirm-dialog") this.#pendingArchiveId = null;
-    });
+    }, listenerOptions);
     window.addEventListener("hashchange", () => {
       this.#focusSelector = "#main-content";
       this.render();
-    });
-    window.addEventListener("keydown", (event) => this.#runUserAction(() => this.#onKeydown(event)));
-    this.#store.subscribe((_state, event) => this.render({ preserveDialog: event?.source === "external" }));
+    }, listenerOptions);
+    window.addEventListener("keydown", (event) => this.#runUserAction(() => this.#onKeydown(event)), listenerOptions);
+    this.#unsubscribeStore = this.#store.subscribe((_state, event) => this.render({ preserveDialog: event?.source === "external" }));
 
     this.#timerId = window.setInterval(() => this.#refreshTimers(), 1000);
     this.render();
@@ -116,6 +120,13 @@ export class ReentryApp {
 
   destroy() {
     window.clearInterval(this.#timerId);
+    this.#eventController.abort();
+    this.#unsubscribeStore?.();
+    this.#unsubscribeStore = null;
+    for (const timerId of this.#toastTimers.values()) window.clearTimeout(timerId);
+    this.#toastTimers.clear();
+    this.#toasts = [];
+    this.#store.destroy?.();
   }
 
   render({ preserveDialog = false } = {}) {
@@ -1317,7 +1328,11 @@ export class ReentryApp {
     this.#toasts.push(toast);
     const region = this.#root.querySelector("#toast-region");
     if (region) region.insertAdjacentHTML("beforeend", this.#renderToast(toast));
-    window.setTimeout(() => this.#dismissToast(toast.id), 3_600);
+    const timerId = window.setTimeout(() => {
+      this.#toastTimers.delete(toast.id);
+      this.#dismissToast(toast.id);
+    }, 3_600);
+    this.#toastTimers.set(toast.id, timerId);
   }
 
   #renderToasts() {

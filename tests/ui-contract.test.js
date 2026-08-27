@@ -23,9 +23,19 @@ test("project archival uses an accessible in-app confirmation instead of window.
 test("user-triggered mutation surfaces are guarded by the shared action boundary", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 
-  assert.match(source, /addEventListener\("click", \(event\) => this\.#runUserAction\(\(\) => this\.#onClick\(event\)\)\)/);
-  assert.match(source, /addEventListener\("change", \(event\) => this\.#runUserAction\(\(\) => this\.#onChange\(event\)\)\)/);
-  assert.match(source, /addEventListener\("keydown", \(event\) => this\.#runUserAction\(\(\) => this\.#onKeydown\(event\)\)\)/);
+  assert.match(source, /addEventListener\("click", \(event\) => this\.#runUserAction\(\(\) => this\.#onClick\(event\)\), listenerOptions\)/);
+  assert.match(source, /addEventListener\("change", \(event\) => this\.#runUserAction\(\(\) => this\.#onChange\(event\)\), listenerOptions\)/);
+  assert.match(source, /addEventListener\("keydown", \(event\) => this\.#runUserAction\(\(\) => this\.#onKeydown\(event\)\), listenerOptions\)/);
   assert.match(source, /requestAnimationFrame\(\(\) => this\.#runUserAction/);
   assert.match(source, /操作未完成，请根据最新状态重试/);
+});
+
+test("app destruction releases listeners, subscriptions, and toast timers", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /const listenerOptions = \{ signal: this\.#eventController\.signal \}/);
+  assert.match(source, /this\.#eventController\.abort\(\)/);
+  assert.match(source, /this\.#unsubscribeStore\?\.\(\)/);
+  assert.match(source, /for \(const timerId of this\.#toastTimers\.values\(\)\) window\.clearTimeout\(timerId\)/);
+  assert.match(source, /this\.#store\.destroy\?\.\(\)/);
 });

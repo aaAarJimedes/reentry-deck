@@ -2,7 +2,7 @@ import { createEmptyState, isoNow, normalizeState, validateImportCandidate, vali
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.24.0";
+export const APP_VERSION = "0.25.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {
@@ -11,6 +11,7 @@ export class AppStore {
   #persistedRaw = null;
   #listeners = new Set();
   #storageListener = null;
+  #eventTarget = null;
   #skipNextPreviousWrite = false;
   #rejectedRaw = null;
   #hasRejectedRaw = false;
@@ -21,6 +22,7 @@ export class AppStore {
     this.#persistedRaw = this.#storage?.getItem(STORAGE_KEY) ?? null;
     this.#state = this.#load(now, this.#persistedRaw);
     if (eventTarget?.addEventListener) {
+      this.#eventTarget = eventTarget;
       this.#storageListener = (event) => {
         if (event.key === STORAGE_KEY) this.refreshFromStorage();
       };
@@ -35,6 +37,15 @@ export class AppStore {
   subscribe(listener) {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
+  }
+
+  destroy() {
+    if (this.#storageListener && this.#eventTarget?.removeEventListener) {
+      this.#eventTarget.removeEventListener("storage", this.#storageListener);
+    }
+    this.#storageListener = null;
+    this.#eventTarget = null;
+    this.#listeners.clear();
   }
 
   drainNotices() {

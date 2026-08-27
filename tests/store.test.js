@@ -49,6 +49,24 @@ describe("MemoryStorage", () => {
 });
 
 describe("AppStore loading and recovery", () => {
+  test("destroy detaches storage events and clears subscriptions", () => {
+    const storage = new MemoryStorage();
+    const eventTarget = new EventTarget();
+    const store = new AppStore(storage, T0, eventTarget);
+    let emissions = 0;
+    store.subscribe(() => emissions += 1);
+    store.destroy();
+    store.destroy();
+
+    storage.setItem(STORAGE_KEY, JSON.stringify(stateWithProject("external", "External")));
+    const event = new Event("storage");
+    Object.defineProperty(event, "key", { value: STORAGE_KEY });
+    eventTarget.dispatchEvent(event);
+
+    assert.equal(emissions, 0);
+    assert.deepEqual(store.getState().projects, []);
+  });
+
   test("starts with a deterministic empty state when no saved data exists", () => {
     const store = new AppStore(new MemoryStorage(), T0);
 
