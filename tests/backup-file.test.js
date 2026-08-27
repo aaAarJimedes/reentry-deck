@@ -103,6 +103,32 @@ describe("readBackupFile", () => {
     assert.equal(canceled, true);
     assert.equal(released, true);
   });
+
+  test("preserves UTF-8 split across chunks and rejects malformed or truncated bytes", async () => {
+    const streamedFile = (bytes) => {
+      let index = 0;
+      return {
+        size: bytes.length,
+        stream() {
+          return { getReader() { return {
+            async read() {
+              return index < bytes.length
+                ? { done: false, value: bytes.slice(index, ++index) }
+                : { done: true };
+            },
+            async cancel() {},
+            releaseLock() {}
+          }; } };
+        }
+      };
+    };
+
+    const valid = new TextEncoder().encode('{"title":"复航🚀"}');
+    assert.deepEqual(await readBackupFile(streamedFile(valid)), { title: "复航🚀" });
+
+    await assert.rejects(readBackupFile(streamedFile(Uint8Array.of(0x7b, 0x22, 0x78, 0x22, 0x3a, 0x22, 0xc3, 0x28, 0x22, 0x7d))), /无法读取备份文件/u);
+    await assert.rejects(readBackupFile(streamedFile(Uint8Array.of(0x7b, 0x22, 0x78, 0x22, 0x3a, 0x22, 0xf0, 0x9f, 0x9a))), /无法读取备份文件/u);
+  });
 });
 
 test("createLatestRequestGate lets only the newest asynchronous request commit", () => {

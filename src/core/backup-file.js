@@ -47,7 +47,7 @@ export async function readBackupFile(file, options = {}) {
 async function readBackupStream(file, signal) {
   if (signal?.aborted) throw backupReadError("备份读取已取消。 ");
   const reader = file.stream().getReader();
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
   const chunks = [];
   let bytesRead = 0;
   const cancel = () => {
