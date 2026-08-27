@@ -3,7 +3,7 @@
 // The build id provides a clean release boundary. Runtime requests also use a
 // network-first strategy, so a forgotten bump cannot strand online clients on
 // an old shell; the cached release remains the complete offline fallback.
-const BUILD_ID = "2026-08-28.64";
+const BUILD_ID = "2026-08-28.65";
 const CACHE_PREFIX = "reentry-deck-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const NETWORK_TIMEOUT_MS = 4_000;
@@ -73,6 +73,23 @@ async function precacheShell() {
   await cache.addAll(requests);
 }
 
+async function openRuntimeCache() {
+  try {
+    return await caches.open(CACHE_NAME);
+  } catch {
+    return null;
+  }
+}
+
+async function matchRuntimeCache(cache, request) {
+  if (!cache) return null;
+  try {
+    return await cache.match(request) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(precacheShell());
   // Deliberately do not call skipWaiting(): open tabs keep using their complete
@@ -98,10 +115,10 @@ self.addEventListener("activate", (event) => {
 });
 
 async function serveNavigation(request) {
-  const cache = await caches.open(CACHE_NAME);
+  const cache = await openRuntimeCache();
   try {
     const response = await fetchWithTimeout(request);
-    if (isUsableResponse(response)) {
+    if (isUsableResponse(response) && cache) {
       try {
         await cache.put(documentURL, response.clone());
       } catch {
@@ -109,12 +126,12 @@ async function serveNavigation(request) {
         // runtime cache refresh exceeded storage capacity.
       }
     } else {
-      const cachedDocument = await cache.match(documentURL);
+      const cachedDocument = await matchRuntimeCache(cache, documentURL);
       if (cachedDocument) return cachedDocument;
     }
     return response;
   } catch {
-    const cachedDocument = await cache.match(documentURL);
+    const cachedDocument = await matchRuntimeCache(cache, documentURL);
     if (cachedDocument) return cachedDocument;
     return new Response("离线状态下无法载入复航台，请联网后重试。", {
       status: 503,
@@ -128,22 +145,22 @@ async function serveNavigation(request) {
 }
 
 async function serveShellAsset(request, canonicalURL) {
-  const cache = await caches.open(CACHE_NAME);
+  const cache = await openRuntimeCache();
   try {
     const response = await fetchWithTimeout(request);
-    if (isUsableResponse(response)) {
+    if (isUsableResponse(response) && cache) {
       try {
         await cache.put(canonicalURL, response.clone());
       } catch {
         // Keep serving the network response when cache refresh is unavailable.
       }
     } else {
-      const cachedResponse = await cache.match(canonicalURL);
+      const cachedResponse = await matchRuntimeCache(cache, canonicalURL);
       if (cachedResponse) return cachedResponse;
     }
     return response;
   } catch {
-    const cachedResponse = await cache.match(canonicalURL);
+    const cachedResponse = await matchRuntimeCache(cache, canonicalURL);
     if (cachedResponse) return cachedResponse;
     return new Response("Offline asset unavailable", {
       status: 503,

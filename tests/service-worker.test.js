@@ -15,6 +15,8 @@ function createHarness() {
   const handlers = new Map();
   const stores = new Map();
   let claimed = false;
+  let failRuntimeOpen = false;
+  let failRuntimeMatch = false;
   let failRuntimePut = false;
   const timers = new Map();
   let timerSequence = 0;
@@ -38,12 +40,14 @@ function createHarness() {
     }
 
     async match(request) {
+      if (failRuntimeMatch) throw new Error("cache read denied");
       return this.entries.get(cacheKey(request))?.clone();
     }
   }
 
   const cacheStorage = {
     async open(name) {
+      if (failRuntimeOpen) throw new Error("cache storage denied");
       if (!stores.has(name)) stores.set(name, new MockCache());
       return stores.get(name);
     },
@@ -90,6 +94,8 @@ function createHarness() {
     cacheStorage,
     get claimed() { return claimed; },
     setFetch(next) { fetchImplementation = next; },
+    setRuntimeOpenFailure(value) { failRuntimeOpen = value; },
+    setRuntimeMatchFailure(value) { failRuntimeMatch = value; },
     setRuntimePutFailure(value) { failRuntimePut = value; },
     fireTimers() {
       for (const [id, callback] of [...timers]) {
@@ -208,6 +214,36 @@ describe("service worker lifecycle", () => {
     assert.equal(response.status, 200);
     assert.equal(await response.text(), "fresh network copy");
     assert.equal(harness.pendingTimers, 0);
+  });
+
+  test("runtime cache open or read denial never hides the network and has an explicit offline failure", async () => {
+    await lifecyclePromise(harness.handlers.get("install"));
+    const fetchHandler = harness.handlers.get("fetch");
+
+    harness.setRuntimeOpenFailure(true);
+    harness.setFetch(async () => new Response("network without cache", { status: 200 }));
+    const online = await interceptedResponse(fetchHandler, {
+      method: "GET",
+      mode: "cors",
+      url: `${scope}src/main.js`
+    });
+    assert.equal(online.status, 200);
+    assert.equal(await online.text(), "network without cache");
+
+    harness.setFetch(async () => { throw new Error("offline"); });
+    const noCache = await interceptedResponse(fetchHandler, { method: "GET", mode: "navigate", url: scope });
+    assert.equal(noCache.status, 503);
+    assert.match(await noCache.text(), /离线状态下无法载入复航台/u);
+
+    harness.setRuntimeOpenFailure(false);
+    harness.setRuntimeMatchFailure(true);
+    const unreadableCache = await interceptedResponse(fetchHandler, {
+      method: "GET",
+      mode: "cors",
+      url: `${scope}src/main.js`
+    });
+    assert.equal(unreadableCache.status, 503);
+    assert.equal(await unreadableCache.text(), "Offline asset unavailable");
   });
 
   test("stalled navigation and shell fetches abort into the complete cache", async () => {
