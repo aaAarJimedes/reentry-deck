@@ -21,7 +21,9 @@ function currentOpenLoops(card) {
     .filter(Boolean)
     .join("；");
   if (current) return briefLine(current, IMPORT_LIMITS.openLoops);
-  const checkpointLoops = card.checkpoint ? briefLine(card.openLoops, IMPORT_LIMITS.openLoops) : "";
+  const checkpointLoops = card.checkpoint
+    ? briefLine(Object.hasOwn(card, "historicalOpenLoops") ? card.historicalOpenLoops : card.openLoops, IMPORT_LIMITS.openLoops)
+    : "";
   if (checkpointLoops) {
     return briefLine(`检查点曾记录（待确认）：${checkpointLoops}`, IMPORT_LIMITS.openLoops);
   }

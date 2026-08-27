@@ -163,6 +163,7 @@ test("buildReentryCard uses the newest timestamped evidence instead of blindly t
   assert.equal(card.nextAction, "crumb next");
   assert.equal(card.nextActionEvidence.id, "next");
   assert.equal(card.openLoops, "checkpoint loops");
+  assert.equal(card.historicalOpenLoops, "", "live signals supersede checkpoint free text");
   assert.equal(card.returnHint, "checkpoint hint");
   assert.equal(card.completeness, 100);
   assert.deepEqual(card.changesSinceCheckpoint.map((item) => item.id), ["next", "summary"]);
@@ -187,6 +188,7 @@ test("quick-dock checkpoints are visibly capped at low-confidence readiness", ()
 
   assert.equal(card.completeness, 50);
   assert.equal(card.checkpoint.captureMode, "quick");
+  assert.equal(card.historicalOpenLoops, "已有未决");
   assert.deepEqual(card.readinessGaps, ["复核快速停靠生成的低置信度检查点"]);
 });
 
@@ -481,6 +483,30 @@ test("a reliable checkpoint without a return route exposes one focused readiness
   });
 
   assert.deepEqual(buildReentryCard(state, "p1", NOW).readinessGaps, ["写下材料入口或恢复提示"]);
+});
+
+test("checkpoint-only open loops remain visible as history without overriding live signals", () => {
+  const checkpoint = {
+    id: "cp",
+    projectId: "p1",
+    summary: "state",
+    nextAction: "next",
+    openLoops: "confirm the old dependency",
+    returnHint: "hint",
+    captureMode: "manual",
+    createdAt: at(-2_000)
+  };
+  const base = makeState({ projects: [makeProject("p1")], checkpoints: [checkpoint] });
+
+  assert.equal(buildReentryCard(base, "p1", NOW).historicalOpenLoops, "confirm the old dependency");
+  assert.equal(buildReentryCard({
+    ...base,
+    crumbs: [{ id: "live", projectId: "p1", type: "question", text: "new question", createdAt: at(-1_000) }]
+  }, "p1", NOW).historicalOpenLoops, "");
+  assert.equal(buildReentryCard({
+    ...base,
+    checkpoints: [{ ...checkpoint, openLoops: "未解决的问题或阻塞未记录。", captureMode: "quick" }]
+  }, "p1", NOW).historicalOpenLoops, "");
 });
 
 test("getProjectStats counts only matching records and recognized statuses/types", () => {

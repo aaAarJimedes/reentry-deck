@@ -473,7 +473,7 @@ export class ReentryApp {
           ${card.pinnedCrumbs.length ? `<div class="reentry-section pinned-evidence"><span class="reentry-label">${icon("pin")} 置顶航标</span>${this.#renderEvidenceList(card.pinnedCrumbs, "")}</div>` : ""}
           <div class="reentry-section"><span class="reentry-label">${icon("spark")} 02 · 检查点后发生了什么</span>${this.#renderEvidenceList(card.changesSinceCheckpoint, "检查点之后没有新的状态、决定或下一步记录。")}</div>
           <div class="reentry-section"><span class="reentry-label">${icon("check")} 03 · 最近决定</span>${this.#renderEvidenceList(card.decisions, "还没有记录明确决定。")}</div>
-          <div class="reentry-section"><span class="reentry-label">${icon("alert")} 04 · 仍未解决</span>${this.#renderEvidenceList(card.unresolvedSignals, "当前没有未解决的问题或阻塞。", true)}</div>
+          <div class="reentry-section"><span class="reentry-label">${icon("alert")} 04 · 仍未解决</span>${this.#renderOpenLoops(card)}</div>
           <div class="reentry-section"><span class="reentry-label">${icon("arrow")} 05 · 第一物理动作</span><p class="reentry-value next-action">${textBlock(card.nextAction)}</p><p class="evidence-source">来源：${escapeHTML(card.nextActionEvidence?.label || "引导建议")} ${card.nextActionEvidence?.createdAt ? `· ${formatDateTime(card.nextActionEvidence.createdAt)}` : ""}</p></div>
           <div class="reentry-section"><span class="reentry-label">${icon("compass")} 复航提示</span><p class="reentry-value">${textBlock(card.returnHint)}</p></div>
           <div class="reentry-section">
@@ -582,6 +582,14 @@ export class ReentryApp {
   #renderEvidenceList(items, emptyText, resolvable = false) {
     if (!items.length) return `<p class="reentry-value muted">${escapeHTML(emptyText)}</p>`;
     return `<ul class="evidence-list">${items.map((item) => `<li><span>${textBlock(item.text)}</span><small>${escapeHTML(CRUMB_LABELS[item.type] ?? "记录")} · ${formatDateTime(item.createdAt)}</small>${resolvable ? `<button type="button" data-action="toggle-crumb-resolution" data-resolution-context="reentry" data-crumb-id="${attr(item.id)}" aria-label="标记已解决：${attr(controlContext(item.text))}">标记已解决</button>` : ""}</li>`).join("")}</ul>`;
+  }
+
+  #renderOpenLoops(card) {
+    if (card.unresolvedSignals.length) return this.#renderEvidenceList(card.unresolvedSignals, "", true);
+    if (card.historicalOpenLoops) {
+      return `<p class="reentry-value muted"><strong>检查点曾记录（待确认）：</strong><br>${textBlock(card.historicalOpenLoops)}</p>`;
+    }
+    return '<p class="reentry-value muted">当前没有未解决的问题或阻塞。</p>';
   }
 
   #renderArchive(state) {

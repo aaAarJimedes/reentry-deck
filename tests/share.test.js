@@ -78,6 +78,16 @@ describe("buildReentryBrief", () => {
     const clear = buildReentryBrief({ ...base, openLoops: "", unresolvedSignals: [], readinessGaps: [] });
     assert.match(clear, /未决事项：当前没有未解决的问题或阻塞。/u);
     assert.match(clear, /证据状态：50% · 无显式复航缺口/u);
+
+    const projectedClear = buildReentryBrief({
+      ...base,
+      checkpoint: { id: "quick" },
+      openLoops: "未解决的问题或阻塞未记录。",
+      historicalOpenLoops: "",
+      unresolvedSignals: []
+    });
+    assert.match(projectedClear, /未决事项：当前没有未解决的问题或阻塞。/u);
+    assert.doesNotMatch(projectedClear, /曾记录/u);
   });
 });
 

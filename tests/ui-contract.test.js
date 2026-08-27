@@ -164,6 +164,14 @@ test("reentry brief copy is accessible and ignores stale asynchronous completion
   assert.match(source, /this\.#clipboardRequestGate\.invalidate\(\)/u);
 });
 
+test("checkpoint-only open loops are labeled as historical instead of disappearing", async () => {
+  const source = await readFile(new URL("../src/ui/app.js", import.meta.url), "utf8");
+
+  assert.match(source, /#renderOpenLoops\(card\)/u);
+  assert.match(source, /检查点曾记录（待确认）：/u);
+  assert.match(source, /if \(card\.historicalOpenLoops\)/u);
+});
+
 test("repeated dynamic controls expose bounded contextual names and labeled groups", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

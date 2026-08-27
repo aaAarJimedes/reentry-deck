@@ -1,4 +1,5 @@
 import { daysSince } from "./time.js";
+import { QUICK_DOCK_NOT_RECORDED } from "./session.js";
 
 export function getProjectActivity(state, projectId) {
   return getIndexedProjectActivity(buildReentryIndex(state), projectId);
@@ -35,6 +36,9 @@ function buildIndexedReentryCard(index, projectId, now) {
   const unresolvedSignals = projectCrumbs
     .filter((item) => ["question", "blocker"].includes(item.type) && !item.resolvedAt)
     .slice(0, 3);
+  const historicalOpenLoops = unresolvedSignals.length || !checkpoint?.openLoops || checkpoint.openLoops === QUICK_DOCK_NOT_RECORDED.openLoops
+    ? ""
+    : checkpoint.openLoops;
   const decisions = projectCrumbs.filter((item) => item.type === "decision").slice(0, 2);
   const pinnedCrumbs = projectCrumbs.filter((item) => item.pinned).slice(0, 3);
   const checkpointTime = timeOf(checkpoint?.createdAt);
@@ -85,6 +89,7 @@ function buildIndexedReentryCard(index, projectId, now) {
     nextAction,
     nextActionEvidence,
     openLoops: checkpoint?.openLoops || unresolvedSignals.map((item) => item.text).join("；"),
+    historicalOpenLoops,
     returnHint,
     completeness,
     readinessGaps,
