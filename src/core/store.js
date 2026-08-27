@@ -2,9 +2,11 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.68.0";
+export const APP_VERSION = "0.69.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
+export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
+const WRITE_LOCK_TTL_MS = 5_000;
 
 export class AppStore {
   #storage;
@@ -17,6 +19,7 @@ export class AppStore {
   #skipNextPreviousWrite = false;
   #rejectedRaw = null;
   #hasRejectedRaw = false;
+  #activeWriteLock = null;
 
   constructor(storage = undefined, now = Date.now(), eventTarget = globalThis.window) {
     this.notices = [];
@@ -227,6 +230,15 @@ export class AppStore {
 
   #persist(next) {
     if (!this.#storage) throw new Error("浏览器没有提供可用的本地存储。 ");
+    const releaseWriteLock = this.#acquireWriteLock();
+    try {
+      this.#persistWithLock(next);
+    } finally {
+      releaseWriteLock();
+    }
+  }
+
+  #persistWithLock(next) {
     let current;
     try {
       current = this.#storage.getItem(STORAGE_KEY);
@@ -240,6 +252,7 @@ export class AppStore {
     const serialized = JSON.stringify(next);
     let releasedPrevious = false;
     try {
+      this.#assertWriteLock();
       this.#storage.setItem(STORAGE_KEY, serialized);
     } catch (error) {
       let previous = null;
@@ -252,6 +265,7 @@ export class AppStore {
         throw new Error(`本地保存失败，原数据仍然保留：${error.message}`);
       }
       try {
+        this.#assertWriteLock();
         this.#storage.removeItem(PREVIOUS_KEY);
         this.#storage.setItem(STORAGE_KEY, serialized);
         releasedPrevious = true;
@@ -275,6 +289,43 @@ export class AppStore {
         // The current write already succeeded. A missing rollback copy is safer
         // than rejecting all future edits near the browser's quota limit.
       }
+    }
+  }
+
+  #acquireWriteLock(now = Date.now()) {
+    const owner = globalThis.crypto?.randomUUID?.() ?? `${now}-${Math.random().toString(36).slice(2)}`;
+    const token = JSON.stringify({ owner, expiresAt: now + WRITE_LOCK_TTL_MS });
+    try {
+      const existing = this.#storage.getItem(WRITE_LOCK_KEY);
+      if (isActiveWriteLock(existing, now)) {
+        throw new Error("另一个标签页正在保存，请立即重试。 ");
+      }
+      this.#storage.setItem(WRITE_LOCK_KEY, token);
+      if (this.#storage.getItem(WRITE_LOCK_KEY) !== token) {
+        throw new Error("另一个标签页同时取得了保存权，请立即重试。 ");
+      }
+    } catch (error) {
+      if (/另一个标签页/u.test(error?.message ?? "")) throw error;
+      throw new Error(`本地保存失败，无法取得安全写入租约：${errorMessage(error)}`);
+    }
+    this.#activeWriteLock = token;
+    return () => {
+      try {
+        if (this.#storage.getItem(WRITE_LOCK_KEY) === token) this.#storage.removeItem(WRITE_LOCK_KEY);
+      } catch {
+        // The short lease expires on its own; never misreport an already committed write.
+      } finally {
+        if (this.#activeWriteLock === token) this.#activeWriteLock = null;
+      }
+    };
+  }
+
+  #assertWriteLock() {
+    const persistedLock = this.#storage.getItem(WRITE_LOCK_KEY);
+    if (!this.#activeWriteLock
+      || persistedLock !== this.#activeWriteLock
+      || !isActiveWriteLock(persistedLock, Date.now())) {
+      throw new Error("另一个标签页同时取得了保存权，请立即重试。 ");
     }
   }
 
@@ -315,6 +366,19 @@ function isQuotaExceeded(error) {
     || error.code === 22
     || error.code === 1014
   );
+}
+
+function isActiveWriteLock(raw, now) {
+  if (typeof raw !== "string" || !raw) return false;
+  try {
+    const value = JSON.parse(raw);
+    return typeof value?.owner === "string"
+      && value.owner.length > 0
+      && Number.isFinite(value.expiresAt)
+      && value.expiresAt > now;
+  } catch {
+    return false;
+  }
 }
 
 function parseSavedState(raw, now) {

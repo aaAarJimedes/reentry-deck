@@ -7,6 +7,7 @@ import {
   AppStore,
   MemoryStorage,
   STORAGE_KEY,
+  WRITE_LOCK_KEY,
   inspectStorageUsage
 } from "../src/core/store.js";
 
@@ -144,7 +145,7 @@ describe("AppStore loading and recovery", () => {
     assert.equal(store.refreshFromStorage(T1), false);
     assert.strictEqual(store.getState(), before);
     assert.match(store.drainNotices().join("；"), /无法读取另一个标签页的更新.*read access revoked/u);
-    assert.throws(() => store.update(() => {}, T1), /无法核对现有数据.*read access revoked/u);
+    assert.throws(() => store.update(() => {}, T1), /无法(取得安全写入租约|核对现有数据).*read access revoked/u);
     assert.strictEqual(store.getState(), before);
   });
 
@@ -592,6 +593,77 @@ describe("AppStore updates and persistence", () => {
     secondTab.update((draft) => draft.projects.push(createProject({ id: "from-second" }, T2)), T2);
     assert.deepEqual(persisted(storage).projects.map((item) => item.id), ["from-first", "from-second"]);
     assert.deepEqual(sources, ["external", "local"]);
+  });
+
+  test("a short write lease serializes truly simultaneous tab commits and expires safely", () => {
+    class InterleavingStorage extends MemoryStorage {
+      onLease = null;
+
+      setItem(key, value) {
+        super.setItem(key, value);
+        if (key === WRITE_LOCK_KEY && this.onLease) {
+          const callback = this.onLease;
+          this.onLease = null;
+          callback();
+        }
+      }
+    }
+    const storage = new InterleavingStorage();
+    const firstTab = new AppStore(storage, T0, null);
+    const competingTab = new AppStore(storage, T0, null);
+    let competingError = null;
+    storage.onLease = () => {
+      try {
+        competingTab.update((draft) => draft.projects.push(createProject({ id: "competing" }, T1)), T1);
+      } catch (error) {
+        competingError = error;
+      }
+    };
+
+    const saved = firstTab.update((draft) => draft.projects.push(createProject({ id: "winner" }, T1)), T1);
+
+    assert.deepEqual(saved.projects.map((project) => project.id), ["winner"]);
+    assert.match(competingError?.message ?? "", /另一个标签页正在保存/u);
+    assert.deepEqual(persisted(storage).projects.map((project) => project.id), ["winner"]);
+    assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
+
+    storage.setItem(WRITE_LOCK_KEY, JSON.stringify({ owner: "crashed-tab", expiresAt: 0 }));
+    const next = firstTab.update((draft) => { draft.settings.theme = "dark"; }, T2);
+    assert.equal(next.settings.theme, "dark");
+    assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
+  });
+
+  test("an active foreign write lease fails before recipes can overwrite storage", () => {
+    const storage = new MemoryStorage();
+    const store = new AppStore(storage, T0, null);
+    const before = store.getState();
+    storage.setItem(WRITE_LOCK_KEY, JSON.stringify({ owner: "other-tab", expiresAt: Date.now() + 60_000 }));
+
+    assert.throws(
+      () => store.update((draft) => draft.projects.push(createProject({ id: "blocked" }, T1)), T1),
+      /另一个标签页正在保存/u
+    );
+    assert.strictEqual(store.getState(), before);
+    assert.equal(storage.getItem(STORAGE_KEY), null);
+  });
+
+  test("a lease that expires before the primary write aborts without committing", () => {
+    const originalNow = Date.now;
+    const storage = new MemoryStorage();
+    const store = new AppStore(storage, T0, null);
+    let clockReads = 0;
+    Date.now = () => clockReads++ === 0 ? 1_000 : 7_000;
+    try {
+      assert.throws(
+        () => store.update((draft) => draft.projects.push(createProject({ id: "too-late" }, T1)), T1),
+        /同时取得了保存权/u
+      );
+      assert.equal(storage.getItem(STORAGE_KEY), null);
+      assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
+      assert.deepEqual(store.getState().projects, []);
+    } finally {
+      Date.now = originalNow;
+    }
   });
 
   test("rejects a corrupt external-tab payload without adopting its lossy normalization", () => {
