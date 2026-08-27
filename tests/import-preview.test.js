@@ -105,6 +105,7 @@ describe("import difference preview", () => {
     const current = workspace([project]);
     current.sessions.push(createSession({ id: "current", projectId: "p1", intention: "Current work" }, T0));
     const incoming = structuredClone(current);
+    incoming.projects[0].updatedAt = new Date(T1).toISOString();
     incoming.sessions[0] = createSession({ id: "incoming", projectId: "p1", intention: "Backup work" }, T1);
 
     const replacement = buildImportPreview(incoming, current, T1);

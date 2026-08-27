@@ -521,6 +521,29 @@ describe("validateImportCandidate", () => {
     assert.match(errors, /检查点早于所属会话开始：ending-early/);
   });
 
+  test("rejects workspace, project, and record dates outside their causal windows", () => {
+    const createdAt = "2026-08-28T02:00:00.000Z";
+    const updatedAt = "2026-08-28T04:00:00.000Z";
+    const state = createEmptyState(NOW);
+    state.meta.createdAt = updatedAt;
+    state.meta.updatedAt = createdAt;
+    const project = createProject({ id: "p1", createdAt, updatedAt, lastOpenedAt: "2026-08-28T05:00:00.000Z" }, NOW);
+    project.descriptionUpdatedAt = "2026-08-28T01:00:00.000Z";
+    state.projects.push(project);
+    state.sessions.push(createSession({ id: "s1", projectId: "p1", status: "completed", startedAt: createdAt, endedAt: "2026-08-28T05:00:00.000Z" }, NOW));
+    state.crumbs.push(createCrumb({ id: "c1", projectId: "p1", createdAt: "2026-08-28T01:00:00.000Z" }, NOW));
+    state.checkpoints.push(createCheckpoint({ id: "cp1", projectId: "p1", createdAt: "2026-08-28T05:00:00.000Z" }, NOW));
+
+    const errors = validateImportCandidate(state).join("；");
+
+    assert.match(errors, /工作区更新时间早于创建时间/);
+    assert.match(errors, /项目时间晚于更新时间：p1.lastOpenedAt/);
+    assert.match(errors, /项目时间早于创建时间：p1.descriptionUpdatedAt/);
+    assert.match(errors, /会话时间超出项目生命周期：s1.endedAt/);
+    assert.match(errors, /面包屑时间超出项目生命周期：c1.createdAt/);
+    assert.match(errors, /检查点时间超出项目生命周期：cp1.createdAt/);
+  });
+
   test("rejects pathological record counts before traversing individual records", () => {
     const state = createEmptyState(NOW);
     state.crumbs = new Array(IMPORT_LIMITS.records + 1).fill({ id: "duplicate" });

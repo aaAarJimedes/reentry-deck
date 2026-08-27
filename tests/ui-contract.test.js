@@ -39,3 +39,9 @@ test("app destruction releases listeners, subscriptions, and toast timers", asyn
   assert.match(source, /for \(const timerId of this\.#toastTimers\.values\(\)\) window\.clearTimeout\(timerId\)/);
   assert.match(source, /this\.#store\.destroy\?\.\(\)/);
 });
+
+test("quick-dock continuation advances workspace time through the follow-up session", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /\}, followUp \? Date\.parse\(followUp\.startedAt\) : now\);/);
+});

@@ -235,6 +235,12 @@ export function validateImportCandidate(value) {
     validateText(errors, project, "description", "项目说明", IMPORT_LIMITS.projectDescription);
     validateText(errors, project, "nextAction", "项目下一步", IMPORT_LIMITS.nextAction);
     validateDates(errors, project, ["createdAt", "updatedAt", "lastOpenedAt", "archivedAt", "descriptionUpdatedAt", "nextActionUpdatedAt"], "项目", project.id);
+    if (isValidDate(project?.createdAt) && isValidDate(project?.updatedAt) && Date.parse(project.updatedAt) < Date.parse(project.createdAt)) {
+      addImportError(errors, `项目更新时间早于创建时间：${project.id ?? "未知"}`);
+    }
+    for (const field of ["lastOpenedAt", "archivedAt", "descriptionUpdatedAt", "nextActionUpdatedAt"]) {
+      validateProjectDateWindow(errors, project, field);
+    }
   }
   for (const session of value.sessions) {
     if (typeof session?.id !== "string" || !session.id) addImportError(errors, "存在无效的会话 ID");
@@ -251,6 +257,7 @@ export function validateImportCandidate(value) {
     if (session?.status === "active" && projectsById.get(session.projectId)?.status === "archived") addImportError(errors, `归档项目不能包含活动会话：${session.id ?? "未知"}`);
     validateText(errors, session, "intention", "会话意图", IMPORT_LIMITS.sessionIntention);
     validateDates(errors, session, ["startedAt", "endedAt"], "会话", session.id);
+    validateRecordProjectWindow(errors, session, ["startedAt", "endedAt"], "会话", projectsById.get(session?.projectId));
     if (isValidDate(session?.startedAt) && isValidDate(session?.endedAt) && Date.parse(session.endedAt) < Date.parse(session.startedAt)) {
       addImportError(errors, `会话结束时间早于开始时间：${session.id ?? "未知"}`);
     }
@@ -279,6 +286,7 @@ export function validateImportCandidate(value) {
     if (crumb?.pinned !== undefined && typeof crumb.pinned !== "boolean") addImportError(errors, `面包屑置顶状态无效：${crumb.id ?? "未知"}`);
     validateText(errors, crumb, "text", "面包屑内容", IMPORT_LIMITS.crumbText);
     validateDates(errors, crumb, ["createdAt", "resolvedAt"], "面包屑", crumb.id);
+    validateRecordProjectWindow(errors, crumb, ["createdAt", "resolvedAt"], "面包屑", projectsById.get(crumb?.projectId));
     if (isValidDate(crumb?.createdAt) && isValidDate(crumb?.resolvedAt) && Date.parse(crumb.resolvedAt) < Date.parse(crumb.createdAt)) {
       addImportError(errors, `面包屑解决时间早于记录时间：${crumb.id ?? "未知"}`);
     }
@@ -302,6 +310,7 @@ export function validateImportCandidate(value) {
     validateText(errors, checkpoint, "openLoops", "检查点未决事项", IMPORT_LIMITS.openLoops);
     validateText(errors, checkpoint, "returnHint", "检查点复航提示", IMPORT_LIMITS.returnHint);
     validateDates(errors, checkpoint, ["createdAt"], "检查点", checkpoint.id);
+    validateRecordProjectWindow(errors, checkpoint, ["createdAt"], "检查点", projectsById.get(checkpoint?.projectId));
     const checkpointSession = sessionsById.get(checkpoint?.sessionId);
     if (checkpointSession?.status === "active") addImportError(errors, `活动会话不能包含结束检查点：${checkpointSession.id ?? "未知"}`);
     if (checkpointSession && isValidDate(checkpoint?.createdAt) && isValidDate(checkpointSession.startedAt) && Date.parse(checkpoint.createdAt) < Date.parse(checkpointSession.startedAt)) {
@@ -325,7 +334,28 @@ function validateMetadata(errors, meta) {
   }
   if (!meta) return;
   validateDates(errors, meta, ["createdAt", "updatedAt"], "元数据", "工作区");
+  if (isValidDate(meta.createdAt) && isValidDate(meta.updatedAt) && Date.parse(meta.updatedAt) < Date.parse(meta.createdAt)) {
+    addImportError(errors, "工作区更新时间早于创建时间");
+  }
   if (meta.revision !== undefined && (!Number.isSafeInteger(meta.revision) || meta.revision < 0)) addImportError(errors, "修订号无效");
+}
+
+function validateProjectDateWindow(errors, project, field) {
+  const value = project?.[field];
+  if (!isValidDate(value) || !isValidDate(project?.createdAt) || !isValidDate(project?.updatedAt)) return;
+  if (Date.parse(value) < Date.parse(project.createdAt)) addImportError(errors, `项目时间早于创建时间：${project.id ?? "未知"}.${field}`);
+  if (Date.parse(value) > Date.parse(project.updatedAt)) addImportError(errors, `项目时间晚于更新时间：${project.id ?? "未知"}.${field}`);
+}
+
+function validateRecordProjectWindow(errors, record, fields, label, project) {
+  if (!project || !isValidDate(project.createdAt) || !isValidDate(project.updatedAt)) return;
+  for (const field of fields) {
+    const value = record?.[field];
+    if (!isValidDate(value)) continue;
+    if (Date.parse(value) < Date.parse(project.createdAt) || Date.parse(value) > Date.parse(project.updatedAt)) {
+      addImportError(errors, `${label}时间超出项目生命周期：${record?.id ?? "未知"}.${field}`);
+    }
+  }
 }
 
 function validateSettings(errors, settings) {

@@ -1052,7 +1052,7 @@ export class ReentryApp {
           project.lastOpenedAt = followUp.startedAt;
           project.updatedAt = followUp.startedAt;
         }
-      }, now);
+      }, followUp ? Date.parse(followUp.startedAt) : now);
 
       this.#acknowledgedStaleSessions.delete(sessionId);
       this.#announce(continueAfter ? "旧会话已标记中断，并已开始接续会话" : "会话已快速停靠");
