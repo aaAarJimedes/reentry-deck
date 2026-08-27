@@ -107,6 +107,7 @@ export class ReentryApp {
   #toastTimers = new Map();
   #colorSchemeQuery = null;
   #colorSchemeListener = null;
+  #sessionHealthSignature = "none";
 
   constructor(root, store) {
     this.#root = root;
@@ -176,6 +177,10 @@ export class ReentryApp {
     const activeSession = state.sessions.find((item) => item.status === "active") ?? null;
     const activeProject = activeSession ? state.projects.find((item) => item.id === activeSession.projectId) : null;
     const theme = state.settings.theme ?? "system";
+    this.#sessionHealthSignature = sessionHealthSignature(
+      activeSession,
+      activeSession ? this.#acknowledgedStaleSessions.has(activeSession.id) : false
+    );
 
     document.documentElement.dataset.theme = theme;
     document.documentElement.dataset.reducedMotion = state.settings.reducedMotion ? "reduce" : "system";
@@ -1453,6 +1458,15 @@ export class ReentryApp {
     for (const timer of this.#root.querySelectorAll(".js-session-timer")) {
       timer.textContent = formatDuration(elapsedSeconds(timer.dataset.startedAt));
     }
+    const activeSession = this.#store.getState().sessions.find((item) => item.status === "active") ?? null;
+    const nextSignature = sessionHealthSignature(
+      activeSession,
+      activeSession ? this.#acknowledgedStaleSessions.has(activeSession.id) : false
+    );
+    if (nextSignature === this.#sessionHealthSignature) return;
+    const focusedControl = document.activeElement;
+    if (focusedControl && this.#root.contains(focusedControl) && focusedControl.matches?.("input, textarea, select")) return;
+    this.render({ preserveDialog: true });
   }
 
   #toast(message, kind = "success") {
@@ -1501,6 +1515,12 @@ export class ReentryApp {
       // Persistence is a best-effort enhancement; export remains the reliable backup path.
     }
   }
+}
+
+function sessionHealthSignature(session, acknowledged, now = Date.now()) {
+  if (!session) return "none";
+  const health = inspectSession(session, now);
+  return `${session.id}|${health.staleReasons.join(",")}|${acknowledged ? "ack" : "pending"}`;
 }
 
 export function parseRoute(hash) {
