@@ -83,6 +83,8 @@ export class ReentryApp {
   #collectionLimits = new Map();
   #searchIndexState = null;
   #searchIndex = null;
+  #toasts = [];
+  #toastSequence = 0;
 
   constructor(root, store) {
     this.#root = root;
@@ -144,7 +146,7 @@ export class ReentryApp {
       </div>
       ${activeSession && activeProject && !(route.name === "project" && route.id === activeProject.id) ? this.#renderSessionDock(activeSession, activeProject) : ""}
       ${this.#renderDialogs(currentProject, activeSession)}
-      <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="false"></div>
+      <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="false">${this.#renderToasts()}</div>
       <div class="sr-only" id="live-region" aria-live="polite"></div>
     `;
     this.#root.setAttribute("aria-busy", "false");
@@ -1250,14 +1252,31 @@ export class ReentryApp {
   }
 
   #toast(message, kind = "success") {
+    const toast = {
+      id: `toast-${++this.#toastSequence}`,
+      message: String(message),
+      kind,
+      expiresAt: Date.now() + 3_600
+    };
+    this.#toasts.push(toast);
     const region = this.#root.querySelector("#toast-region");
-    if (!region) return;
-    const toast = document.createElement("div");
-    toast.className = "toast";
-    toast.dataset.kind = kind;
-    toast.innerHTML = `${icon(kind === "error" ? "alert" : "check")}<span>${escapeHTML(message)}</span>`;
-    region.append(toast);
-    window.setTimeout(() => toast.remove(), 3600);
+    if (region) region.insertAdjacentHTML("beforeend", this.#renderToast(toast));
+    window.setTimeout(() => this.#dismissToast(toast.id), 3_600);
+  }
+
+  #renderToasts() {
+    const now = Date.now();
+    this.#toasts = this.#toasts.filter((toast) => toast.expiresAt > now);
+    return this.#toasts.map((toast) => this.#renderToast(toast)).join("");
+  }
+
+  #renderToast(toast) {
+    return `<div class="toast" data-toast-id="${attr(toast.id)}" data-kind="${attr(toast.kind)}">${icon(toast.kind === "error" ? "alert" : "check")}<span>${escapeHTML(toast.message)}</span></div>`;
+  }
+
+  #dismissToast(id) {
+    this.#toasts = this.#toasts.filter((toast) => toast.id !== id);
+    this.#root.querySelector(`[data-toast-id="${CSS.escape(id)}"]`)?.remove();
   }
 
   #announce(message) {
