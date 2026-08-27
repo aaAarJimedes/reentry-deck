@@ -10,8 +10,8 @@
 src/ui/app.js
   页面投影、事件委托、对话框、键盘与焦点
         ↓
-src/core/session.js + reentry.js + search.js + insights.js + import-preview.js
-  会话不变量、应急停靠、复航卡、排序、搜索、链接识别、工作区洞察与导入差异纯函数
+src/core/session.js + reentry.js + search.js + insights.js + import-preview.js + timeline.js
+  会话不变量、应急停靠、复航卡、排序、搜索、链接识别、工作区洞察、导入差异与时间线窗口纯函数
         ↓
 src/core/model.js
   工厂、归一化、导入前校验和数据枚举
@@ -36,6 +36,7 @@ src/core/store.js
 10. 工作区统计只使用显式时间戳；异常长单段会话的计入上限为 12 小时，界面必须披露这一边界。
 11. 撤销从滚动快照恢复，但新修订号必须高于当前状态；恢复写入仍接受同一套多标签冲突保护。
 12. 导入预览必须先完成严格校验且不写入；确认时若当前状态已变化，必须重算差异并要求再次核对。
+13. 项目页只渲染最近 30 条轨迹；展开以固定批次增加，但全量记录始终参与搜索、统计和备份。
 
 ## 数据持久化
 

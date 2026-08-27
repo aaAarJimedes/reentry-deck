@@ -9,6 +9,7 @@ import { buildAttentionDeck, buildWeeklyReview } from "../core/insights.js";
 import { buildReentryCard, getProjectStats, rankProjectsForReentry } from "../core/reentry.js";
 import { getProjectResources, searchWorkspace } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession } from "../core/session.js";
+import { TIMELINE_PAGE_SIZE, buildTimelineWindow } from "../core/timeline.js";
 import { elapsedSeconds, formatDateTime, formatDuration, formatRelative } from "../core/time.js";
 
 const PROJECT_STATUS_LABELS = {
@@ -72,6 +73,7 @@ export class ReentryApp {
   #noticeQueue = [];
   #acknowledgedStaleSessions = new Set();
   #pendingImport = null;
+  #timelineLimits = new Map();
 
   constructor(root, store) {
     this.#root = root;
@@ -302,7 +304,7 @@ export class ReentryApp {
     const stats = getProjectStats(state, project.id);
     const isRunning = activeSession?.projectId === project.id;
     const anotherRunning = activeSession && !isRunning;
-    const crumbs = state.crumbs.filter((item) => item.projectId === project.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const timeline = buildTimelineWindow(state.crumbs, project.id, this.#timelineLimits.get(project.id));
 
     return `
       <section class="project-header">
@@ -326,8 +328,8 @@ export class ReentryApp {
         </aside>
       </div>
       <section class="panel" style="margin-top:18px">
-        <div class="panel-header inline-between"><div><h2>工作轨迹</h2><p>最近的记录在上方；每一条都可以成为下次复航的线索。</p></div><span class="soft-pill">${crumbs.length} 条</span></div>
-        <div class="panel-body">${crumbs.length ? `<div class="timeline">${crumbs.map((crumb) => this.#renderCrumb(crumb)).join("")}</div>` : `<div class="timeline-empty">还没有轨迹。开始会话后，随手留下第一个发现或决定。</div>`}</div>
+        <div class="panel-header inline-between"><div><h2>工作轨迹</h2><p>最近的记录在上方；每一条都可以成为下次复航的线索。</p></div><span class="soft-pill">${timeline.total} 条</span></div>
+        <div class="panel-body">${this.#renderTimeline(timeline, project.id, true, "还没有轨迹。开始会话后，随手留下第一个发现或决定。")}</div>
       </section>`;
   }
 
@@ -433,7 +435,7 @@ export class ReentryApp {
   #renderCrumb(crumb, interactive = true) {
     const signal = ["question", "blocker"].includes(crumb.type);
     return `
-      <article class="timeline-item" data-resolved="${Boolean(crumb.resolvedAt)}">
+      <article class="timeline-item" data-resolved="${Boolean(crumb.resolvedAt)}" data-crumb-id="${attr(crumb.id)}" tabindex="-1">
         <span class="timeline-dot" data-type="${attr(crumb.type)}" aria-hidden="true"></span>
         <div class="timeline-content">
           <div class="timeline-meta"><span class="crumb-type">${CRUMB_LABELS[crumb.type] ?? "记录"}</span><time datetime="${attr(crumb.createdAt)}">${formatRelative(crumb.createdAt)} · ${formatDateTime(crumb.createdAt)}</time>${crumb.resolvedAt ? `<span class="resolved-pill">已解决 · ${formatRelative(crumb.resolvedAt)}</span>` : ""}${crumb.pinned ? `<span title="已置顶">${icon("pin")}</span>` : ""}</div>
@@ -441,6 +443,12 @@ export class ReentryApp {
           ${signal && interactive ? `<button class="crumb-resolution" type="button" data-action="toggle-crumb-resolution" data-resolution-context="timeline" data-crumb-id="${attr(crumb.id)}" aria-pressed="${Boolean(crumb.resolvedAt)}">${crumb.resolvedAt ? "重新打开" : "标记已解决"}</button>` : ""}
         </div>
       </article>`;
+  }
+
+  #renderTimeline(timeline, projectId, interactive, emptyText) {
+    if (!timeline.total) return `<div class="timeline-empty">${escapeHTML(emptyText)}</div>`;
+    const timelineId = `timeline-${encodeURIComponent(projectId)}`;
+    return `<div class="timeline-window"><div class="timeline" id="${attr(timelineId)}">${timeline.items.map((crumb) => this.#renderCrumb(crumb, interactive)).join("")}</div>${timeline.remaining ? `<div class="timeline-more"><p>已显示 ${timeline.shown} / ${timeline.total} 条，较早记录按需载入。</p><button class="secondary-button" type="button" data-action="show-more-timeline" data-project-id="${attr(projectId)}" aria-controls="${attr(timelineId)}">再显示 ${Math.min(TIMELINE_PAGE_SIZE, timeline.remaining)} 条<span class="sr-only">，还剩 ${timeline.remaining} 条未显示</span></button></div>` : ""}</div>`;
   }
 
   #renderEvidenceList(items, emptyText, resolvable = false) {
@@ -460,14 +468,14 @@ export class ReentryApp {
 
   #renderArchivedProject(state, project) {
     const card = buildReentryCard(state, project.id);
-    const crumbs = state.crumbs.filter((item) => item.projectId === project.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const timeline = buildTimelineWindow(state.crumbs, project.id, this.#timelineLimits.get(project.id));
     return `
       <section class="project-header">
         <div><p class="eyebrow">已归档</p><h1>${escapeHTML(project.title)}</h1><p class="lede">${escapeHTML(project.description || card.summary)}</p><div class="project-meta"><span>归档于 ${formatDateTime(project.archivedAt ?? project.updatedAt)}</span><span class="separator">•</span><span>所有历史记录保持只读</span></div></div>
         <div class="project-header-actions"><button class="primary-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}">恢复到暂泊状态</button></div>
       </section>
       <section class="panel reentry-card"><div class="panel-header"><h2>最后的复航现场</h2><p>恢复项目后可从这个检查点继续。</p></div><div class="panel-body"><div class="reentry-section"><span class="reentry-label">最后状态</span><p class="reentry-value">${textBlock(card.summary)}</p></div><div class="reentry-section"><span class="reentry-label">下一动作</span><p class="reentry-value next-action">${textBlock(card.nextAction)}</p></div></div></section>
-      <section class="panel" style="margin-top:18px"><div class="panel-header inline-between"><div><h2>历史轨迹</h2><p>归档项目不会接受新的会话或记录。</p></div><span class="soft-pill">${crumbs.length} 条</span></div><div class="panel-body">${crumbs.length ? `<div class="timeline">${crumbs.map((crumb) => this.#renderCrumb(crumb, false)).join("")}</div>` : '<div class="timeline-empty">没有历史轨迹。</div>'}</div></section>`;
+      <section class="panel" style="margin-top:18px"><div class="panel-header inline-between"><div><h2>历史轨迹</h2><p>归档项目不会接受新的会话或记录。</p></div><span class="soft-pill">${timeline.total} 条</span></div><div class="panel-body">${this.#renderTimeline(timeline, project.id, false, "没有历史轨迹。")}</div></section>`;
   }
 
   #renderSettings(state) {
@@ -616,6 +624,7 @@ export class ReentryApp {
     if (action === "choose-import") this.#root.querySelector("#import-file")?.click();
     if (action === "set-theme") this.#setTheme(control.dataset.theme);
     if (action === "toggle-crumb-resolution") this.#toggleCrumbResolution(control.dataset.crumbId, control.dataset.resolutionContext);
+    if (action === "show-more-timeline") this.#showMoreTimeline(control.dataset.projectId);
   }
 
   #onSubmit(event) {
@@ -925,6 +934,18 @@ export class ReentryApp {
     } catch (error) {
       this.#toast(error.message, "error");
     }
+  }
+
+  #showMoreTimeline(projectId) {
+    const currentLimit = this.#timelineLimits.get(projectId) ?? TIMELINE_PAGE_SIZE;
+    const current = buildTimelineWindow(this.#store.getState().crumbs, projectId, currentLimit);
+    if (!current.remaining) return;
+    const expanded = buildTimelineWindow(this.#store.getState().crumbs, projectId, current.nextLimit);
+    const firstNewItem = expanded.items[current.shown];
+    this.#timelineLimits.set(projectId, expanded.shown);
+    if (firstNewItem) this.#focusSelector = `[data-crumb-id="${CSS.escape(firstNewItem.id)}"]`;
+    this.render();
+    this.#announce(`已显示 ${expanded.shown} 条轨迹，还剩 ${expanded.remaining} 条`);
   }
 
   #loadSample() {

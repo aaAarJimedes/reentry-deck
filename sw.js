@@ -3,7 +3,7 @@
 // The build id provides a clean release boundary. Runtime requests also use a
 // network-first strategy, so a forgotten bump cannot strand online clients on
 // an old shell; the cached release remains the complete offline fallback.
-const BUILD_ID = "2026-08-28.9";
+const BUILD_ID = "2026-08-28.10";
 const CACHE_PREFIX = "reentry-deck-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 
@@ -22,6 +22,7 @@ const SHELL_PATHS = Object.freeze([
   "./src/core/reentry.js",
   "./src/core/search.js",
   "./src/core/session.js",
+  "./src/core/timeline.js",
   "./src/core/time.js"
 ]);
 

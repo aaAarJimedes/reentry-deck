@@ -45,6 +45,7 @@ describe("public path resolution", () => {
     assert.equal(resolvePublicFile("/src/core/search.js", projectRoot).path, resolve(projectRoot, "src/core/search.js"));
     assert.equal(resolvePublicFile("/src/core/insights.js", projectRoot).path, resolve(projectRoot, "src/core/insights.js"));
     assert.equal(resolvePublicFile("/src/core/import-preview.js", projectRoot).path, resolve(projectRoot, "src/core/import-preview.js"));
+    assert.equal(resolvePublicFile("/src/core/timeline.js", projectRoot).path, resolve(projectRoot, "src/core/timeline.js"));
     for (const path of ["/.git/config", "/package.json", "/tests/model.test.js", "/tools/server.mjs", "/missing.js"]) {
       assert.equal(resolvePublicFile(path, projectRoot).error, 404);
     }

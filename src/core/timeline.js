@@ -1,0 +1,28 @@
+export const TIMELINE_PAGE_SIZE = 30;
+
+export function buildTimelineWindow(crumbs, projectId, limit = TIMELINE_PAGE_SIZE) {
+  const safeCrumbs = Array.isArray(crumbs) ? crumbs : [];
+  const safeLimit = Number.isSafeInteger(limit) && limit > 0 ? limit : TIMELINE_PAGE_SIZE;
+  const ordered = safeCrumbs
+    .map((crumb, index) => ({ crumb, index }))
+    .filter(({ crumb }) => crumb?.projectId === projectId)
+    .sort((left, right) => {
+      const timeDifference = sortableTime(right.crumb?.createdAt) - sortableTime(left.crumb?.createdAt);
+      return timeDifference || left.index - right.index;
+    })
+    .map(({ crumb }) => crumb);
+  const shown = Math.min(safeLimit, ordered.length);
+
+  return {
+    items: ordered.slice(0, shown),
+    total: ordered.length,
+    shown,
+    remaining: ordered.length - shown,
+    nextLimit: Math.min(ordered.length, shown + TIMELINE_PAGE_SIZE)
+  };
+}
+
+function sortableTime(value) {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
