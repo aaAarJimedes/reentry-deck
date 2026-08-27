@@ -508,7 +508,7 @@ export class ReentryApp {
     return `
       <section class="panel resource-panel">
         <div class="panel-header"><h2>复航资源</h2><p>从现有记录中识别，只打开 HTTP(S) 链接。</p></div>
-        <div class="panel-body"><ul>${resources.map((resource) => `<li><a href="${attr(resource.url)}" target="_blank" rel="noopener noreferrer">${icon("external")}<span><strong>${escapeHTML(resource.label)}</strong><small>${escapeHTML(sourceLabels[resource.sourceType] ?? "记录")} · ${formatDateTime(resource.createdAt)}</small></span></a></li>`).join("")}</ul></div>
+        <div class="panel-body"><ul>${resources.map((resource) => `<li><a href="${attr(resource.url)}" target="_blank" rel="noopener noreferrer" aria-label="在新标签页打开 ${attr(resource.label)}">${icon("external")}<span><strong>${escapeHTML(resource.label)}</strong><small>${escapeHTML(sourceLabels[resource.sourceType] ?? "记录")} · ${formatDateTime(resource.createdAt)}</small></span></a></li>`).join("")}</ul></div>
       </section>`;
   }
 

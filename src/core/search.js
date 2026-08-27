@@ -1,5 +1,7 @@
 const RESULT_LIMIT = 40;
 const RESOURCE_LIMIT = 20;
+const MAX_RESOURCE_URL_LENGTH = 2_048;
+const UNSAFE_URL_CHARACTERS = /[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/u;
 
 export function searchWorkspace(state, query, options = {}) {
   return searchWorkspaceIndex(buildWorkspaceSearchIndex(state), query, options);
@@ -74,7 +76,17 @@ export function extractHttpLinks(text, limit = RESOURCE_LIMIT) {
     const candidate = rawMatch.replace(/[\])},.;!?，。；！？）】》]+$/u, "");
     try {
       const url = new URL(candidate);
-      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) continue;
+      const decodedTarget = decodeURIComponent(`${url.pathname}${url.search}`);
+      if (
+        candidate.length > MAX_RESOURCE_URL_LENGTH
+        || url.href.length > MAX_RESOURCE_URL_LENGTH
+        || UNSAFE_URL_CHARACTERS.test(candidate)
+        || UNSAFE_URL_CHARACTERS.test(decodedTarget)
+        || !["http:", "https:"].includes(url.protocol)
+        || !url.hostname
+        || url.username
+        || url.password
+      ) continue;
       url.hash = "";
       if (seen.has(url.href)) continue;
       seen.add(url.href);

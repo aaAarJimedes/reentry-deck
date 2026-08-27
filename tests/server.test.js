@@ -66,6 +66,10 @@ describe("local HTTP server", () => {
     assert.equal(response.status, 200);
     assert.match(response.headers["content-type"], /^text\/html/);
     assert.match(response.body, /复航台/);
+    assert.match(response.headers["content-security-policy"], /object-src 'none'/);
+    assert.equal(response.headers["cross-origin-resource-policy"], "same-origin");
+    assert.equal(response.headers["permissions-policy"], "camera=(), microphone=(), geolocation=()");
+    assert.equal(response.headers["x-frame-options"], "DENY");
   });
 
   test("malformed URLs return 400 and do not terminate the server", async () => {

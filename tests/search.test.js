@@ -76,12 +76,14 @@ test("a 50,000-record index only materializes matching results", () => {
 });
 
 test("extractHttpLinks accepts only clean HTTP resources and removes prose punctuation and fragments", () => {
-  const links = extractHttpLinks("见 https://example.com/docs?q=1#part，备用 http://localhost:8080/a). 重复 https://example.com/docs?q=1#other； javascript:alert(1) https://user:pw@example.com/x");
+  const links = extractHttpLinks("见 https://example.com/docs?q=1#part，备用 http://localhost:8080/a). 重复 https://example.com/docs?q=1#other； javascript:alert(1) https://user:pw@example.com/x https://example.com/%00hidden https://example.com/%E2%80%AEtxt");
   assert.deepEqual(links, [
     { url: "https://example.com/docs?q=1", host: "example.com", label: "example.com/docs" },
     { url: "http://localhost:8080/a", host: "localhost:8080", label: "localhost:8080/a" }
   ]);
   assert.deepEqual(extractHttpLinks("https://[broken"), []);
+  assert.deepEqual(extractHttpLinks(`https://example.com/${"a".repeat(2_049)}`), []);
+  assert.deepEqual(extractHttpLinks("https://example.com/\u202Etxt"), []);
   assert.deepEqual(extractHttpLinks("https://example.com", 0), []);
 });
 
