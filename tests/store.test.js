@@ -410,6 +410,23 @@ describe("AppStore updates and persistence", () => {
     assert.deepEqual(store.getState().projects.map((item) => item.id), ["current"]);
   });
 
+  test("rejects a forward external revision whose workspace time moves backward", () => {
+    const storage = new MemoryStorage();
+    const current = stateWithProject("current", "Current");
+    current.meta.updatedAt = new Date(T2).toISOString();
+    storage.setItem(STORAGE_KEY, JSON.stringify(current));
+    const store = new AppStore(storage, T2, null);
+    const before = store.getState();
+    const timeRollback = stateWithProject("rollback", "Time rollback");
+    timeRollback.meta.revision = before.meta.revision + 1;
+    timeRollback.meta.updatedAt = new Date(T1).toISOString();
+    storage.setItem(STORAGE_KEY, JSON.stringify(timeRollback));
+
+    assert.equal(store.refreshFromStorage(T2), false);
+    assert.strictEqual(store.getState(), before);
+    assert.match(store.notices.at(-1), /外部更新时间倒退/);
+  });
+
   test("external primary-key removal becomes a monotonic empty revision", () => {
     const storage = new MemoryStorage();
     storage.setItem(STORAGE_KEY, JSON.stringify(stateWithProject("current", "Current")));

@@ -2,7 +2,7 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.33.0";
+export const APP_VERSION = "0.34.0";
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
 export class AppStore {
@@ -65,6 +65,9 @@ export class AppStore {
         next = parseSavedState(current, now);
         if (next.meta.revision <= this.#state.meta.revision) {
           throw new Error(`外部修订号未前进（当前 ${this.#state.meta.revision}，收到 ${next.meta.revision}）`);
+        }
+        if (Date.parse(next.meta.updatedAt) < Date.parse(this.#state.meta.updatedAt)) {
+          throw new Error(`外部更新时间倒退（当前 ${this.#state.meta.updatedAt}，收到 ${next.meta.updatedAt}）`);
         }
       } else {
         next = createEmptyState(isoAtOrAfter(now, this.#state.meta.updatedAt));
