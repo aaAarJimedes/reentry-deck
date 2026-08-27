@@ -3,7 +3,7 @@
 // The build id provides a clean release boundary. Runtime requests also use a
 // network-first strategy, so a forgotten bump cannot strand online clients on
 // an old shell; the cached release remains the complete offline fallback.
-const BUILD_ID = "2026-08-28.27";
+const BUILD_ID = "2026-08-28.28";
 const CACHE_PREFIX = "reentry-deck-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 
@@ -54,24 +54,10 @@ async function precacheShell() {
       })
   );
 
-  // Fetch every resource before writing any of them. If a deployment is
-  // incomplete, installation fails and the previous worker remains active.
-  const downloaded = await Promise.all(
-    requests.map(async (request) => {
-      const response = await fetch(request);
-      if (!isUsableResponse(response)) {
-        throw new Error(
-          `Unable to precache ${request.url}: HTTP ${response.status}`
-        );
-      }
-      return { request, response };
-    })
-  );
-
+  // Cache.addAll performs the request batch atomically: an incomplete
+  // deployment or a failed cache write cannot leave a half-built shell.
   const cache = await caches.open(CACHE_NAME);
-  await Promise.all(
-    downloaded.map(({ request, response }) => cache.put(request, response))
-  );
+  await cache.addAll(requests);
 }
 
 self.addEventListener("install", (event) => {
