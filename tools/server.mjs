@@ -1,4 +1,4 @@
-import { createReadStream, statSync } from "node:fs";
+import { closeSync, createReadStream, fstatSync, openSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -76,14 +76,18 @@ export function createRequestHandler(root = defaultRoot) {
       sendText(response, resolved.error, resolved.error === 400 ? "Bad request" : "Not found", {}, request.method === "HEAD");
       return;
     }
+    let descriptor = null;
     let fileStats;
     try {
-      fileStats = statSync(resolved.path);
+      descriptor = openSync(resolved.path, "r");
+      fileStats = fstatSync(descriptor);
     } catch {
+      closeDescriptor(descriptor);
       sendText(response, 404, "Not found", {}, request.method === "HEAD");
       return;
     }
     if (!fileStats.isFile()) {
+      closeDescriptor(descriptor);
       sendText(response, 404, "Not found", {}, request.method === "HEAD");
       return;
     }
@@ -93,9 +97,29 @@ export function createRequestHandler(root = defaultRoot) {
       "Cache-Control": resolved.path.endsWith("sw.js") ? "no-cache" : "no-store",
       "Content-Length": fileStats.size
     }));
-    if (request.method === "HEAD") response.end();
-    else createReadStream(resolved.path).on("error", () => response.destroy()).pipe(response);
+    if (request.method === "HEAD" || fileStats.size === 0) {
+      closeDescriptor(descriptor);
+      response.end();
+      return;
+    }
+    const stream = createReadStream(resolved.path, {
+      fd: descriptor,
+      autoClose: true,
+      start: 0,
+      end: fileStats.size - 1
+    });
+    response.once("close", () => stream.destroy());
+    stream.on("error", () => response.destroy()).pipe(response);
   };
+}
+
+function closeDescriptor(descriptor) {
+  if (!Number.isInteger(descriptor)) return;
+  try {
+    closeSync(descriptor);
+  } catch {
+    // The response path already owns the user-visible error.
+  }
 }
 
 export function createAppServer(options = {}) {

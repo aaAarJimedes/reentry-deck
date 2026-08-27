@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { request } from "node:http";
-import { resolve } from "node:path";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { after, before, describe, test } from "node:test";
 
 import { createAppServer, parseServerPort, resolvePublicFile } from "../tools/server.mjs";
@@ -138,5 +140,33 @@ describe("local HTTP server", () => {
     });
     assert.equal(response.statusCode, 404);
     await new Promise((resolveClose) => isolated.close(resolveClose));
+  });
+
+  test("zero-byte public files use a complete descriptor-safe response", async () => {
+    const root = await mkdtemp(join(tmpdir(), "reentry-deck-server-"));
+    const isolated = createAppServer({ root });
+    try {
+      await writeFile(join(root, "index.html"), "");
+      await new Promise((resolveListen) => isolated.listen(0, "127.0.0.1", resolveListen));
+      const isolatedPort = isolated.address().port;
+      const fetchEmpty = (method) => new Promise((resolveResponse, reject) => {
+        const req = request({ host: "127.0.0.1", port: isolatedPort, path: "/", method }, (res) => {
+          const chunks = [];
+          res.on("data", (chunk) => chunks.push(chunk));
+          res.on("end", () => resolveResponse({ status: res.statusCode, length: res.headers["content-length"], body: Buffer.concat(chunks) }));
+        });
+        req.on("error", reject);
+        req.end();
+      });
+      for (const method of ["GET", "HEAD"]) {
+        const response = await fetchEmpty(method);
+        assert.equal(response.status, 200);
+        assert.equal(response.length, "0");
+        assert.equal(response.body.length, 0);
+      }
+    } finally {
+      if (isolated.listening) await new Promise((resolveClose) => isolated.close(resolveClose));
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
