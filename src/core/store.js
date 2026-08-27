@@ -2,7 +2,7 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.43.0";
+export const APP_VERSION = "0.44.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 
@@ -98,7 +98,7 @@ export class AppStore {
     recipe(next);
     next.meta.updatedAt = isoAtOrAfter(now, this.#state.meta.updatedAt);
     next.meta.revision = Math.max(next.meta.revision, this.#state.meta.revision) + 1;
-    const errors = validateState(next);
+    const errors = validateImportCandidate(next);
     if (errors.length) throw new Error(`无法保存：${errors.join("；")}`);
     this.#persist(next);
     this.#state = next;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { createProject } from "../src/core/model.js";
+import { IMPORT_LIMITS, createCrumb, createProject } from "../src/core/model.js";
 import {
   APP_VERSION,
   AppStore,
@@ -348,6 +348,41 @@ describe("AppStore updates and persistence", () => {
     assert.equal(storage.getItem(STORAGE_KEY), null);
   });
 
+  test("local updates enforce the same strict content, reference, and time boundaries as imports", () => {
+    const cases = [
+      {
+        mutate(draft) {
+          draft.projects[0].description = "x".repeat(IMPORT_LIMITS.projectDescription + 1);
+        },
+        pattern: /项目说明超过 800 字符上限/
+      },
+      {
+        mutate(draft) {
+          draft.crumbs.push(createCrumb({ id: "orphan", projectId: "missing", text: "lost" }, T1));
+        },
+        pattern: /面包屑引用了不存在的项目：orphan/
+      },
+      {
+        mutate(draft) {
+          draft.projects[0].updatedAt = "2026-08-28T00:00:00Z";
+        },
+        pattern: /项目时间无效：p1.updatedAt/
+      }
+    ];
+
+    for (const { mutate, pattern } of cases) {
+      const storage = new MemoryStorage();
+      const store = new AppStore(storage, T0, null);
+      store.update((draft) => draft.projects.push(createProject({ id: "p1" }, T0)), T0);
+      const beforeState = store.getState();
+      const beforeStorage = storage.getItem(STORAGE_KEY);
+
+      assert.throws(() => store.update(mutate, T1), pattern);
+      assert.strictEqual(store.getState(), beforeState);
+      assert.equal(storage.getItem(STORAGE_KEY), beforeStorage);
+    }
+  });
+
   test("a current-value write failure restores serialized data and does not commit or emit", () => {
     class FailNextCurrentWriteStorage extends MemoryStorage {
       failNextCurrentWrite = false;
@@ -507,7 +542,7 @@ describe("AppStore updates and persistence", () => {
     }
     const storage = new BackupQuotaStorage();
     const store = new AppStore(storage, T0, null);
-    store.update((draft) => draft.projects.push(createProject({ id: "large", description: "x".repeat(2000) }, T1)), T1);
+    store.update((draft) => draft.projects.push(createProject({ id: "large", description: "x".repeat(IMPORT_LIMITS.projectDescription) }, T1)), T1);
 
     const next = store.update((draft) => { draft.projects[0].title = "Still writable"; }, T2);
 
