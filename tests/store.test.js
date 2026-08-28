@@ -1261,13 +1261,19 @@ describe("AppStore replacement, snapshots, and reset", () => {
   test("exportSnapshot returns metadata and a detached state copy", () => {
     const store = new AppStore(new MemoryStorage(), T0);
     store.update((draft) => draft.projects.push(createProject({ id: "p1", title: "Original" }, T0)), T0);
-
-    const snapshot = store.exportSnapshot();
+    const nativeStructuredClone = globalThis.structuredClone;
+    globalThis.structuredClone = () => { throw new Error("workspace clone must not be used"); };
+    let snapshot;
+    try {
+      snapshot = store.exportSnapshot(T2);
+    } finally {
+      globalThis.structuredClone = nativeStructuredClone;
+    }
 
     assert.equal(snapshot.format, "reentry-deck-backup");
     assert.equal(snapshot.appVersion, APP_VERSION);
     assert.match(snapshot.checksum, /^fnv1a32:[0-9a-f]{8}$/u);
-    assert.equal(Number.isFinite(Date.parse(snapshot.exportedAt)), true);
+    assert.equal(snapshot.exportedAt, new Date(T2).toISOString());
     assert.deepEqual(snapshot.data, store.getState());
     assert.notStrictEqual(snapshot.data, store.getState());
     assert.notStrictEqual(snapshot.data.projects, store.getState().projects);
