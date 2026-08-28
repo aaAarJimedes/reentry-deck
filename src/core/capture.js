@@ -2,6 +2,7 @@ import { CRUMB_TYPES, IMPORT_LIMITS, compactText, createCrumb, isoAtOrAfter } fr
 
 export const QUICK_CAPTURE_PROJECT_LIMIT = 40;
 export const QUICK_CAPTURE_QUERY_LIMIT = IMPORT_LIMITS.projectTitle;
+export const QUICK_CAPTURE_PREFERRED_ID_LIMIT = QUICK_CAPTURE_PROJECT_LIMIT;
 
 export function buildQuickCaptureProjectWindow(state, options = {}) {
   const queryInput = readQuickCaptureQuery(options.query);
@@ -14,7 +15,9 @@ export function buildQuickCaptureProjectWindow(state, options = {}) {
     ? Math.min(requestedLimit, QUICK_CAPTURE_PROJECT_LIMIT)
     : QUICK_CAPTURE_PROJECT_LIMIT;
   const preferredRanks = new Map();
-  for (const id of Array.isArray(options.preferredIds) ? options.preferredIds : []) {
+  const preferredIds = Array.isArray(options.preferredIds) ? options.preferredIds : [];
+  for (let index = 0; index < preferredIds.length && index < QUICK_CAPTURE_PREFERRED_ID_LIMIT; index += 1) {
+    const id = preferredIds[index];
     if (typeof id === "string" && id && !preferredRanks.has(id)) preferredRanks.set(id, preferredRanks.size);
   }
 

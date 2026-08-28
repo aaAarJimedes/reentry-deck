@@ -3,6 +3,7 @@ import { describe, test } from "node:test";
 
 import {
   QUICK_CAPTURE_PROJECT_LIMIT,
+  QUICK_CAPTURE_PREFERRED_ID_LIMIT,
   QUICK_CAPTURE_QUERY_LIMIT,
   buildQuickCaptureProjectWindow,
   prepareQuickCapture,
@@ -169,5 +170,24 @@ describe("buildQuickCaptureProjectWindow", () => {
     assert.equal(window.matched, 0);
     assert.equal(window.query, "");
     assert.equal(window.queryRejected, true);
+  });
+
+  test("bounds preferred context reads independently of the project collection", () => {
+    const state = createEmptyState(NOW);
+    state.projects.push(
+      createProject({ id: "ordinary", title: "Ordinary", lastOpenedAt: "2026-08-28T03:00:00.000Z" }, NOW),
+      createProject({ id: "preferred", title: "Preferred", lastOpenedAt: "2026-08-20T00:00:00.000Z" }, NOW)
+    );
+    const preferredIds = new Array(QUICK_CAPTURE_PREFERRED_ID_LIMIT).fill(null);
+    preferredIds[QUICK_CAPTURE_PREFERRED_ID_LIMIT - 1] = "preferred";
+    Object.defineProperty(preferredIds, QUICK_CAPTURE_PREFERRED_ID_LIMIT, {
+      get() { throw new Error("preferred context window exceeded"); }
+    });
+    preferredIds.length = 50_000;
+
+    const window = buildQuickCaptureProjectWindow(state, { preferredIds });
+
+    assert.equal(window.items[0].id, "preferred");
+    assert.equal(window.items.length, 2);
   });
 });
