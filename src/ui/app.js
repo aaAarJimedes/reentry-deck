@@ -95,6 +95,7 @@ export class ReentryApp {
   #acknowledgedStaleSessions = new Set();
   #pendingImport = null;
   #pendingProjectEdit = null;
+  #pendingCheckpointSessionId = null;
   #importRequestGate = createLatestRequestGate();
   #importReadController = null;
   #clipboardRequestGate = createLatestRequestGate();
@@ -129,6 +130,7 @@ export class ReentryApp {
       if (event.target.id === "import-preview-dialog") this.#pendingImport = null;
       if (event.target.id === "archive-confirm-dialog") this.#pendingArchiveId = null;
       if (event.target.id === "edit-project-dialog") this.#pendingProjectEdit = null;
+      if (event.target.id === "checkpoint-dialog") this.#pendingCheckpointSessionId = null;
     }, listenerOptions);
     window.addEventListener("hashchange", () => {
       this.#focusSelector = "#main-content";
@@ -157,6 +159,7 @@ export class ReentryApp {
     this.#clipboardRequestGate.invalidate();
     this.#pendingImport = null;
     this.#pendingProjectEdit = null;
+    this.#pendingCheckpointSessionId = null;
     this.#activeSession = null;
     this.#eventController.abort();
     this.#colorSchemeQuery?.removeEventListener?.("change", this.#colorSchemeListener);
@@ -851,7 +854,7 @@ export class ReentryApp {
     if (action === "confirm-import") this.#confirmImport();
     if (action === "run-command") this.#runCommand(control.dataset.command, control.closest("dialog"));
     if (action === "edit-project") this.#prepareProjectEditDialog();
-    if (action === "open-checkpoint") this.#openDialog("checkpoint-dialog");
+    if (action === "open-checkpoint") this.#prepareCheckpointDialog();
     if (action === "review-quick-checkpoint") this.#openDialog("quick-review-dialog");
     if (action === "start-session") this.#prepareSessionDialog(control.dataset.projectId);
     if (action === "quick-dock") this.#quickDock(control.dataset.sessionId, false);
@@ -1126,11 +1129,21 @@ export class ReentryApp {
     this.#toast(`已保存到“${projectTitle}”${linkedToActiveSession ? "的活动会话" : ""}${crumb.pinned ? "，并设为航标" : ""}。`);
   }
 
+  #prepareCheckpointDialog() {
+    const context = locateActiveSessionContext(this.#store.getState());
+    if (!context) throw new Error("没有活动会话，无法留下检查点。 ");
+    this.#pendingCheckpointSessionId = context.session.id;
+    this.#openDialog("checkpoint-dialog");
+  }
+
   #saveCheckpoint(data, form) {
+    const pendingSessionId = this.#pendingCheckpointSessionId;
+    if (!pendingSessionId) throw new Error("检查点上下文已失效，请重新打开表单。 ");
     const state = this.#store.getState();
     const context = locateActiveSessionContext(state);
     if (!context) throw new Error("活动会话已经结束。 ");
     const { session, sessionIndex, project, projectIndex } = context;
+    if (session.id !== pendingSessionId) throw new Error("活动会话在填写检查点期间已切换，请重新打开表单。 ");
     const checkpoint = createCheckpoint(
       { ...data, projectId: session.projectId, sessionId: session.id },
       isoAtOrAfter(Date.now(), session.startedAt, project?.updatedAt)
@@ -1153,6 +1166,7 @@ export class ReentryApp {
       currentProject.nextActionUpdatedAt = checkpoint.createdAt;
       currentProject.updatedAt = checkpoint.createdAt;
     });
+    this.#pendingCheckpointSessionId = null;
     form.closest("dialog")?.close();
     this.#announce("检查点已保存，会话已结束");
     this.#toast("现场已安全收拢，下次可以从这里复航。 ");
@@ -1540,6 +1554,7 @@ export class ReentryApp {
     if (dialog?.id === "import-preview-dialog") this.#pendingImport = null;
     if (dialog?.id === "archive-confirm-dialog") this.#pendingArchiveId = null;
     if (dialog?.id === "edit-project-dialog") this.#pendingProjectEdit = null;
+    if (dialog?.id === "checkpoint-dialog") this.#pendingCheckpointSessionId = null;
     dialog?.close();
   }
 

@@ -338,6 +338,20 @@ test("active capture and manual checkpoint transactions reuse validated context 
   }
 });
 
+test("checkpoint dialogs stay bound to the session that opened them", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const prepare = source.match(/#prepareCheckpointDialog\(\) \{([\s\S]*?)\n  \}\n\n  #saveCheckpoint/u)?.[1] ?? "";
+  const save = source.match(/#saveCheckpoint\(data, form\) \{([\s\S]*?)\n  \}\n\n  #reviewQuickCheckpoint/u)?.[1] ?? "";
+
+  assert.match(source, /if \(action === "open-checkpoint"\) this\.#prepareCheckpointDialog\(\)/u);
+  assert.match(prepare, /locateActiveSessionContext\(this\.#store\.getState\(\)\)/u);
+  assert.match(prepare, /this\.#pendingCheckpointSessionId = context\.session\.id/u);
+  assert.match(save, /const pendingSessionId = this\.#pendingCheckpointSessionId/u);
+  assert.match(save, /session\.id !== pendingSessionId/u);
+  assert.match(save, /this\.#pendingCheckpointSessionId = null/u);
+  assert.match(source, /dialog\?\.id === "checkpoint-dialog"\) this\.#pendingCheckpointSessionId = null/u);
+});
+
 test("quick docking reuses the core plan's active-context positions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const handler = source.match(/#quickDock\(sessionId, continueAfter\) \{([\s\S]*?)\n  \}\n\n  #editProject/u)?.[1] ?? "";
