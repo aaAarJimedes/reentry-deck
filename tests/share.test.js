@@ -279,6 +279,20 @@ describe("copyPlainText", () => {
     assert.deepEqual(writes, [COPY_TEXT_LIMIT]);
   });
 
+  test("rejects non-string payloads without invoking coercion hooks", async () => {
+    let conversions = 0;
+    const payload = {
+      toString() {
+        conversions += 1;
+        throw new Error("coercion must not run");
+      }
+    };
+
+    await assert.rejects(() => copyPlainText(payload, {}), /必须是字符串/u);
+    await assert.rejects(() => copyPlainText(null, {}), /必须是字符串/u);
+    assert.equal(conversions, 0);
+  });
+
   test("does not let fallback cleanup or focus restoration mask a successful copy", async () => {
     const result = await copyPlainText("brief", {
       clipboard: null,
