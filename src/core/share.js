@@ -1,6 +1,8 @@
 import { IMPORT_LIMITS, compactText } from "./model.js";
 
 export const WORKSPACE_HANDOFF_PROJECT_LIMIT = 5;
+export const REENTRY_BRIEF_SIGNAL_LIMIT = 3;
+export const REENTRY_BRIEF_GAP_LIMIT = 6;
 const WORKSPACE_HANDOFF_ATTENTION_LIMIT = 4;
 const WORKSPACE_HANDOFF_REASON_LIMIT = 3;
 
@@ -74,11 +76,14 @@ function currentOpenLoops(card) {
   if (!Array.isArray(card.unresolvedSignals)) {
     return briefLine(card.openLoops || "当前没有未解决的问题或阻塞。", IMPORT_LIMITS.openLoops);
   }
-  const current = card.unresolvedSignals
-    .map((signal) => briefLine(signal?.text, IMPORT_LIMITS.crumbText))
-    .filter(Boolean)
-    .join("；");
-  if (current) return briefLine(current, IMPORT_LIMITS.openLoops);
+  const current = boundedBriefList(
+    card.unresolvedSignals,
+    REENTRY_BRIEF_SIGNAL_LIMIT,
+    IMPORT_LIMITS.crumbText,
+    IMPORT_LIMITS.openLoops,
+    (signal) => signal?.text
+  );
+  if (current) return current;
   const checkpointLoops = card.checkpoint
     ? briefLine(Object.hasOwn(card, "historicalOpenLoops") ? card.historicalOpenLoops : card.openLoops, IMPORT_LIMITS.openLoops)
     : "";
@@ -92,14 +97,28 @@ function evidenceStatus(card) {
   const completeness = Number.isFinite(card.completeness)
     ? `${Math.max(0, Math.min(100, Math.round(card.completeness)))}%`
     : "未评估";
-  const gaps = Array.isArray(card.readinessGaps)
-    ? card.readinessGaps.map((gap) => briefLine(gap, IMPORT_LIMITS.returnHint)).filter(Boolean).join("；")
-    : "";
+  const gaps = boundedBriefList(
+    card.readinessGaps,
+    REENTRY_BRIEF_GAP_LIMIT,
+    IMPORT_LIMITS.returnHint,
+    IMPORT_LIMITS.checkpointSummary
+  );
   return briefLine(`${completeness} · ${gaps ? `需补：${gaps}` : "无显式复航缺口"}`, IMPORT_LIMITS.checkpointSummary);
 }
 
 function briefLine(value, maximum) {
   return compactText(String(value ?? "").replace(/\s+/gu, " "), maximum);
+}
+
+function boundedBriefList(values, limit, itemMaximum, outputMaximum, select = (value) => value) {
+  if (!Array.isArray(values)) return "";
+  let joined = "";
+  for (let index = 0; index < values.length && index < limit; index += 1) {
+    const item = briefLine(select(values[index]), itemMaximum);
+    if (!item) continue;
+    joined = briefLine(`${joined}${joined ? "；" : ""}${item}`, outputMaximum);
+  }
+  return joined;
 }
 
 function nonNegativeInteger(value) {

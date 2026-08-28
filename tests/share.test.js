@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../src/core/share.js";
+import { REENTRY_BRIEF_GAP_LIMIT, REENTRY_BRIEF_SIGNAL_LIMIT, WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../src/core/share.js";
 
 describe("buildReentryBrief", () => {
   test("builds a focused bounded plain-text handoff", () => {
@@ -88,6 +88,29 @@ describe("buildReentryBrief", () => {
     });
     assert.match(projectedClear, /未决事项：当前没有未解决的问题或阻塞。/u);
     assert.doesNotMatch(projectedClear, /曾记录/u);
+  });
+
+  test("reads only the producer-bounded signal and readiness windows", () => {
+    const signals = Array.from({ length: REENTRY_BRIEF_SIGNAL_LIMIT }, (_, index) => ({ text: `signal ${index + 1}` }));
+    Object.defineProperty(signals, REENTRY_BRIEF_SIGNAL_LIMIT, { get() { throw new Error("signal window exceeded"); } });
+    signals.length = 50_000;
+    const gaps = Array.from({ length: REENTRY_BRIEF_GAP_LIMIT }, (_, index) => `gap ${index + 1}`);
+    Object.defineProperty(gaps, REENTRY_BRIEF_GAP_LIMIT, { get() { throw new Error("gap window exceeded"); } });
+    gaps.length = 50_000;
+
+    const brief = buildReentryBrief({
+      project: { title: "Bounded" },
+      summary: "state",
+      nextAction: "next",
+      returnHint: "hint",
+      unresolvedSignals: signals,
+      readinessGaps: gaps,
+      completeness: 50
+    });
+
+    assert.match(brief, /未决事项：signal 1；signal 2；signal 3/u);
+    assert.match(brief, /需补：gap 1；gap 2；gap 3；gap 4；gap 5；gap 6/u);
+    assert.ok(brief.length < 3_000);
   });
 });
 
