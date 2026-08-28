@@ -69,6 +69,9 @@ describe("public path resolution", () => {
   test("rejects malformed encoding and traversal", () => {
     assert.equal(resolvePublicFile("/%", projectRoot).error, 400);
     assert.equal(resolvePublicFile("/%E0%A4%A", projectRoot).error, 400);
+    for (const alias of ["/src%2fmain.js", "/src/%6dain.js", "/%69ndex.html", "/src/main%2ejs"]) {
+      assert.equal(resolvePublicFile(alias, projectRoot).error, 400, alias);
+    }
     assert.ok([400, 404].includes(resolvePublicFile("/%2e%2e/package.json", projectRoot).error));
   });
 
@@ -107,6 +110,7 @@ describe("local HTTP server", () => {
     assert.equal((await send("/%")).status, 400);
     assert.equal((await send("http://attacker.invalid/src/main.js")).status, 400);
     assert.equal((await send("/src/main.js#fragment")).status, 400);
+    assert.equal((await send("/src%2fmain.js")).status, 400);
     assert.equal((await send("/")).status, 200);
   });
 

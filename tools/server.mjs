@@ -52,6 +52,7 @@ export function resolvePublicFile(rawUrl, root = defaultRoot) {
   let pathname;
   try {
     const parsed = new URL(requestTarget, "http://localhost");
+    if (parsed.pathname.includes("%")) return { error: 400, path: null };
     pathname = decodeURIComponent(parsed.pathname);
   } catch {
     return { error: 400, path: null };
