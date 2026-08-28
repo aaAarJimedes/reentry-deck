@@ -397,6 +397,19 @@ test("rankProjectsForReentry keeps active work ahead of stale paused work and ex
   assert.deepEqual(state.projects.map((project) => project.id), projects.map((project) => project.id));
 });
 
+test("rankProjectsForReentry streams source projects and breaks full ties by code unit", () => {
+  const projects = [makeProject("ä"), makeProject("z")];
+  projects.filter = () => {
+    throw new Error("ranking must not filter source projects");
+  };
+  projects.map = () => {
+    throw new Error("ranking must not map source projects");
+  };
+  const ranked = rankProjectsForReentry(makeState({ projects }), NOW);
+
+  assert.deepEqual(Array.prototype.map.call(ranked, (card) => card.project.id), ["z", "ä"]);
+});
+
 test("buildReentryCards indexes shared collections once while preserving per-project evidence", () => {
   const projects = Array.from({ length: 1_000 }, (_, index) => makeProject(`p${index}`, {
     createdAt: at(-index),

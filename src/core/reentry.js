@@ -122,14 +122,20 @@ function buildIndexedReentryCard(index, projectId, now) {
 }
 
 export function rankProjectsForReentry(state, now = Date.now()) {
-  const projects = state.projects
-    .filter((project) => project.status !== "archived");
-  const index = buildReentryIndex(state, projects.map((project) => project.id));
-  return projects
-    .map((project) => buildIndexedReentryCard(index, project.id, now))
-    .filter(Boolean)
-    .map((card) => ({ ...card, recommendationScore: reentryScore(card), recommendationReason: reentryReason(card) }))
-    .sort((a, b) => b.recommendationScore - a.recommendationScore || timeOf(b.lastActivityAt) - timeOf(a.lastActivityAt));
+  const projectIds = [];
+  for (const project of safeCollection(state?.projects)) {
+    if (project.status !== "archived") projectIds.push(project.id);
+  }
+  const index = buildReentryIndex(state, projectIds);
+  const ranked = [];
+  for (const projectId of projectIds) {
+    const card = buildIndexedReentryCard(index, projectId, now);
+    if (!card) continue;
+    ranked.push({ ...card, recommendationScore: reentryScore(card), recommendationReason: reentryReason(card) });
+  }
+  return ranked.sort((left, right) => right.recommendationScore - left.recommendationScore
+    || timeOf(right.lastActivityAt) - timeOf(left.lastActivityAt)
+    || compareCodeUnits(left.project.id, right.project.id));
 }
 
 function buildReentryIndex(state, projectIds = null) {
@@ -240,4 +246,8 @@ function joinCrumbTexts(crumbs) {
 function timeOf(value) {
   const valueOf = Date.parse(value ?? "");
   return Number.isFinite(valueOf) ? valueOf : 0;
+}
+
+function compareCodeUnits(left, right) {
+  return left === right ? 0 : left < right ? -1 : 1;
 }
