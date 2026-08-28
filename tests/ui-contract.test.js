@@ -106,6 +106,9 @@ test("storage diagnostics are consumed only after the rendered shell commits", a
 
   assert.match(notices, /this\.#noticeQueue\.map/u);
   assert.doesNotMatch(notices, /(?:splice|shift|pop)\(/u);
+  assert.match(source, /import \{ STORE_NOTICE_LIMIT \} from "\.\.\/core\/store\.js"/u);
+  assert.match(render, /this\.#noticeQueue\.length > STORE_NOTICE_LIMIT/u);
+  assert.match(render, /this\.#noticeQueue\.length - STORE_NOTICE_LIMIT/u);
   assert.ok(render.indexOf("this.#root.innerHTML =") < render.indexOf("this.#noticeQueue = []"));
 });
 

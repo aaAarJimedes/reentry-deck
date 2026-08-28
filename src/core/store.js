@@ -2,13 +2,13 @@ import { compactText, createEmptyState, isoAtOrAfter, normalizeState, validateIm
 import { buildImportPreview, checksumSerializedSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.160.0";
+export const APP_VERSION = "0.161.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
 const WRITE_LOCK_TTL_MS = 5_000;
 const STORAGE_ENTRY_SCAN_LIMIT = 10_000;
-const MAX_STORE_NOTICES = 8;
+export const STORE_NOTICE_LIMIT = 8;
 const MAX_STORE_NOTICE_LENGTH = 500;
 
 export class AppStore {
@@ -78,7 +78,7 @@ export class AppStore {
 
   #addNotice(message) {
     this.notices.push(compactText(message, MAX_STORE_NOTICE_LENGTH));
-    if (this.notices.length > MAX_STORE_NOTICES) this.notices.splice(0, this.notices.length - MAX_STORE_NOTICES);
+    if (this.notices.length > STORE_NOTICE_LIMIT) this.notices.splice(0, this.notices.length - STORE_NOTICE_LIMIT);
   }
 
   refreshFromStorage(now = Date.now()) {

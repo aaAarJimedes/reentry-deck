@@ -16,6 +16,7 @@ import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepare
 import { WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, inspectSession, locateActiveSessionContext, prepareQuickCheckpointReview, prepareQuickDock } from "../core/session.js";
+import { STORE_NOTICE_LIMIT } from "../core/store.js";
 import {
   COLLECTION_PAGE_SIZE,
   TIMELINE_PAGE_SIZE,
@@ -150,7 +151,7 @@ export class ReentryApp {
   constructor(root, store) {
     this.#root = root;
     this.#store = store;
-    this.#noticeQueue = store.drainNotices();
+    this.#noticeQueue = store.drainNotices().slice(-STORE_NOTICE_LIMIT);
     const listenerOptions = { signal: this.#eventController.signal };
 
     this.#root.addEventListener("click", (event) => this.#runUserAction(() => this.#onClick(event)), listenerOptions);
@@ -219,6 +220,9 @@ export class ReentryApp {
     const transientDialog = preserveDialog ? this.#captureTransientDialog() : null;
     const captureDraft = preserveDialog ? this.#captureInlineCaptureDraft() : null;
     this.#noticeQueue.push(...this.#store.drainNotices());
+    if (this.#noticeQueue.length > STORE_NOTICE_LIMIT) {
+      this.#noticeQueue.splice(0, this.#noticeQueue.length - STORE_NOTICE_LIMIT);
+    }
     const state = this.#store.getState();
     if (this.#workspaceCreatedAt !== state.meta.createdAt) {
       this.#workspaceCreatedAt = state.meta.createdAt;

@@ -7,6 +7,7 @@ import {
   AppStore,
   MemoryStorage,
   STORAGE_KEY,
+  STORE_NOTICE_LIMIT,
   WRITE_LOCK_KEY,
   inspectStorageUsage
 } from "../src/core/store.js";
@@ -132,7 +133,7 @@ describe("AppStore loading and recovery", () => {
     for (let index = 0; index < 20; index += 1) store.refreshFromStorage();
 
     const notices = store.drainNotices();
-    assert.equal(notices.length, 8);
+    assert.equal(notices.length, STORE_NOTICE_LIMIT);
     assert.ok(notices.every((notice) => notice.length <= 500));
     assert.match(notices[0], /read denied/u);
     assert.deepEqual(store.drainNotices(), []);
