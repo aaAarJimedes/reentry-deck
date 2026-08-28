@@ -132,6 +132,24 @@ test("extractHttpLinks canonicalizes equivalent DNS trailing dots before dedupli
   assert.deepEqual(extractHttpLinks("https://./guide"), []);
 });
 
+test("extractHttpLinks stops at CJK prose punctuation and rejects mixed-label host ambiguity", () => {
+  assert.deepEqual(
+    extractHttpLinks("见 https://example.com、下一步 https://example.org（文档） https://example.net/路径：说明"),
+    [
+      { url: "https://example.com/", host: "example.com", label: "example.com" },
+      { url: "https://example.org/", host: "example.org", label: "example.org" },
+      { url: "https://example.net/%E8%B7%AF%E5%BE%84", host: "example.net", label: "example.net/路径" }
+    ]
+  );
+  assert.deepEqual(extractHttpLinks("https://example.com下一步"), []);
+  assert.deepEqual(extractHttpLinks("https://例子.测试/路径"), [
+    { url: "https://xn--fsqu00a.xn--0zwm56d/%E8%B7%AF%E5%BE%84", host: "xn--fsqu00a.xn--0zwm56d", label: "xn--fsqu00a.xn--0zwm56d/路径" }
+  ]);
+  assert.deepEqual(extractHttpLinks("https://例子.com/路径"), [
+    { url: "https://xn--fsqu00a.com/%E8%B7%AF%E5%BE%84", host: "xn--fsqu00a.com", label: "xn--fsqu00a.com/路径" }
+  ]);
+});
+
 test("getProjectResources deduplicates newest evidence and preserves source metadata", () => {
   const resourceState = structuredClone(state);
   resourceState.projects[0].description = "规范 https://example.com/spec";

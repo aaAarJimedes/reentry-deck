@@ -75,7 +75,7 @@ export function extractHttpLinks(text, limit = RESOURCE_LIMIT) {
   if (!safeLimit) return [];
   const results = [];
   const seen = new Set();
-  const matches = text.match(/https?:\/\/[^\s<>"']+/giu) ?? [];
+  const matches = text.match(/https?:\/\/[^\s<>"'，。；！？、：（）【】《》〈〉「」『』“”‘’…]+/giu) ?? [];
   for (const rawMatch of matches) {
     const candidate = rawMatch.replace(/[\])},.;!?，。；！？）】》]+$/u, "");
     try {
@@ -89,6 +89,7 @@ export function extractHttpLinks(text, limit = RESOURCE_LIMIT) {
         || containsUnsafeIdControl(decodedTarget)
         || !["http:", "https:"].includes(url.protocol)
         || !canonicalHostname
+        || hasMixedUnicodeHostnameLabel(candidate)
         || url.username
         || url.password
       ) continue;
@@ -193,6 +194,15 @@ function compact(value) {
 function readableURL(url) {
   const path = decodeURIComponent(url.pathname).replace(/\/$/u, "");
   return `${url.host}${path || ""}`;
+}
+
+function hasMixedUnicodeHostnameLabel(candidate) {
+  const authority = candidate.slice(candidate.indexOf("//") + 2).split(/[/?#]/u, 1)[0];
+  const hostname = authority.slice(authority.lastIndexOf("@") + 1).replace(/:\d*$/u, "");
+  if (hostname.startsWith("[")) return false;
+  return hostname
+    .split(/[.\u3002\uff0e\uff61]/u)
+    .some((label) => /[a-z0-9]/iu.test(label) && /[^\u0000-\u007f]/u.test(label));
 }
 
 function timeOf(value) {
