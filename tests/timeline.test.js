@@ -5,6 +5,7 @@ import {
   COLLECTION_PAGE_SIZE,
   TIMELINE_PAGE_SIZE,
   buildCollectionWindow,
+  buildProjectCollectionWindow,
   buildTimelineWindow
 } from "../src/core/timeline.js";
 
@@ -141,5 +142,42 @@ describe("buildCollectionWindow", () => {
 
     assert.equal(result.items.length, 12);
     assert.equal(result.remaining, 49_988);
+  });
+});
+
+describe("buildProjectCollectionWindow", () => {
+  test("streams the requested project scope while retaining only the visible window", () => {
+    const projects = Array.from({ length: 50_000 }, (_, index) => ({
+      id: `p${index}`,
+      status: index % 2 ? "archived" : "active"
+    }));
+    for (const method of ["filter", "map", "slice"]) {
+      Object.defineProperty(projects, method, {
+        value: () => { throw new Error(`source array ${method} must not be used`); },
+        configurable: true
+      });
+    }
+
+    const archived = buildProjectCollectionWindow(projects, "archive");
+    const home = buildProjectCollectionWindow(projects, "home", 24);
+
+    assert.equal(archived.total, 25_000);
+    assert.equal(archived.items.length, COLLECTION_PAGE_SIZE);
+    assert.deepEqual(archived.items.map((project) => project.id), Array.from({ length: 12 }, (_, index) => `p${index * 2 + 1}`));
+    assert.equal(archived.remaining, 24_988);
+    assert.equal(archived.nextLimit, 24);
+    assert.equal(home.total, 25_000);
+    assert.equal(home.items.length, 24);
+    assert.equal(home.items[0].id, "p0");
+    assert.equal(home.items.at(-1).id, "p46");
+  });
+
+  test("fails closed for unknown scopes and invalid collections", () => {
+    assert.deepEqual(buildProjectCollectionWindow(null, "archive", -1), {
+      items: [], total: 0, shown: 0, remaining: 0, nextLimit: 0
+    });
+    assert.deepEqual(buildProjectCollectionWindow([{ id: "p1", status: "active" }], "other"), {
+      items: [], total: 0, shown: 0, remaining: 0, nextLimit: 0
+    });
   });
 });

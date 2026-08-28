@@ -189,6 +189,15 @@ test("project routes share one reentry card with dialogs and inline stats", asyn
   assert.doesNotMatch(source, /getProjectStats/u);
 });
 
+test("archive pagination streams projects and reuses workspace counts", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /buildProjectCollectionWindow\(state\.projects, "archive"/u);
+  assert.match(source, /const counts = buildWorkspaceCounts\(state\)/u);
+  assert.match(source, /counts\.unarchivedProjects : counts\.archivedProjects/u);
+  assert.doesNotMatch(source, /const projects = state\.projects\.filter\(\(item\) => item\.status === "archived"\)/u);
+});
+
 test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

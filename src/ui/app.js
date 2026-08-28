@@ -20,6 +20,7 @@ import {
   COLLECTION_PAGE_SIZE,
   TIMELINE_PAGE_SIZE,
   buildCollectionWindow,
+  buildProjectCollectionWindow,
   buildTimelineWindow
 } from "../core/timeline.js";
 import { elapsedSeconds, formatDateTime, formatDuration, formatRelative } from "../core/time.js";
@@ -596,8 +597,7 @@ export class ReentryApp {
   }
 
   #renderArchive(state) {
-    const projects = state.projects.filter((item) => item.status === "archived");
-    const projectWindow = buildCollectionWindow(projects, this.#collectionLimits.get("archive"));
+    const projectWindow = buildProjectCollectionWindow(state.projects, "archive", this.#collectionLimits.get("archive"));
     const visibleIds = new Set(projectWindow.items.map((project) => project.id));
     const cards = new Map(buildReentryCards(state, [...visibleIds]).map((card) => [card.project.id, card]));
     const crumbCounts = new Map([...visibleIds].map((projectId) => [projectId, 0]));
@@ -606,7 +606,7 @@ export class ReentryApp {
     }
     return `
       <section class="page-heading"><div><p class="eyebrow">归档舱</p><h1>结束的航程，也保留来路。</h1><p class="lede">归档不会删除任何会话、决定或检查点；需要时可以随时恢复。</p></div></section>
-      ${projects.length ? `<div class="project-grid" id="project-window-archive" data-project-window="archive">${projectWindow.items.map((project, index) => {
+      ${projectWindow.total ? `<div class="project-grid" id="project-window-archive" data-project-window="archive">${projectWindow.items.map((project, index) => {
         const card = cards.get(project.id);
         return `<article class="project-card" data-project-window-item="${index}" tabindex="-1" data-color="${attr(project.color)}"><div><div class="project-card-header"><span class="status-pill" data-status="archived">已归档</span><span class="muted">${formatRelative(project.archivedAt ?? project.updatedAt)}</span></div><h3>${escapeHTML(project.title)}</h3><p class="project-description">${escapeHTML(project.description || card?.summary || "还没有留下状态摘要。")}</p></div><div class="project-card-footer"><span>${crumbCounts.get(project.id) ?? 0} 条轨迹</span><div class="project-card-actions"><a class="ghost-button" href="#/project/${encodeURIComponent(project.id)}" aria-label="查看归档项目：${attr(controlContext(project.title))}">查看现场</a><button class="ghost-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}" aria-label="恢复项目：${attr(controlContext(project.title))}">恢复项目</button></div></div></article>`;
       }).join("")}</div>${this.#renderCollectionMore(projectWindow, "archive", "归档项目")}` : `<section class="empty-state"><div class="empty-illustration" aria-hidden="true"><span></span><span></span><span></span></div><h2>归档舱还是空的</h2><p>完成或暂时不再关注的项目，可以从项目页移到这里。</p><a class="primary-button" href="#/">返回舰桥</a></section>`}`;
@@ -1372,7 +1372,8 @@ export class ReentryApp {
   #showMoreProjects(scope) {
     if (scope !== "home" && scope !== "archive") return;
     const state = this.#store.getState();
-    const total = state.projects.filter((item) => scope === "home" ? item.status !== "archived" : item.status === "archived").length;
+    const counts = buildWorkspaceCounts(state);
+    const total = scope === "home" ? counts.unarchivedProjects : counts.archivedProjects;
     const currentLimit = this.#collectionLimits.get(scope) ?? COLLECTION_PAGE_SIZE;
     if (currentLimit >= total) return;
     const shown = Math.min(total, currentLimit + COLLECTION_PAGE_SIZE);

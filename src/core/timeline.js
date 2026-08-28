@@ -15,6 +15,30 @@ export function buildCollectionWindow(items, limit = COLLECTION_PAGE_SIZE) {
   };
 }
 
+export function buildProjectCollectionWindow(projects, scope, limit = COLLECTION_PAGE_SIZE) {
+  const safeProjects = Array.isArray(projects) ? projects : [];
+  const safeLimit = Number.isSafeInteger(limit) && limit > 0 ? limit : COLLECTION_PAGE_SIZE;
+  if (scope !== "home" && scope !== "archive") {
+    return { items: [], total: 0, shown: 0, remaining: 0, nextLimit: 0 };
+  }
+  const items = [];
+  let total = 0;
+  for (const project of safeProjects) {
+    const matches = scope === "archive" ? project?.status === "archived" : project?.status !== "archived";
+    if (!matches) continue;
+    total += 1;
+    if (items.length < safeLimit) items.push(project);
+  }
+  const shown = items.length;
+  return {
+    items,
+    total,
+    shown,
+    remaining: total - shown,
+    nextLimit: Math.min(total, shown + COLLECTION_PAGE_SIZE)
+  };
+}
+
 export function buildTimelineWindow(crumbs, projectId, limit = TIMELINE_PAGE_SIZE) {
   const safeCrumbs = Array.isArray(crumbs) ? crumbs : [];
   const safeLimit = Number.isSafeInteger(limit) && limit > 0 ? limit : TIMELINE_PAGE_SIZE;
