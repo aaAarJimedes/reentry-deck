@@ -14,6 +14,7 @@ const HOUR = 3_600_000;
 const DAY = 86_400_000;
 const NOW = Date.parse("2026-06-15T12:00:00.000Z");
 const shortDateTime = new Intl.DateTimeFormat("zh-CN", {
+  year: "numeric",
   month: "short",
   day: "numeric",
   hour: "2-digit",
@@ -122,6 +123,9 @@ test("formatDateTime formats valid values and rejects invalid dates", () => {
   assert.equal(formatDateTime(date), shortDateTime.format(date));
   assert.equal(formatDateTime(date.toISOString()), shortDateTime.format(date));
   assert.equal(formatDateTime("not-a-date"), "时间未知");
+  for (const value of [null, undefined, false, true, [], {}, "   "]) {
+    assert.equal(formatDateTime(value), "时间未知", `value: ${String(value)}`);
+  }
 });
 
 test("daysSince returns elapsed fractional days and clamps future/invalid dates", () => {
@@ -133,4 +137,12 @@ test("daysSince returns elapsed fractional days and clamps future/invalid dates"
   assert.equal(daysSince(at(-DAY), "not-a-date"), 0);
   assert.equal(daysSince(at(-DAY), Infinity), 0);
   assert.equal(daysSince(at(-DAY), new Date(NOW)), 1);
+  for (const value of [null, false, true, [], {}, "   "]) assert.equal(daysSince(value, NOW), 0);
+});
+
+test("date-like helpers reject coercive non-date primitives and containers", () => {
+  for (const value of [null, false, true, [], {}, "   "]) {
+    assert.equal(elapsedSeconds(value, NOW), 0);
+    assert.equal(formatRelative(value, NOW), "时间未知");
+  }
 });

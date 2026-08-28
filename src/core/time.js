@@ -1,5 +1,6 @@
 const rtf = new Intl.RelativeTimeFormat("zh-CN", { numeric: "auto" });
 const shortDateTime = new Intl.DateTimeFormat("zh-CN", {
+  year: "numeric",
   month: "short",
   day: "numeric",
   hour: "2-digit",
@@ -41,8 +42,8 @@ export function formatRelative(isoDate, now = Date.now()) {
 }
 
 export function formatDateTime(isoDate) {
-  const date = new Date(isoDate);
-  return Number.isFinite(date.getTime()) ? shortDateTime.format(date) : "时间未知";
+  const timestamp = timestampOf(isoDate);
+  return Number.isFinite(timestamp) ? shortDateTime.format(new Date(timestamp)) : "时间未知";
 }
 
 export function daysSince(isoDate, now = Date.now()) {
@@ -53,6 +54,7 @@ export function daysSince(isoDate, now = Date.now()) {
 
 function timestampOf(value) {
   if (typeof value === "number") return Number.isFinite(value) ? value : Number.NaN;
+  if (!(value instanceof Date) && (typeof value !== "string" || !value.trim())) return Number.NaN;
   const timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : Number.NaN;
 }
