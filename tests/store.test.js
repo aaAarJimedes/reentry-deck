@@ -855,8 +855,31 @@ describe("AppStore updates and persistence", () => {
 
     assert.equal(store.refreshFromStorage(T1), false);
     assert.strictEqual(store.getState(), before);
-    assert.match(store.notices.at(-1), /外部修订号未前进/);
+    assert.match(store.notices.at(-1), /外部修订号倒退/);
     assert.deepEqual(store.getState().projects.map((item) => item.id), ["current"]);
+  });
+
+  test("adopts a same-revision collision and remains writable at the next revision", () => {
+    const storage = new MemoryStorage();
+    const current = stateWithProject("current", "Current");
+    storage.setItem(STORAGE_KEY, JSON.stringify(current));
+    const store = new AppStore(storage, T0, null);
+    const collision = stateWithProject("collision", "Collision winner");
+    collision.meta.revision = current.meta.revision;
+    collision.meta.updatedAt = new Date(T1).toISOString();
+    storage.setItem(STORAGE_KEY, JSON.stringify(collision));
+    const sources = [];
+    store.subscribe((_state, event) => sources.push(event.source));
+
+    assert.equal(store.refreshFromStorage(T1), true);
+    assert.deepEqual(store.getState().projects.map((project) => project.id), ["collision"]);
+    assert.match(store.notices.at(-1), /相同修订号的不同内容/u);
+    assert.deepEqual(sources, ["external"]);
+
+    const saved = store.update((draft) => { draft.projects[0].title = "Writable again"; }, T2);
+    assert.equal(saved.meta.revision, current.meta.revision + 1);
+    assert.equal(saved.projects[0].title, "Writable again");
+    assert.equal(persisted(storage).projects[0].title, "Writable again");
   });
 
   test("rejects a forward external revision whose workspace time moves backward", () => {

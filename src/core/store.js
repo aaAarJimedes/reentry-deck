@@ -2,7 +2,7 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.130.0";
+export const APP_VERSION = "0.131.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
@@ -84,14 +84,16 @@ export class AppStore {
     if (this.#hasRejectedRaw && current === this.#rejectedRaw) return false;
     try {
       let next;
+      let sameRevisionCollision = false;
       if (current) {
         next = parseSavedState(current, now);
-        if (next.meta.revision <= this.#state.meta.revision) {
-          throw new Error(`外部修订号未前进（当前 ${this.#state.meta.revision}，收到 ${next.meta.revision}）`);
+        if (next.meta.revision < this.#state.meta.revision) {
+          throw new Error(`外部修订号倒退（当前 ${this.#state.meta.revision}，收到 ${next.meta.revision}）`);
         }
         if (Date.parse(next.meta.updatedAt) < Date.parse(this.#state.meta.updatedAt)) {
           throw new Error(`外部更新时间倒退（当前 ${this.#state.meta.updatedAt}，收到 ${next.meta.updatedAt}）`);
         }
+        sameRevisionCollision = next.meta.revision === this.#state.meta.revision;
       } else {
         next = createEmptyState(isoAtOrAfter(now, this.#state.meta.updatedAt));
         next.meta.revision = this.#state.meta.revision + 1;
@@ -100,6 +102,9 @@ export class AppStore {
       this.#rejectedRaw = null;
       this.#hasRejectedRaw = false;
       this.#state = freezeState(next);
+      if (sameRevisionCollision) {
+        this.notices.push("检测到另一个标签页写入了相同修订号的不同内容；已采用实际持久化版本，下一次保存将继续递增修订号。 ");
+      }
       this.#emit("external");
       return true;
     } catch (error) {
