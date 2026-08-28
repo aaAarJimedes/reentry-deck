@@ -1,4 +1,5 @@
 import { AppStore } from "./core/store.js";
+import { renderStartupFailure } from "./core/startup.js";
 import { ReentryApp } from "./ui/app.js";
 
 const root = document.querySelector("#app");
@@ -9,15 +10,7 @@ try {
   globalThis.reentryApp = app;
 } catch (error) {
   console.error("复航台启动失败", error);
-  root.setAttribute("aria-busy", "false");
-  root.innerHTML = `
-    <main class="no-script">
-      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-      <h1>工作区暂时无法启动</h1>
-      <p>页面初始化时遇到了异常。请刷新重试；若问题持续，请保留浏览器站点数据并查看开发者控制台。</p>
-      <button class="primary-button" id="retry-startup" type="button">重新尝试</button>
-    </main>`;
-  root.querySelector("#retry-startup")?.addEventListener("click", () => location.reload());
+  renderStartupFailure(root);
 }
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {

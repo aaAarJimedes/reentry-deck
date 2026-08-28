@@ -26,6 +26,7 @@ export const PUBLIC_FILES = Object.freeze(new Map([
   ["/src/core/search.js", "src/core/search.js"],
   ["/src/core/share.js", "src/core/share.js"],
   ["/src/core/session.js", "src/core/session.js"],
+  ["/src/core/startup.js", "src/core/startup.js"],
   ["/src/core/timeline.js", "src/core/timeline.js"],
   ["/src/core/time.js", "src/core/time.js"]
 ]));
