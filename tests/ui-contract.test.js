@@ -115,6 +115,22 @@ test("dialog redraw restoration preserves button focus as well as field values a
   assert.match(source, /transientDialog\?\.id === "import-preview-dialog"/u);
 });
 
+test("external redraw preserves an inline capture draft only for the same session", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
+  const capture = source.match(/#captureInlineCaptureDraft\(\) \{([\s\S]*?)\n  \}\n\n  #restoreInlineCaptureDraft/u)?.[1] ?? "";
+  const restore = source.match(/#restoreInlineCaptureDraft\(snapshot, activeSession\) \{([\s\S]*?)\n  \}\n\n  #restoreTransientDialog/u)?.[1] ?? "";
+
+  assert.match(render, /preserveDialog \? this\.#captureInlineCaptureDraft\(\) : null/u);
+  assert.match(render, /this\.#restoreInlineCaptureDraft\(captureDraft, activeSession\)/u);
+  assert.match(capture, /sessionId = this\.#activeSession\?\.id/u);
+  assert.match(capture, /if \(!focused && !text\.value\) return null/u);
+  assert.match(restore, /activeSession\?\.id !== snapshot\.sessionId/u);
+  assert.match(restore, /slice\(0, IMPORT_LIMITS\.crumbText\)/u);
+  assert.match(restore, /Object\.hasOwn\(CRUMB_LABELS, snapshot\.type\)/u);
+  assert.match(restore, /setSelectionRange/u);
+});
+
 test("quick checkpoint review is an accessible explicit upgrade flow", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

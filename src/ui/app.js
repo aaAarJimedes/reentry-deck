@@ -175,6 +175,7 @@ export class ReentryApp {
 
   render({ preserveDialog = false } = {}) {
     const transientDialog = preserveDialog ? this.#captureTransientDialog() : null;
+    const captureDraft = preserveDialog ? this.#captureInlineCaptureDraft() : null;
     this.#noticeQueue.push(...this.#store.drainNotices());
     const state = this.#store.getState();
     const now = Date.now();
@@ -229,6 +230,7 @@ export class ReentryApp {
       <div class="sr-only" id="live-region" aria-live="polite"></div>
     `;
     this.#root.setAttribute("aria-busy", "false");
+    if (captureDraft) this.#restoreInlineCaptureDraft(captureDraft, activeSession);
     this.#refreshTimers();
 
     if (reopenImportPreview && this.#pendingImport) {
@@ -268,6 +270,41 @@ export class ReentryApp {
         selectionEnd: typeof control.selectionEnd === "number" ? control.selectionEnd : null
       }))
     };
+  }
+
+  #captureInlineCaptureDraft() {
+    if (this.#root.querySelector("dialog[open]")) return null;
+    const form = this.#root.querySelector('[data-form="capture-crumb"]');
+    const text = form?.elements?.text;
+    const type = form?.elements?.type;
+    const sessionId = this.#activeSession?.id;
+    if (!text || !type || !sessionId) return null;
+    const focused = document.activeElement === text || document.activeElement === type;
+    if (!focused && !text.value) return null;
+    return {
+      sessionId,
+      text: text.value,
+      type: type.value,
+      focus: document.activeElement === type ? "type" : document.activeElement === text ? "text" : null,
+      selectionStart: typeof text.selectionStart === "number" ? text.selectionStart : null,
+      selectionEnd: typeof text.selectionEnd === "number" ? text.selectionEnd : null
+    };
+  }
+
+  #restoreInlineCaptureDraft(snapshot, activeSession) {
+    if (!snapshot || activeSession?.id !== snapshot.sessionId) return;
+    const form = this.#root.querySelector('[data-form="capture-crumb"]');
+    const text = form?.elements?.text;
+    const type = form?.elements?.type;
+    if (!text || !type) return;
+    text.value = String(snapshot.text ?? "").slice(0, IMPORT_LIMITS.crumbText);
+    if (Object.hasOwn(CRUMB_LABELS, snapshot.type)) type.value = snapshot.type;
+    const focusTarget = snapshot.focus === "type" ? type : snapshot.focus === "text" ? text : null;
+    focusTarget?.focus();
+    if (focusTarget === text && snapshot.selectionStart !== null && snapshot.selectionEnd !== null && typeof text.setSelectionRange === "function") {
+      const end = text.value.length;
+      text.setSelectionRange(Math.min(snapshot.selectionStart, end), Math.min(snapshot.selectionEnd, end));
+    }
   }
 
   #restoreTransientDialog(snapshot) {
