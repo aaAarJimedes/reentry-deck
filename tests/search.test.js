@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   RESOURCE_LABEL_LIMIT,
+  RESOURCE_TEXT_SCAN_LIMIT,
   SEARCH_QUERY_LIMIT,
   SEARCH_TOKEN_LENGTH_LIMIT,
   SEARCH_TOKEN_LIMIT,
@@ -168,6 +169,12 @@ test("extractHttpLinks retains a safe target while bounding its human-readable l
   assert.equal(link.url, `https://example.com/${path}`);
   assert.ok(link.label.length <= RESOURCE_LABEL_LIMIT);
   assert.match(link.label, /^example\.com\/a+…$/u);
+});
+
+test("extractHttpLinks rejects oversized evidence before starting a regex scan", (t) => {
+  t.mock.method(String.prototype, "matchAll", () => { throw new Error("regex scan must not start"); });
+
+  assert.deepEqual(extractHttpLinks("x".repeat(RESOURCE_TEXT_SCAN_LIMIT + 1)), []);
 });
 
 test("extractHttpLinks stops at CJK prose punctuation and rejects mixed-label host ambiguity", () => {

@@ -4,6 +4,7 @@ const RESULT_LIMIT = 40;
 const RESOURCE_LIMIT = 20;
 const MAX_RESOURCE_URL_LENGTH = 2_048;
 export const RESOURCE_LABEL_LIMIT = 180;
+export const RESOURCE_TEXT_SCAN_LIMIT = 4_096;
 const HTTP_SCHEME_PATTERN = /https?:\/\//iu;
 export const SEARCH_QUERY_LIMIT = 500;
 export const SEARCH_TOKEN_LIMIT = 24;
@@ -121,7 +122,7 @@ function compareSearchPosition(leftScore, leftResult, rightScore, rightResult) {
 }
 
 export function extractHttpLinks(text, limit = RESOURCE_LIMIT) {
-  if (typeof text !== "string" || !text) return [];
+  if (typeof text !== "string" || !text || text.length > RESOURCE_TEXT_SCAN_LIMIT) return [];
   const safeLimit = boundedLimit(limit, RESOURCE_LIMIT, 100);
   if (!safeLimit) return [];
   const results = [];
