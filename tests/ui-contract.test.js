@@ -93,6 +93,7 @@ test("workspace search exposes the same query budget enforced by the core", asyn
 
   assert.match(source, /import \{ SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex/u);
   assert.match(source, /data-control="workspace-search" maxlength="\$\{SEARCH_QUERY_LIMIT\}"/u);
+  assert.match(source, /#onInput\(event\) \{\s+if \(event\.isComposing\) return;/u);
 });
 
 test("backup reads ignore stale completions and are invalidated on app destruction", async () => {

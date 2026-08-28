@@ -25,7 +25,7 @@ function buildWeeklyReviewWithCards(state, now, options, cards) {
   const sessions = state.sessions
     .filter((session) => overlapsWindow(session, windowStart, now))
     .slice()
-    .sort((a, b) => timeOf(a.startedAt) - timeOf(b.startedAt) || a.id.localeCompare(b.id));
+    .sort((a, b) => timeOf(a.startedAt) - timeOf(b.startedAt) || compareCodeUnits(a.id, b.id));
   const projectMinutes = new Map();
   let focusedMs = 0;
   let cappedSessions = 0;
@@ -51,7 +51,7 @@ function buildWeeklyReviewWithCards(state, now, options, cards) {
   const recoverability = cards.length
     ? Math.round(cards.reduce((sum, card) => sum + card.completeness, 0) / cards.length)
     : 0;
-  const topProjectEntry = [...projectMinutes.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+  const topProjectEntry = [...projectMinutes.entries()].sort((a, b) => b[1] - a[1] || compareCodeUnits(a[0], b[0]))[0];
   const topProject = topProjectEntry
     ? state.projects.find((project) => project.id === topProjectEntry[0]) ?? null
     : null;
@@ -89,7 +89,7 @@ function buildAttentionDeckWithCards(state, now, options, reentryCards) {
   return projects
     .map((project) => attentionForProject(project, cards.get(project.id), now, staleAfterDays))
     .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score || timeOf(a.card.lastActivityAt) - timeOf(b.card.lastActivityAt) || a.project.id.localeCompare(b.project.id))
+    .sort((a, b) => b.score - a.score || timeOf(a.card.lastActivityAt) - timeOf(b.card.lastActivityAt) || compareCodeUnits(a.project.id, b.project.id))
     .slice(0, normalizeLimit(options.limit, 4));
 }
 
@@ -170,4 +170,8 @@ function normalizeLimit(value, fallback) {
 function timeOf(value) {
   const parsed = Date.parse(value ?? "");
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function compareCodeUnits(left, right) {
+  return left === right ? 0 : left < right ? -1 : 1;
 }

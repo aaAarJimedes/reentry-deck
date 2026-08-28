@@ -66,7 +66,7 @@ export function searchWorkspaceIndex(index, query, options = {}) {
     const score = scoreCandidate(candidate, tokens);
     if (score > 0) matches.push({ ...candidate.result, score });
   }
-  return matches.sort((a, b) => b.score - a.score || timeOf(b.createdAt) - timeOf(a.createdAt) || a.id.localeCompare(b.id)).slice(0, limit);
+  return matches.sort((a, b) => b.score - a.score || timeOf(b.createdAt) - timeOf(a.createdAt) || compareCodeUnits(a.id, b.id)).slice(0, limit);
 }
 
 export function extractHttpLinks(text, limit = RESOURCE_LIMIT) {
@@ -203,4 +203,8 @@ function timeOf(value) {
 function boundedLimit(value, fallback, maximum) {
   const requested = Number.isSafeInteger(value) ? value : fallback;
   return Math.max(0, Math.min(requested, maximum));
+}
+
+function compareCodeUnits(left, right) {
+  return left === right ? 0 : left < right ? -1 : 1;
 }

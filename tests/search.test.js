@@ -39,9 +39,12 @@ test("searchWorkspace normalizes full-width and case variants and is determinist
   const variant = structuredClone(state);
   variant.crumbs.push(
     { id: "b", projectId: "p1", type: "note", text: "ＡＰＩ Link", createdAt: "invalid" },
-    { id: "a", projectId: "p1", type: "note", text: "api link", createdAt: "invalid" }
+    { id: "a", projectId: "p1", type: "note", text: "api link", createdAt: "invalid" },
+    { id: "ä", projectId: "p1", type: "note", text: "stable unicode tie", createdAt: "invalid" },
+    { id: "z", projectId: "p1", type: "note", text: "stable unicode tie", createdAt: "invalid" }
   );
   assert.deepEqual(searchWorkspace(variant, "API LINK").map((item) => item.id), ["a", "b"]);
+  assert.deepEqual(searchWorkspace(variant, "stable unicode tie").map((item) => item.id), ["z", "ä"]);
 });
 
 test("searchWorkspace rejects queries outside the bounded comparison budget", () => {

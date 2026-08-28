@@ -871,6 +871,7 @@ export class ReentryApp {
   }
 
   #onInput(event) {
+    if (event.isComposing) return;
     const control = event.target;
     if (!control.matches('[data-control="workspace-search"]')) return;
     const output = this.#root.querySelector("[data-search-results]");

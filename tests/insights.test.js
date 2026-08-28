@@ -67,6 +67,19 @@ test("buildWeeklyReview calculates bounded local evidence and nearby project swi
   assert.deepEqual(review.topProject, { id: "p2", title: "Project p2", minutes: 150 });
 });
 
+test("workspace insights use code-unit tie breaks independent of host locale", () => {
+  const data = state({
+    projects: [project("ä"), project("z")],
+    sessions: [
+      { id: "ä", projectId: "ä", status: "completed", startedAt: at(-2 * HOUR), endedAt: at(-HOUR) },
+      { id: "z", projectId: "z", status: "completed", startedAt: at(-2 * HOUR), endedAt: at(-HOUR) }
+    ]
+  });
+
+  assert.equal(buildWeeklyReview(data, NOW).topProject.id, "z");
+  assert.deepEqual(buildAttentionDeck(data, NOW, { limit: 2 }).map((item) => item.project.id), ["z", "ä"]);
+});
+
 test("buildWeeklyReview caps implausibly long sessions and normalizes options", () => {
   const data = state({
     projects: [project("p1")],
