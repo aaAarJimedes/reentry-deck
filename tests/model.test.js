@@ -307,6 +307,26 @@ describe("normalizeState", () => {
     assert.equal(normalized.ui.selectedProjectId, null);
   });
 
+  test("normalizes linked collections without map or filter projection arrays", () => {
+    const value = {
+      projects: [{ id: "p1", title: "Project" }],
+      sessions: [{ id: "s1", projectId: "p1" }],
+      crumbs: [{ id: "c1", projectId: "p1", sessionId: "s1", text: "Evidence" }],
+      checkpoints: [{ id: "cp1", projectId: "p1", sessionId: "s1", summary: "State" }]
+    };
+    for (const collection of [value.projects, value.sessions, value.crumbs, value.checkpoints]) {
+      Object.defineProperty(collection, "map", { value: () => { throw new Error("map projection allocated"); } });
+      Object.defineProperty(collection, "filter", { value: () => { throw new Error("filter projection allocated"); } });
+    }
+
+    const normalized = normalizeState(value, NOW);
+
+    assert.deepEqual(normalized.projects.map((item) => item.id), ["p1"]);
+    assert.deepEqual(normalized.sessions.map((item) => item.id), ["s1"]);
+    assert.equal(normalized.crumbs[0].sessionId, "s1");
+    assert.equal(normalized.checkpoints[0].sessionId, "s1");
+  });
+
   test("coerces absent collections to arrays and unsafe revisions to zero", () => {
     for (const revision of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, "3", null]) {
       const normalized = normalizeState(

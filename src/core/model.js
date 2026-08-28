@@ -169,12 +169,35 @@ export function normalizeState(value, now = Date.now()) {
     throw new RangeError(`这份数据来自更新版本（v${version}），当前程序无法安全读取。`);
   }
 
-  const projects = arrayOf(value.projects).map((item) => createProject(item, now));
-  const projectIds = new Set(projects.map((item) => item.id));
-  const sessions = arrayOf(value.sessions)
-    .filter((item) => item?.projectId && projectIds.has(item.projectId))
-    .map((item) => createSession(item, now));
-  const sessionIds = new Set(sessions.map((item) => item.id));
+  const projects = [];
+  const projectIds = new Set();
+  for (const item of arrayOf(value.projects)) {
+    const project = createProject(item, now);
+    projects.push(project);
+    projectIds.add(project.id);
+  }
+  const sessions = [];
+  const sessionIds = new Set();
+  for (const item of arrayOf(value.sessions)) {
+    if (!item?.projectId || !projectIds.has(item.projectId)) continue;
+    const session = createSession(item, now);
+    sessions.push(session);
+    sessionIds.add(session.id);
+  }
+  const crumbs = [];
+  for (const item of arrayOf(value.crumbs)) {
+    if (!item?.projectId || !projectIds.has(item.projectId)) continue;
+    const crumb = createCrumb(item, now);
+    if (!sessionIds.has(crumb.sessionId)) crumb.sessionId = null;
+    crumbs.push(crumb);
+  }
+  const checkpoints = [];
+  for (const item of arrayOf(value.checkpoints)) {
+    if (!item?.projectId || !projectIds.has(item.projectId)) continue;
+    const checkpoint = createCheckpoint(item, now);
+    if (!sessionIds.has(checkpoint.sessionId)) checkpoint.sessionId = null;
+    checkpoints.push(checkpoint);
+  }
 
   return {
     ...base,
@@ -190,12 +213,8 @@ export function normalizeState(value, now = Date.now()) {
     },
     projects,
     sessions,
-    crumbs: arrayOf(value.crumbs)
-      .filter((item) => item?.projectId && projectIds.has(item.projectId))
-      .map((item) => createCrumb({ ...item, sessionId: sessionIds.has(item.sessionId) ? item.sessionId : null }, now)),
-    checkpoints: arrayOf(value.checkpoints)
-      .filter((item) => item?.projectId && projectIds.has(item.projectId))
-      .map((item) => createCheckpoint({ ...item, sessionId: sessionIds.has(item.sessionId) ? item.sessionId : null }, now)),
+    crumbs,
+    checkpoints,
     ui: {
       selectedProjectId: projectIds.has(value.ui?.selectedProjectId) ? value.ui.selectedProjectId : null
     }
