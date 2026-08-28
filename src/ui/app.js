@@ -110,6 +110,7 @@ export class ReentryApp {
   #colorSchemeQuery = null;
   #colorSchemeListener = null;
   #sessionHealthSignature = "none";
+  #calendarDaySignature = "invalid";
 
   constructor(root, store) {
     this.#root = root;
@@ -130,6 +131,9 @@ export class ReentryApp {
       this.render();
     }, listenerOptions);
     window.addEventListener("keydown", (event) => this.#runUserAction(() => this.#onKeydown(event)), listenerOptions);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") this.#refreshTimers();
+    }, listenerOptions);
     this.#colorSchemeQuery = window.matchMedia?.("(prefers-color-scheme: dark)") ?? null;
     this.#colorSchemeListener = () => {
       if (this.#colorSchemeQuery) this.#syncThemeColor();
@@ -164,6 +168,7 @@ export class ReentryApp {
     const transientDialog = preserveDialog ? this.#captureTransientDialog() : null;
     this.#noticeQueue.push(...this.#store.drainNotices());
     const state = this.#store.getState();
+    const now = Date.now();
     const reopenImportPreview = Boolean(this.#root.querySelector("#import-preview-dialog")?.open && this.#pendingImport);
     if (this.#pendingImport && this.#pendingImport.baseState !== state) {
       this.#pendingImport.preview = {
@@ -180,15 +185,17 @@ export class ReentryApp {
     const activeProject = activeSession ? state.projects.find((item) => item.id === activeSession.projectId) : null;
     const currentReentryCard = currentProject
       ? currentProject.status === "archived"
-        ? buildReentryCard(state, currentProject.id)
-        : buildReentryCardWithStats(state, currentProject.id)
+        ? buildReentryCard(state, currentProject.id, now)
+        : buildReentryCardWithStats(state, currentProject.id, now)
       : null;
-    const workspaceCounts = buildWorkspaceCounts(state);
+    const workspaceCounts = buildWorkspaceCounts(state, now);
     const theme = state.settings.theme ?? "system";
     this.#sessionHealthSignature = sessionHealthSignature(
       activeSession,
-      activeSession ? this.#acknowledgedStaleSessions.has(activeSession.id) : false
+      activeSession ? this.#acknowledgedStaleSessions.has(activeSession.id) : false,
+      now
     );
+    this.#calendarDaySignature = localDaySignature(now);
 
     document.documentElement.dataset.theme = theme;
     document.documentElement.dataset.reducedMotion = state.settings.reducedMotion ? "reduce" : "system";
@@ -202,7 +209,7 @@ export class ReentryApp {
           ${this.#renderTopbar(route, currentProject, activeSession, workspaceCounts)}
           <main class="main-content" id="main-content" tabindex="-1">
             ${this.#renderNotices()}
-            ${this.#renderRoute(route, state, currentProject, activeSession, workspaceCounts, currentReentryCard)}
+            ${this.#renderRoute(route, state, currentProject, activeSession, workspaceCounts, currentReentryCard, now)}
           </main>
         </div>
       </div>
@@ -320,17 +327,17 @@ export class ReentryApp {
       </header>`;
   }
 
-  #renderRoute(route, state, project, activeSession, workspaceCounts, reentryCard) {
+  #renderRoute(route, state, project, activeSession, workspaceCounts, reentryCard, now) {
     if (route.name === "archive") return this.#renderArchive(state);
     if (route.name === "settings") return this.#renderSettings(state);
     if (route.name === "notFound") return this.#renderNotFound();
     if (route.name === "project") return project ? (project.status === "archived" ? this.#renderArchivedProject(state, project, reentryCard) : this.#renderProject(state, project, activeSession, reentryCard)) : this.#renderNotFound();
-    return this.#renderDashboard(state, activeSession, workspaceCounts);
+    return this.#renderDashboard(state, activeSession, workspaceCounts, now);
   }
 
-  #renderDashboard(state, activeSession, workspaceCounts) {
+  #renderDashboard(state, activeSession, workspaceCounts, now) {
     if (!workspaceCounts.unarchivedProjects) return this.#renderEmptyDashboard();
-    const { rankedProjects: ranked, weeklyReview, attentionDeck } = buildWorkspaceOverview(state);
+    const { rankedProjects: ranked, weeklyReview, attentionDeck } = buildWorkspaceOverview(state, now);
     const projectWindow = buildCollectionWindow(ranked, this.#collectionLimits.get("home"));
     const lead = ranked[0];
     const activeProjects = workspaceCounts.activeProjects;
@@ -1514,15 +1521,19 @@ export class ReentryApp {
   }
 
   #refreshTimers() {
+    if (document.visibilityState === "hidden") return;
+    const now = Date.now();
     for (const timer of this.#root.querySelectorAll(".js-session-timer")) {
-      timer.textContent = formatDuration(elapsedSeconds(timer.dataset.startedAt));
+      timer.textContent = formatDuration(elapsedSeconds(timer.dataset.startedAt, now));
     }
     const activeSession = this.#store.getState().sessions.find((item) => item.status === "active") ?? null;
     const nextSignature = sessionHealthSignature(
       activeSession,
-      activeSession ? this.#acknowledgedStaleSessions.has(activeSession.id) : false
+      activeSession ? this.#acknowledgedStaleSessions.has(activeSession.id) : false,
+      now
     );
-    if (nextSignature === this.#sessionHealthSignature) return;
+    const nextDaySignature = localDaySignature(now);
+    if (nextSignature === this.#sessionHealthSignature && nextDaySignature === this.#calendarDaySignature) return;
     const focusedControl = document.activeElement;
     if (focusedControl && this.#root.contains(focusedControl) && focusedControl.matches?.("input, textarea, select")) return;
     this.render({ preserveDialog: true });
@@ -1580,6 +1591,12 @@ function sessionHealthSignature(session, acknowledged, now = Date.now()) {
   if (!session) return "none";
   const health = inspectSession(session, now);
   return `${session.id}|${health.staleReasons.join(",")}|${acknowledged ? "ack" : "pending"}`;
+}
+
+export function localDaySignature(now = Date.now()) {
+  const date = new Date(now);
+  if (!Number.isFinite(date.getTime())) return "invalid";
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 }
 
 function controlContext(value) {

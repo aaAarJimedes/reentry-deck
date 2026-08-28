@@ -51,11 +51,14 @@ test("session lifecycle warnings refresh after time boundaries without erasing a
   const source = await readFile(APP_SOURCE_URL, "utf8");
 
   assert.match(source, /#sessionHealthSignature = "none"/u);
+  assert.match(source, /#calendarDaySignature = "invalid"/u);
   assert.match(source, /this\.#sessionHealthSignature = sessionHealthSignature/u);
-  assert.match(source, /if \(nextSignature === this\.#sessionHealthSignature\) return/u);
+  assert.match(source, /nextSignature === this\.#sessionHealthSignature && nextDaySignature === this\.#calendarDaySignature/u);
   assert.match(source, /focusedControl\.matches\?\.\("input, textarea, select"\)/u);
   assert.match(source, /this\.render\(\{ preserveDialog: true \}\)/u);
   assert.match(source, /health\.staleReasons\.join\(","\)/u);
+  assert.match(source, /document\.visibilityState === "hidden"/u);
+  assert.match(source, /document\.visibilityState === "visible"\) this\.#refreshTimers\(\)/u);
 });
 
 test("dialog redraw restoration preserves button focus as well as field values and selections", async () => {
@@ -182,7 +185,7 @@ test("project routes share one reentry card with dialogs and inline stats", asyn
   const source = await readFile(APP_SOURCE_URL, "utf8");
 
   assert.match(source, /const currentReentryCard = currentProject/u);
-  assert.match(source, /buildReentryCardWithStats\(state, currentProject\.id\)/u);
+  assert.match(source, /buildReentryCardWithStats\(state, currentProject\.id, now\)/u);
   assert.match(source, /#renderDialogs\(currentProject, activeSession, currentReentryCard\)/u);
   assert.match(source, /const stats = card\.stats/u);
   assert.match(source, /const reviewCheckpoint = reentryCard\?\.checkpoint/u);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { ROUTE_HASH_LIMIT, parseRoute } from "../src/ui/app.js";
+import { ROUTE_HASH_LIMIT, localDaySignature, parseRoute } from "../src/ui/app.js";
 
 describe("parseRoute", () => {
   test("accepts only the canonical top-level routes", () => {
@@ -42,4 +42,13 @@ describe("parseRoute", () => {
     assert.deepEqual(parseRoute(`#/project/${encodeURIComponent(validUnicodeId)}`), { name: "project", id: validUnicodeId });
     assert.deepEqual(parseRoute(`#/${"segment/".repeat(ROUTE_HASH_LIMIT)}`), { name: "notFound" });
   });
+});
+
+test("localDaySignature changes only at the local calendar boundary", () => {
+  const endOfDay = new Date(2026, 7, 28, 23, 59, 59, 999).getTime();
+  const nextDay = new Date(2026, 7, 29, 0, 0, 0, 0).getTime();
+
+  assert.equal(localDaySignature(endOfDay), "2026-8-28");
+  assert.equal(localDaySignature(nextDay), "2026-8-29");
+  assert.equal(localDaySignature("not-a-date"), "invalid");
 });
