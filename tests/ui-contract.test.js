@@ -33,11 +33,15 @@ test("project archival uses an accessible in-app confirmation instead of window.
 
 test("project mutations enforce lifecycle-specific core plans", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
-  const edit = source.match(/#editProject\(data, form\) \{([\s\S]*?)\n  \}\n\n  #changeProjectStatus/u)?.[1] ?? "";
+  const edit = source.match(/#editProject\(data, form\) \{([\s\S]*?)\n  \}\n\n  #prepareProjectEditDialog/u)?.[1] ?? "";
+  const prepareEdit = source.match(/#prepareProjectEditDialog\(\) \{([\s\S]*?)\n  \}\n\n  #changeProjectStatus/u)?.[1] ?? "";
   const status = source.match(/#changeProjectStatus\(projectId, status\) \{([\s\S]*?)\n  \}\n\n  #toggleCrumbResolution/u)?.[1] ?? "";
   const restore = source.match(/#restoreProject\(projectId\) \{([\s\S]*?)\n  \}\n\n  #setTheme/u)?.[1] ?? "";
 
-  assert.match(edit, /prepareProjectEdit\(state, data\.projectId\)/u);
+  assert.match(source, /if \(action === "edit-project"\) this\.#prepareProjectEditDialog\(\)/u);
+  assert.match(prepareEdit, /this\.#pendingProjectEdit = \{ projectId: project\.id, editToken \}/u);
+  assert.match(edit, /pending\.projectId, pending\.editToken/u);
+  assert.match(edit, /pending\.projectId !== data\.projectId/u);
   assert.match(status, /prepareProjectStatusChange\(state, projectId, status\)/u);
   assert.match(restore, /prepareProjectRestore\(state, projectId\)/u);
   for (const handler of [edit, status, restore]) assert.doesNotMatch(handler, /state\.projects\.find/u);

@@ -5,6 +5,7 @@ const OPEN_SIGNAL_TYPES = new Set(["question", "blocker"]);
 const SUMMARY_CRUMB_TYPES = new Set(["note", "discovery", "decision"]);
 const CHANGE_CRUMB_TYPES = new Set(["note", "discovery", "decision", "next"]);
 const LIVE_PROJECT_STATUSES = new Set(["active", "paused", "blocked"]);
+const PROJECT_EDIT_FIELDS = Object.freeze(["title", "description", "descriptionUpdatedAt", "nextAction", "nextActionUpdatedAt", "updatedAt"]);
 
 export function getProjectActivity(state, projectId) {
   return getIndexedProjectActivity(buildReentryIndex(state, [projectId]), projectId);
@@ -82,11 +83,14 @@ export function prepareProjectArchive(state, projectId) {
   return { project, projectIndex };
 }
 
-export function prepareProjectEdit(state, projectId) {
+export function prepareProjectEdit(state, projectId, expectedToken = undefined) {
   const context = locateProjectRecord(state, projectId);
   if (!context.project) throw new Error("找不到要编辑的项目。 ");
   if (context.project.status === "archived") throw new Error("归档项目保持只读；请先恢复项目再编辑。 ");
-  return context;
+  if (expectedToken !== undefined && !matchesProjectEditToken(context.project, expectedToken)) {
+    throw new Error("项目在编辑期间已发生变化，请重新打开表单核对最新内容。 ");
+  }
+  return { ...context, editToken: buildProjectEditToken(context.project) };
 }
 
 export function prepareProjectStatusChange(state, projectId, status) {
@@ -220,6 +224,20 @@ function locateProjectRecord(state, projectId) {
     if (projects[index]?.id === projectId) return { project: projects[index], projectIndex: index };
   }
   return { project: null, projectIndex: -1 };
+}
+
+function buildProjectEditToken(project) {
+  const token = {};
+  for (const field of PROJECT_EDIT_FIELDS) token[field] = project[field] ?? null;
+  return token;
+}
+
+function matchesProjectEditToken(project, token) {
+  if (!token || typeof token !== "object") return false;
+  for (const field of PROJECT_EDIT_FIELDS) {
+    if ((project[field] ?? null) !== token[field]) return false;
+  }
+  return true;
 }
 
 export function rankProjectsForReentry(state, now = Date.now()) {

@@ -94,6 +94,7 @@ export class ReentryApp {
   #noticeQueue = [];
   #acknowledgedStaleSessions = new Set();
   #pendingImport = null;
+  #pendingProjectEdit = null;
   #importRequestGate = createLatestRequestGate();
   #importReadController = null;
   #clipboardRequestGate = createLatestRequestGate();
@@ -127,6 +128,7 @@ export class ReentryApp {
     this.#root.addEventListener("cancel", (event) => {
       if (event.target.id === "import-preview-dialog") this.#pendingImport = null;
       if (event.target.id === "archive-confirm-dialog") this.#pendingArchiveId = null;
+      if (event.target.id === "edit-project-dialog") this.#pendingProjectEdit = null;
     }, listenerOptions);
     window.addEventListener("hashchange", () => {
       this.#focusSelector = "#main-content";
@@ -154,6 +156,7 @@ export class ReentryApp {
     this.#importReadController = null;
     this.#clipboardRequestGate.invalidate();
     this.#pendingImport = null;
+    this.#pendingProjectEdit = null;
     this.#activeSession = null;
     this.#eventController.abort();
     this.#colorSchemeQuery?.removeEventListener?.("change", this.#colorSchemeListener);
@@ -847,7 +850,7 @@ export class ReentryApp {
     if (action === "close-dialog") this.#closeDialog(control);
     if (action === "confirm-import") this.#confirmImport();
     if (action === "run-command") this.#runCommand(control.dataset.command, control.closest("dialog"));
-    if (action === "edit-project") this.#openDialog("edit-project-dialog");
+    if (action === "edit-project") this.#prepareProjectEditDialog();
     if (action === "open-checkpoint") this.#openDialog("checkpoint-dialog");
     if (action === "review-quick-checkpoint") this.#openDialog("quick-review-dialog");
     if (action === "start-session") this.#prepareSessionDialog(control.dataset.projectId);
@@ -1231,9 +1234,11 @@ export class ReentryApp {
   #editProject(data, form) {
     const title = String(data.title ?? "").trim();
     if (!title) throw new Error("项目名称不能只包含空格。 ");
+    const pending = this.#pendingProjectEdit;
+    if (!pending || pending.projectId !== data.projectId) throw new Error("编辑上下文已失效，请重新打开表单。 ");
     this.#focusSelector = '[data-action="edit-project"]';
     this.#store.update((state) => {
-      const { project } = prepareProjectEdit(state, data.projectId);
+      const { project } = prepareProjectEdit(state, pending.projectId, pending.editToken);
       const changedAt = isoAtOrAfter(Date.now(), project.updatedAt);
       project.title = title;
       project.description = String(data.description ?? "").trim();
@@ -1242,8 +1247,18 @@ export class ReentryApp {
       project.nextActionUpdatedAt = project.nextAction ? project.descriptionUpdatedAt : null;
       project.updatedAt = project.descriptionUpdatedAt;
     });
+    this.#pendingProjectEdit = null;
     form.closest("dialog")?.close();
     this.#toast("项目说明已更新。 ");
+  }
+
+  #prepareProjectEditDialog() {
+    const state = this.#store.getState();
+    const route = parseRoute(location.hash);
+    if (route.name !== "project") throw new Error("当前页面没有可编辑的项目。 ");
+    const { project, editToken } = prepareProjectEdit(state, route.id);
+    this.#pendingProjectEdit = { projectId: project.id, editToken };
+    this.#openDialog("edit-project-dialog");
   }
 
   #changeProjectStatus(projectId, status) {
@@ -1524,6 +1539,7 @@ export class ReentryApp {
     const dialog = control.closest("dialog");
     if (dialog?.id === "import-preview-dialog") this.#pendingImport = null;
     if (dialog?.id === "archive-confirm-dialog") this.#pendingArchiveId = null;
+    if (dialog?.id === "edit-project-dialog") this.#pendingProjectEdit = null;
     dialog?.close();
   }
 

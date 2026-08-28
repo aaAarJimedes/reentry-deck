@@ -229,10 +229,17 @@ test("project change plans enforce live and archived lifecycle boundaries", () =
   Object.defineProperty(projects, "find", { value() { throw new Error("find must not be used"); } });
   const state = makeState({ projects });
 
-  assert.deepEqual(prepareProjectEdit(state, "live"), { project: live, projectIndex: 0 });
+  const editPlan = prepareProjectEdit(state, "live");
+  assert.equal(editPlan.project, live);
+  assert.equal(editPlan.projectIndex, 0);
+  assert.deepEqual(prepareProjectEdit(state, "live", editPlan.editToken).editToken, editPlan.editToken);
   assert.deepEqual(prepareProjectStatusChange(state, "live", "blocked"), { project: live, projectIndex: 0 });
   assert.deepEqual(prepareProjectRestore(state, "archived"), { project: archived, projectIndex: 1 });
   assert.throws(() => prepareProjectEdit(state, "archived"), /保持只读/u);
+  assert.throws(
+    () => prepareProjectEdit(makeState({ projects: [{ ...live, title: "externally changed" }] }), "live", editPlan.editToken),
+    /编辑期间已发生变化/u
+  );
   assert.throws(() => prepareProjectStatusChange(state, "archived", "paused"), /不能直接更改状态/u);
   assert.throws(() => prepareProjectStatusChange(state, "live", "archived"), /状态不可用/u);
   assert.throws(() => prepareProjectRestore(state, "live"), /不在归档舱/u);
