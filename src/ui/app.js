@@ -11,6 +11,7 @@ import {
 import { QUICK_CAPTURE_QUERY_LIMIT, buildQuickCaptureProjectWindow, prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture.js";
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { triggerBlobDownload } from "../core/download.js";
+import { safeDiagnosticMessage } from "../core/diagnostic.js";
 import { buildWorkspaceCounts, buildWorkspaceFrame, buildWorkspaceOverview } from "../core/insights.js";
 import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepareProjectArchive, prepareProjectEdit, prepareProjectRestore, prepareProjectStatusChange, prepareSessionDialog, prepareSessionStart } from "../core/reentry.js";
 import { WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../core/share.js";
@@ -85,7 +86,7 @@ export function resolveThemeAppearance(theme, prefersDark = false) {
 }
 
 export function userFacingErrorMessage(error, fallback = "操作未完成，请根据最新状态重试。 ") {
-  return typeof error?.message === "string" && error.message.trim() ? error.message : fallback;
+  return safeDiagnosticMessage(error, fallback);
 }
 
 export const IMPORT_FILE_NAME_LIMIT = 160;

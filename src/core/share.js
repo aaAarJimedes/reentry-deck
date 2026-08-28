@@ -1,4 +1,5 @@
 import { IMPORT_LIMITS, compactText, containsLoneSurrogate } from "./model.js";
+import { safeDiagnosticMessage } from "./diagnostic.js";
 
 export const WORKSPACE_HANDOFF_PROJECT_LIMIT = 5;
 export const WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT = 20;
@@ -182,7 +183,7 @@ export async function copyPlainText(value, dependencies = {}) {
 
   const documentRef = dependencies.document ?? globalThis.document;
   if (!documentRef?.body || typeof documentRef.createElement !== "function") {
-    throw new Error(clipboardError ? `无法写入剪贴板：${errorMessage(clipboardError)}` : "当前环境不支持复制。 ");
+    throw new Error(clipboardError ? `无法写入剪贴板：${safeDiagnosticMessage(clipboardError, "权限被拒绝")}` : "当前环境不支持复制。 ");
   }
   const previousFocus = captureFocus(documentRef.activeElement);
   const control = documentRef.createElement("textarea");
@@ -197,7 +198,7 @@ export async function copyPlainText(value, dependencies = {}) {
     attached = true;
     control.select();
     if (documentRef.execCommand?.("copy") !== true) {
-      throw new Error(clipboardError ? `无法写入剪贴板：${errorMessage(clipboardError)}` : "浏览器拒绝了复制操作。 ");
+      throw new Error(clipboardError ? `无法写入剪贴板：${safeDiagnosticMessage(clipboardError, "权限被拒绝")}` : "浏览器拒绝了复制操作。 ");
     }
     return "fallback";
   } finally {
@@ -231,8 +232,4 @@ function safelyRemove(control) {
   } catch {
     // Cleanup failures must not turn a successful copy into a reported failure.
   }
-}
-
-function errorMessage(error) {
-  return typeof error?.message === "string" && error.message.trim() ? error.message : "权限被拒绝";
 }

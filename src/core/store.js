@@ -1,8 +1,9 @@
 import { compactText, createEmptyState, isoAtOrAfter, makeId, normalizeState, validateImportCandidate, validateState } from "./model.js";
 import { buildImportPreview, checksumSerializedSnapshotData, readImportSnapshot } from "./import-preview.js";
+import { safeDiagnosticMessage } from "./diagnostic.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.191.0";
+export const APP_VERSION = "0.192.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
@@ -32,7 +33,7 @@ export class AppStore {
       this.#persistedRaw = this.#storage?.getItem(STORAGE_KEY) ?? null;
     } catch (error) {
       this.#storage = null;
-      this.#addNotice(`浏览器本地存储不可访问，已用临时空白工作区启动：${errorMessage(error)}`);
+      this.#addNotice(`浏览器本地存储不可访问，已用临时空白工作区启动：${safeDiagnosticMessage(error, "访问被拒绝")}`);
     }
     this.#state = freezeState(this.#load(now, this.#persistedRaw));
     this.#serializedState = JSON.stringify(this.#state);
@@ -86,7 +87,7 @@ export class AppStore {
     try {
       current = this.#storage?.getItem(STORAGE_KEY) ?? null;
     } catch (error) {
-      this.#addNotice(`无法读取另一个标签页的更新，当前页面保持不变：${errorMessage(error)}`);
+      this.#addNotice(`无法读取另一个标签页的更新，当前页面保持不变：${safeDiagnosticMessage(error, "访问被拒绝")}`);
       this.#emit("external");
       return false;
     }
@@ -128,7 +129,7 @@ export class AppStore {
     } catch (error) {
       this.#rejectedRaw = current;
       this.#hasRejectedRaw = true;
-      this.#addNotice(`另一个标签页写入的数据无法安全采用，当前页面未采用它：${errorMessage(error)}`);
+      this.#addNotice(`另一个标签页写入的数据无法安全采用，当前页面未采用它：${safeDiagnosticMessage(error, "访问被拒绝")}`);
       this.#emit("external");
       return false;
     }
@@ -240,7 +241,7 @@ export class AppStore {
           // Fall through to a clean state while preserving the unreadable strings in storage.
         }
       }
-      this.#addNotice(`本地数据无法读取，已用空白工作区启动：${errorMessage(error)}`);
+      this.#addNotice(`本地数据无法读取，已用空白工作区启动：${safeDiagnosticMessage(error, "访问被拒绝")}`);
       return createEmptyState(now);
     }
   }
@@ -277,7 +278,7 @@ export class AppStore {
     try {
       current = this.#storage.getItem(STORAGE_KEY);
     } catch (error) {
-      throw new Error(`本地保存失败，无法核对现有数据：${errorMessage(error)}`);
+      throw new Error(`本地保存失败，无法核对现有数据：${safeDiagnosticMessage(error, "访问被拒绝")}`);
     }
     if (current !== this.#persistedRaw) {
       this.refreshFromStorage();
@@ -297,7 +298,7 @@ export class AppStore {
         // Without a readable rollback value there is nothing safe to reclaim.
       }
       if (!isQuotaExceeded(error) || previous === null) {
-        throw new Error(`本地保存失败，原数据仍然保留：${errorMessage(error)}`);
+        throw new Error(`本地保存失败，原数据仍然保留：${safeDiagnosticMessage(error, "访问被拒绝")}`);
       }
       try {
         this.#assertWritePreconditions(current);
@@ -314,7 +315,7 @@ export class AppStore {
         } catch {
           // Best effort only: never overwrite a rollback value another tab created.
         }
-        throw new Error(`本地保存失败，原数据仍然保留：${errorMessage(retryError)}`);
+        throw new Error(`本地保存失败，原数据仍然保留：${safeDiagnosticMessage(retryError, "访问被拒绝")}`);
       }
     }
     const shouldSavePrevious = current && !this.#skipNextPreviousWrite && !releasedPrevious;
@@ -346,7 +347,7 @@ export class AppStore {
       }
     } catch (error) {
       if (/另一个标签页/u.test(error?.message ?? "")) throw error;
-      throw new Error(`本地保存失败，无法取得安全写入租约：${errorMessage(error)}`);
+      throw new Error(`本地保存失败，无法取得安全写入租约：${safeDiagnosticMessage(error, "访问被拒绝")}`);
     }
     this.#activeWriteLock = token;
     return () => {
@@ -375,7 +376,7 @@ export class AppStore {
     try {
       latest = this.#storage.getItem(STORAGE_KEY);
     } catch (error) {
-      throw new Error(`本地保存失败，提交前无法复核现有数据：${errorMessage(error)}`);
+      throw new Error(`本地保存失败，提交前无法复核现有数据：${safeDiagnosticMessage(error, "访问被拒绝")}`);
     }
     if (latest === expectedCurrent) return;
     this.refreshFromStorage();
@@ -387,7 +388,7 @@ export class AppStore {
     try {
       latest = this.#storage.getItem(STORAGE_KEY);
     } catch (error) {
-      this.#addNotice(`本地数据已写入，但无法立即复核提交结果：${errorMessage(error)}`);
+      this.#addNotice(`本地数据已写入，但无法立即复核提交结果：${safeDiagnosticMessage(error, "访问被拒绝")}`);
       return;
     }
     if (latest === expected) return;
@@ -403,14 +404,10 @@ export class AppStore {
       } catch (error) {
         if (this.#failedListeners.has(listener)) continue;
         this.#failedListeners.add(listener);
-        this.#addNotice(`工作区状态已处理，但一个界面订阅未能响应：${errorMessage(error)}`);
+        this.#addNotice(`工作区状态已处理，但一个界面订阅未能响应：${safeDiagnosticMessage(error, "访问被拒绝")}`);
       }
     }
   }
-}
-
-function errorMessage(error) {
-  return typeof error?.message === "string" && error.message.trim() ? error.message : "访问被拒绝";
 }
 
 function freezeState(state) {
