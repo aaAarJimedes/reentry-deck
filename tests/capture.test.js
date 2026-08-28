@@ -3,6 +3,7 @@ import { describe, test } from "node:test";
 
 import {
   QUICK_CAPTURE_PROJECT_LIMIT,
+  QUICK_CAPTURE_QUERY_LIMIT,
   buildQuickCaptureProjectWindow,
   prepareQuickCapture,
   projectNextActionFromCrumb
@@ -152,5 +153,21 @@ describe("buildQuickCaptureProjectWindow", () => {
     assert.equal(window.matched, 1);
     assert.equal(window.items[0].id, "project-49999");
     assert.ok(window.items.length <= QUICK_CAPTURE_PROJECT_LIMIT);
+  });
+
+  test("rejects oversized queries before reading the project collection", () => {
+    const state = {
+      get projects() {
+        throw new Error("project collection must not be read");
+      }
+    };
+
+    const window = buildQuickCaptureProjectWindow(state, { query: "x".repeat(QUICK_CAPTURE_QUERY_LIMIT + 1) });
+
+    assert.deepEqual(window.items, []);
+    assert.equal(window.total, 0);
+    assert.equal(window.matched, 0);
+    assert.equal(window.query, "");
+    assert.equal(window.queryRejected, true);
   });
 });

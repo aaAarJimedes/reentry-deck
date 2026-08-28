@@ -1,9 +1,14 @@
 import { CRUMB_TYPES, IMPORT_LIMITS, compactText, createCrumb, isoAtOrAfter } from "./model.js";
 
 export const QUICK_CAPTURE_PROJECT_LIMIT = 40;
+export const QUICK_CAPTURE_QUERY_LIMIT = IMPORT_LIMITS.projectTitle;
 
 export function buildQuickCaptureProjectWindow(state, options = {}) {
-  const query = normalizeQuickCaptureText(options.query);
+  const queryInput = readQuickCaptureQuery(options.query);
+  if (queryInput.rejected) {
+    return Object.freeze({ items: Object.freeze([]), total: 0, matched: 0, query: "", queryRejected: true });
+  }
+  const query = queryInput.query;
   const requestedLimit = Number(options.limit ?? QUICK_CAPTURE_PROJECT_LIMIT);
   const limit = Number.isSafeInteger(requestedLimit) && requestedLimit > 0
     ? Math.min(requestedLimit, QUICK_CAPTURE_PROJECT_LIMIT)
@@ -39,7 +44,7 @@ export function buildQuickCaptureProjectWindow(state, options = {}) {
 
   const items = [];
   for (const candidate of candidates) items.push(candidate.project);
-  return Object.freeze({ items: Object.freeze(items), total, matched, query });
+  return Object.freeze({ items: Object.freeze(items), total, matched, query, queryRejected: false });
 }
 
 export function projectNextActionFromCrumb(crumb) {
@@ -104,6 +109,15 @@ function compareQuickCaptureCandidate(left, right) {
 
 function normalizeQuickCaptureText(value) {
   return String(value ?? "").normalize("NFKC").toLocaleLowerCase("zh-CN").trim();
+}
+
+function readQuickCaptureQuery(value) {
+  const raw = String(value ?? "");
+  if (raw.length > QUICK_CAPTURE_QUERY_LIMIT) return { query: "", rejected: true };
+  const query = normalizeQuickCaptureText(raw);
+  return query.length > QUICK_CAPTURE_QUERY_LIMIT
+    ? { query: "", rejected: true }
+    : { query, rejected: false };
 }
 
 function finiteDate(value) {

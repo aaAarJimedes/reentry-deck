@@ -8,7 +8,7 @@ import {
   createSession,
   isoAtOrAfter
 } from "../core/model.js";
-import { buildQuickCaptureProjectWindow, prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture.js";
+import { QUICK_CAPTURE_QUERY_LIMIT, buildQuickCaptureProjectWindow, prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture.js";
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { triggerBlobDownload } from "../core/download.js";
 import { buildWorkspaceCounts, buildWorkspaceFrame, buildWorkspaceOverview } from "../core/insights.js";
@@ -870,7 +870,7 @@ export class ReentryApp {
       <dialog id="quick-capture-dialog" aria-labelledby="quick-capture-title">
         <div class="dialog-header"><div><h2 id="quick-capture-title">跨项目快捷记录</h2><p>不离开当前页面，把刚出现的证据放回正确现场。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <form class="dialog-body" data-form="quick-capture" autocomplete="off">
-          <label class="field"><span>筛选目标项目</span><input type="search" data-control="quick-project-filter" maxlength="${IMPORT_LIMITS.projectTitle}" placeholder="输入项目名称、说明或下一步" aria-describedby="quick-project-filter-status" /></label>
+          <label class="field"><span>筛选目标项目</span><input type="search" data-control="quick-project-filter" maxlength="${QUICK_CAPTURE_QUERY_LIMIT}" placeholder="输入项目名称、说明或下一步" aria-describedby="quick-project-filter-status" /></label>
           <p class="field-hint" id="quick-project-filter-status" data-quick-project-status aria-live="polite">${escapeHTML(quickCaptureProjectStatus(captureWindow))}</p>
           <label class="field"><span class="required">目标项目</span><select name="projectId" required ${captureWindow.items.length ? "" : "disabled"}>${captureProjectOptions}</select></label>
           <label class="field"><span class="required">证据类型</span><select name="type">${Object.entries(CRUMB_LABELS).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></label>
@@ -1895,6 +1895,7 @@ function renderQuickCaptureProjectOptions(projects, selectedId, activeProjectId)
 }
 
 function quickCaptureProjectStatus(window) {
+  if (window.queryRejected) return `筛选词不能超过 ${QUICK_CAPTURE_QUERY_LIMIT} 个字符。`;
   if (window.query) {
     if (!window.matched) return `没有匹配“${window.query}”的未归档项目。`;
     return `找到 ${window.matched} 个匹配项目，显示前 ${window.items.length} 个。`;
