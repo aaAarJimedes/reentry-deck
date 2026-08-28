@@ -3,7 +3,7 @@ import { buildImportPreview, checksumSerializedSnapshotData, readImportSnapshot 
 import { safeDiagnosticMessage } from "./diagnostic.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.192.0";
+export const APP_VERSION = "0.193.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;

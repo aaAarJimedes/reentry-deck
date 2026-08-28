@@ -64,10 +64,12 @@ test("app destruction releases listeners, subscriptions, and toast timers", asyn
   assert.match(source, /this\.#eventController\.abort\(\)/);
   assert.match(source, /this\.#unsubscribeStore\?\.\(\)/);
   assert.match(source, /for \(const timerId of this\.#toastTimers\.values\(\)\) window\.clearTimeout\(timerId\)/);
-  assert.match(source, /this\.#store\.destroy\?\.\(\)/);
+  assert.match(source, /this\.#store\?\.destroy\?\.\(\)/);
   assert.match(source, /if \(this\.#destroyed\) return/u);
   assert.match(source, /this\.#destroyed = true/u);
   assert.match(source, /this\.#renderSequence \+= 1/u);
+  assert.match(source, /constructor\(root, store\) \{[\s\S]*?try \{[\s\S]*?this\.render\(\);[\s\S]*?catch \(error\) \{[\s\S]*?this\.destroy\(\);[\s\S]*?throw error;/u);
+  assert.match(source, /this\.#store\?\.destroy\?\.\(\)/u);
 });
 
 test("deferred UI callbacks cannot outlive their render or app instance", async () => {

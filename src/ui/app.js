@@ -162,36 +162,45 @@ export class ReentryApp {
   constructor(root, store) {
     this.#root = root;
     this.#store = store;
-    this.#noticeQueue = store.drainNotices().slice(-STORE_NOTICE_LIMIT);
-    const listenerOptions = { signal: this.#eventController.signal };
+    try {
+      this.#noticeQueue = store.drainNotices().slice(-STORE_NOTICE_LIMIT);
+      const listenerOptions = { signal: this.#eventController.signal };
 
-    this.#root.addEventListener("click", (event) => this.#runUserAction(() => this.#onClick(event)), listenerOptions);
-    this.#root.addEventListener("submit", (event) => this.#onSubmit(event), listenerOptions);
-    this.#root.addEventListener("change", (event) => this.#runUserAction(() => this.#onChange(event)), listenerOptions);
-    this.#root.addEventListener("input", (event) => this.#onInput(event), listenerOptions);
-    this.#root.addEventListener("cancel", (event) => {
-      if (event.target.id === "import-preview-dialog") this.#pendingImport = null;
-      if (event.target.id === "archive-confirm-dialog") this.#pendingArchiveId = null;
-      if (event.target.id === "edit-project-dialog") this.#pendingProjectEdit = null;
-      if (event.target.id === "checkpoint-dialog") this.#pendingCheckpointSessionId = null;
-    }, listenerOptions);
-    window.addEventListener("hashchange", () => {
-      this.#focusSelector = "#main-content";
+      this.#root.addEventListener("click", (event) => this.#runUserAction(() => this.#onClick(event)), listenerOptions);
+      this.#root.addEventListener("submit", (event) => this.#onSubmit(event), listenerOptions);
+      this.#root.addEventListener("change", (event) => this.#runUserAction(() => this.#onChange(event)), listenerOptions);
+      this.#root.addEventListener("input", (event) => this.#onInput(event), listenerOptions);
+      this.#root.addEventListener("cancel", (event) => {
+        if (event.target.id === "import-preview-dialog") this.#pendingImport = null;
+        if (event.target.id === "archive-confirm-dialog") this.#pendingArchiveId = null;
+        if (event.target.id === "edit-project-dialog") this.#pendingProjectEdit = null;
+        if (event.target.id === "checkpoint-dialog") this.#pendingCheckpointSessionId = null;
+      }, listenerOptions);
+      window.addEventListener("hashchange", () => {
+        this.#focusSelector = "#main-content";
+        this.render();
+      }, listenerOptions);
+      window.addEventListener("keydown", (event) => this.#runUserAction(() => this.#onKeydown(event)), listenerOptions);
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") this.#refreshTimers();
+      }, listenerOptions);
+      this.#colorSchemeQuery = window.matchMedia?.("(prefers-color-scheme: dark)") ?? null;
+      this.#colorSchemeListener = () => {
+        if (this.#colorSchemeQuery) this.#syncThemeColor();
+      };
+      this.#colorSchemeQuery?.addEventListener?.("change", this.#colorSchemeListener);
+      this.#unsubscribeStore = this.#store.subscribe((_state, event) => this.render({ preserveDialog: event?.source === "external" }));
+
+      this.#timerId = window.setInterval(() => this.#refreshTimers(), 1000);
       this.render();
-    }, listenerOptions);
-    window.addEventListener("keydown", (event) => this.#runUserAction(() => this.#onKeydown(event)), listenerOptions);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") this.#refreshTimers();
-    }, listenerOptions);
-    this.#colorSchemeQuery = window.matchMedia?.("(prefers-color-scheme: dark)") ?? null;
-    this.#colorSchemeListener = () => {
-      if (this.#colorSchemeQuery) this.#syncThemeColor();
-    };
-    this.#colorSchemeQuery?.addEventListener?.("change", this.#colorSchemeListener);
-    this.#unsubscribeStore = this.#store.subscribe((_state, event) => this.render({ preserveDialog: event?.source === "external" }));
-
-    this.#timerId = window.setInterval(() => this.#refreshTimers(), 1000);
-    this.render();
+    } catch (error) {
+      try {
+        this.destroy();
+      } catch {
+        // Cleanup is best-effort here; preserve the initialization failure that explains the recovery screen.
+      }
+      throw error;
+    }
   }
 
   destroy() {
@@ -222,7 +231,7 @@ export class ReentryApp {
     for (const timerId of this.#toastTimers.values()) window.clearTimeout(timerId);
     this.#toastTimers.clear();
     this.#toasts = [];
-    this.#store.destroy?.();
+    this.#store?.destroy?.();
   }
 
   render({ preserveDialog = false } = {}) {
