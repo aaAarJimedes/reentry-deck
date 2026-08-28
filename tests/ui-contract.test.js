@@ -182,6 +182,14 @@ test("archive cards batch reentry projection and record counting", async () => {
   assert.doesNotMatch(source, /state\.crumbs\.filter\(\(item\) => item\.projectId === project\.id\)\.length/u);
 });
 
+test("archived cards expose a read-only detail route before restoration", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /href="#\/project\/\$\{encodeURIComponent\(project\.id\)\}" aria-label="查看归档项目：\$\{attr\(controlContext\(project\.title\)\)\}">查看现场<\/a>/u);
+  assert.match(source, /aria-label="恢复项目：\$\{attr\(controlContext\(project\.title\)\)\}">恢复项目<\/button>/u);
+  assert.match(source, /所有历史记录保持只读/u);
+});
+
 test("repeated dynamic controls expose bounded contextual names and labeled groups", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

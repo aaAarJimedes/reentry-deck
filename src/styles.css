@@ -681,6 +681,8 @@ h3 { font-size: 17px; }
 .project-next span { display: block; margin-bottom: 3px; color: var(--ink-soft); font-size: 10px; font-weight: 760; letter-spacing: .1em; text-transform: uppercase; }
 .project-card-footer { color: var(--ink-soft); font-size: 11px; }
 .project-card-footer .open-link { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); font-size: 13px; font-weight: 700; }
+.project-card-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.project-card-actions .ghost-button { min-height: 36px; padding: 7px 10px; font-size: 11px; }
 .collection-more { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
 .collection-more p { margin: 0; color: var(--ink-soft); font-size: 10px; }
 
