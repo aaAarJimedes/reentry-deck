@@ -102,7 +102,7 @@ export function locateActiveSessionContext(state) {
   let sessionIndex = -1;
   for (let index = 0; index < sessions.length; index += 1) {
     if (!isActiveSession(sessions[index])) continue;
-    if (session) throw new Error("检测到多个活动会话，无法确定当前工作现场。");
+    if (session) throw new Error("检测到多个活动会话；系统只允许一个，无法确定当前工作现场。");
     session = sessions[index];
     sessionIndex = index;
   }
@@ -119,14 +119,19 @@ export function locateActiveSessionContext(state) {
 }
 
 export function deriveQuickDockCheckpointInput(state, sessionId, now = Date.now(), options = {}) {
-  const activeSession = assertSingleActiveSession(state, now, options);
+  return prepareQuickDock(state, sessionId, now, options).input;
+}
+
+export function prepareQuickDock(state, sessionId, now = Date.now(), options = {}) {
+  if (!Array.isArray(state?.sessions)) throw new Error("会话列表无效。");
+  const context = locateActiveSessionContext(state);
+  const activeSession = context?.session ?? null;
   if (!activeSession) throw new Error("没有可快速停靠的活动会话。");
   if (sessionId != null && sessionId !== activeSession.id) {
     throw new Error("指定会话不是当前唯一活动会话。");
   }
-
-  const project = findById(arrayOf(state.projects), activeSession.projectId);
-  if (!project) throw new Error("活动会话关联的项目不存在，无法生成快速停靠检查点。");
+  inspectSession(activeSession, now, options);
+  const project = context.project;
 
   let summaryCrumb = null;
   let summaryTimestamp = Number.NaN;
@@ -159,13 +164,16 @@ export function deriveQuickDockCheckpointInput(state, sessionId, now = Date.now(
   }
 
   return {
-    projectId: project.id,
-    sessionId: activeSession.id,
-    summary: compactText(summaryCrumb?.text, IMPORT_LIMITS.checkpointSummary) || QUICK_DOCK_NOT_RECORDED.summary,
-    nextAction: compactText(nextCrumb?.text, IMPORT_LIMITS.nextAction) || compactText(project.nextAction, IMPORT_LIMITS.nextAction) || QUICK_DOCK_NOT_RECORDED.nextAction,
-    openLoops: compactText(joinNewestOpenLoops(openLoops), IMPORT_LIMITS.openLoops) || QUICK_DOCK_NOT_RECORDED.openLoops,
-    returnHint: QUICK_DOCK_RETURN_HINT,
-    captureMode: "quick"
+    ...context,
+    input: {
+      projectId: project.id,
+      sessionId: activeSession.id,
+      summary: compactText(summaryCrumb?.text, IMPORT_LIMITS.checkpointSummary) || QUICK_DOCK_NOT_RECORDED.summary,
+      nextAction: compactText(nextCrumb?.text, IMPORT_LIMITS.nextAction) || compactText(project.nextAction, IMPORT_LIMITS.nextAction) || QUICK_DOCK_NOT_RECORDED.nextAction,
+      openLoops: compactText(joinNewestOpenLoops(openLoops), IMPORT_LIMITS.openLoops) || QUICK_DOCK_NOT_RECORDED.openLoops,
+      returnHint: QUICK_DOCK_RETURN_HINT,
+      captureMode: "quick"
+    }
   };
 }
 

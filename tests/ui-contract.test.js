@@ -263,6 +263,16 @@ test("active capture and manual checkpoint transactions reuse validated context 
   }
 });
 
+test("quick docking reuses the core plan's active-context positions", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const handler = source.match(/#quickDock\(sessionId, continueAfter\) \{([\s\S]*?)\n  \}\n\n  #quickDockActiveSession/u)?.[1] ?? "";
+
+  assert.match(handler, /prepareQuickDock\(state, sessionId, now\)/u);
+  assert.match(handler, /next\.sessions\[sessionIndex\]/u);
+  assert.match(handler, /next\.projects\[projectIndex\]/u);
+  assert.doesNotMatch(handler, /(?:state|next)\.(?:sessions|projects)\.find/u);
+});
+
 test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

@@ -15,7 +15,7 @@ import { buildWorkspaceCounts, buildWorkspaceOverview } from "../core/insights.j
 import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, getLatestProjectCheckpoint } from "../core/reentry.js";
 import { buildReentryBrief, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
-import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession, locateActiveSessionContext, prepareQuickCheckpointReview } from "../core/session.js";
+import { QUICK_DOCK_NOT_RECORDED, inspectSession, locateActiveSessionContext, prepareQuickCheckpointReview, prepareQuickDock } from "../core/session.js";
 import {
   COLLECTION_PAGE_SIZE,
   TIMELINE_PAGE_SIZE,
@@ -1172,12 +1172,9 @@ export class ReentryApp {
   #quickDock(sessionId, continueAfter) {
     try {
       const state = this.#store.getState();
-      const activeSession = state.sessions.find((item) => item.status === "active");
-      if (!activeSession || activeSession.id !== sessionId) throw new Error("这个会话已经不再活动，无需重复停靠。 ");
       const now = Date.now();
-      const input = deriveQuickDockCheckpointInput(state, sessionId, now);
-      const project = state.projects.find((item) => item.id === activeSession.projectId);
-      const eventTime = isoAtOrAfter(now, activeSession.startedAt, project?.updatedAt);
+      const { input, session: activeSession, sessionIndex, project, projectIndex } = prepareQuickDock(state, sessionId, now);
+      const eventTime = isoAtOrAfter(now, activeSession.startedAt, project.updatedAt);
       const checkpoint = createCheckpoint(input, eventTime);
       const recordedNextAction = input.nextAction !== QUICK_DOCK_NOT_RECORDED.nextAction;
       const followUp = continueAfter ? createSession({
@@ -1188,23 +1185,26 @@ export class ReentryApp {
 
       this.#focusSelector = continueAfter ? '[data-form="capture-crumb"] textarea' : "#main-content";
       this.#store.update((next) => {
-        const current = next.sessions.find((item) => item.id === sessionId && item.status === "active");
-        if (!current) throw new Error("会话状态刚刚发生变化，请重新确认。 ");
+        const current = next.sessions[sessionIndex];
+        const currentProject = next.projects[projectIndex];
+        if (current?.id !== sessionId || current.status !== "active"
+          || currentProject?.id !== current.projectId || currentProject.status === "archived") {
+          throw new Error("会话状态刚刚发生变化，请重新确认。 ");
+        }
         next.checkpoints.push(checkpoint);
         current.status = "abandoned";
         current.endedAt = checkpoint.createdAt;
         current.checkpointId = checkpoint.id;
         current.closeReason = continueAfter ? "interrupted" : "quick-dock";
-        const project = next.projects.find((item) => item.id === current.projectId);
-        project.updatedAt = checkpoint.createdAt;
+        currentProject.updatedAt = checkpoint.createdAt;
         if (recordedNextAction) {
-          project.nextAction = input.nextAction;
-          project.nextActionUpdatedAt = checkpoint.createdAt;
+          currentProject.nextAction = input.nextAction;
+          currentProject.nextActionUpdatedAt = checkpoint.createdAt;
         }
         if (followUp) {
           next.sessions.push(followUp);
-          project.lastOpenedAt = followUp.startedAt;
-          project.updatedAt = followUp.startedAt;
+          currentProject.lastOpenedAt = followUp.startedAt;
+          currentProject.updatedAt = followUp.startedAt;
         }
       }, followUp ? Date.parse(followUp.startedAt) : now);
 

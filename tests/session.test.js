@@ -12,7 +12,8 @@ import {
   isActiveSession,
   isSessionStale,
   locateActiveSessionContext,
-  prepareQuickCheckpointReview
+  prepareQuickCheckpointReview,
+  prepareQuickDock
 } from "../src/core/session.js";
 
 const HOUR = 60 * 60 * 1000;
@@ -495,4 +496,21 @@ test("deriveQuickDockCheckpointInput refuses ambiguous or broken docking targets
       /关联的项目不存在/
     );
   });
+});
+
+test("prepareQuickDock returns the same input with stable active-context positions", () => {
+  const state = stateWith({
+    projects: [{ id: "other", status: "active" }, { id: "project-current", status: "active", nextAction: "fallback" }],
+    sessions: [{ id: "done", projectId: "other", status: "completed" }, activeSession()]
+  });
+  Object.defineProperty(state.projects, "find", { value() { throw new Error("project find must not be used"); } });
+  Object.defineProperty(state.sessions, "find", { value() { throw new Error("session find must not be used"); } });
+
+  const plan = prepareQuickDock(state, "session-current", NOW);
+
+  assert.equal(plan.sessionIndex, 1);
+  assert.equal(plan.projectIndex, 1);
+  assert.equal(plan.session, state.sessions[1]);
+  assert.equal(plan.project, state.projects[1]);
+  assert.deepEqual(plan.input, deriveQuickDockCheckpointInput(state, "session-current", NOW));
 });
