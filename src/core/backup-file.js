@@ -1,4 +1,6 @@
 export const MAX_BACKUP_FILE_BYTES = 25 * 1024 * 1024;
+export const MAX_BACKUP_STREAM_CHUNKS = 16_384;
+const BACKUP_TEXT_SEGMENT_LENGTH = 64 * 1024;
 
 export function createLatestRequestGate() {
   let latest = null;
@@ -49,7 +51,9 @@ async function readBackupStream(file, signal) {
   const reader = file.stream().getReader();
   const decoder = new TextDecoder("utf-8", { fatal: true });
   const chunks = [];
+  let segment = "";
   let bytesRead = 0;
+  let chunksRead = 0;
   const cancel = () => {
     try {
       Promise.resolve(reader.cancel()).catch(() => {});
@@ -62,16 +66,31 @@ async function readBackupStream(file, signal) {
     while (true) {
       const result = await reader.read();
       if (signal?.aborted) throw backupReadError("备份读取已取消。 ");
-      if (result.done) break;
-      if (!(result.value instanceof Uint8Array)) throw new TypeError("Invalid backup byte stream");
-      bytesRead += result.value.byteLength;
-      if (!Number.isSafeInteger(bytesRead) || bytesRead > MAX_BACKUP_FILE_BYTES) {
-        cancel();
-        throw backupReadError("备份实际内容超过 25 MB，已停止导入以保护页面稳定性。 ");
+      if (result.done) {
+        if (bytesRead !== file.size) {
+          throw backupReadError("备份声明大小与实际内容不一致，已停止导入。 ");
+        }
+        break;
       }
-      chunks.push(decoder.decode(result.value, { stream: true }));
+      if (!(result.value instanceof Uint8Array)) throw new TypeError("Invalid backup byte stream");
+      chunksRead += 1;
+      if (chunksRead > MAX_BACKUP_STREAM_CHUNKS || result.value.byteLength === 0) {
+        cancel();
+        throw backupReadError("备份字节流分块异常，已停止导入以保护页面稳定性。 ");
+      }
+      bytesRead += result.value.byteLength;
+      if (!Number.isSafeInteger(bytesRead) || bytesRead > file.size) {
+        cancel();
+        throw backupReadError("备份声明大小与实际内容不一致，已停止导入。 ");
+      }
+      segment += decoder.decode(result.value, { stream: true });
+      if (segment.length >= BACKUP_TEXT_SEGMENT_LENGTH) {
+        chunks.push(segment);
+        segment = "";
+      }
     }
-    chunks.push(decoder.decode());
+    segment += decoder.decode();
+    if (segment) chunks.push(segment);
     return chunks.join("");
   } finally {
     signal?.removeEventListener?.("abort", cancel);

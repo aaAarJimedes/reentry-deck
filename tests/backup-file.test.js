@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { MAX_BACKUP_FILE_BYTES, createLatestRequestGate, readBackupFile } from "../src/core/backup-file.js";
+import { MAX_BACKUP_FILE_BYTES, MAX_BACKUP_STREAM_CHUNKS, createLatestRequestGate, readBackupFile } from "../src/core/backup-file.js";
 
 function fakeFile({ size, text = "{}", readError = null } = {}) {
   let reads = 0;
@@ -75,7 +75,7 @@ describe("readBackupFile", () => {
         }; } };
       }
     };
-    await assert.rejects(readBackupFile(oversized), /实际内容超过 25 MB/u);
+    await assert.rejects(readBackupFile(oversized), /声明大小与实际内容不一致/u);
     assert.equal(oversizedCanceled, true);
 
     const controller = new AbortController();
@@ -128,6 +128,63 @@ describe("readBackupFile", () => {
 
     await assert.rejects(readBackupFile(streamedFile(Uint8Array.of(0x7b, 0x22, 0x78, 0x22, 0x3a, 0x22, 0xc3, 0x28, 0x22, 0x7d))), /无法读取备份文件/u);
     await assert.rejects(readBackupFile(streamedFile(Uint8Array.of(0x7b, 0x22, 0x78, 0x22, 0x3a, 0x22, 0xf0, 0x9f, 0x9a))), /无法读取备份文件/u);
+  });
+
+  test("rejects dishonest sizes and pathological stream fragmentation", async () => {
+    const bytes = new TextEncoder().encode('{"safe":true}');
+    const streamedFile = ({ size, read }) => {
+      let canceled = false;
+      return {
+        size,
+        get canceled() { return canceled; },
+        stream() {
+          return { getReader() { return {
+            read,
+            async cancel() { canceled = true; },
+            releaseLock() {}
+          }; } };
+        }
+      };
+    };
+
+    let underRead = false;
+    const underreported = streamedFile({
+      size: bytes.length - 1,
+      async read() {
+        if (underRead) return { done: true };
+        underRead = true;
+        return { done: false, value: bytes };
+      }
+    });
+    await assert.rejects(readBackupFile(underreported), /声明大小与实际内容不一致/u);
+    assert.equal(underreported.canceled, true);
+
+    let overRead = false;
+    const overreported = streamedFile({
+      size: bytes.length + 1,
+      async read() {
+        if (overRead) return { done: true };
+        overRead = true;
+        return { done: false, value: bytes };
+      }
+    });
+    await assert.rejects(readBackupFile(overreported), /声明大小与实际内容不一致/u);
+
+    let chunkReads = 0;
+    const fragmented = streamedFile({
+      size: MAX_BACKUP_FILE_BYTES,
+      async read() {
+        chunkReads += 1;
+        return { done: false, value: Uint8Array.of(0x20) };
+      }
+    });
+    await assert.rejects(readBackupFile(fragmented), /分块异常/u);
+    assert.equal(chunkReads, MAX_BACKUP_STREAM_CHUNKS + 1);
+    assert.equal(fragmented.canceled, true);
+
+    const emptyChunk = streamedFile({ size: 0, async read() { return { done: false, value: new Uint8Array() }; } });
+    await assert.rejects(readBackupFile(emptyChunk), /分块异常/u);
+    assert.equal(emptyChunk.canceled, true);
   });
 });
 
