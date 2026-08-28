@@ -221,6 +221,15 @@ test("crumb actions carry their committed result out of the transaction without 
   assert.doesNotMatch(`${resolutionHandler}\n${pinHandler}`, /#store\.getState\(\)\.crumbs\.find/u);
 });
 
+test("starting a session selects only its latest checkpoint instead of building a full reentry card", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const handler = source.match(/#startSession\(data, form\) \{([\s\S]*?)\n  \}\n\n  #captureCrumb/u)?.[1] ?? "";
+
+  assert.match(source, /getLatestProjectCheckpoint/u);
+  assert.match(handler, /getLatestProjectCheckpoint\(state, project\.id\)/u);
+  assert.doesNotMatch(handler, /buildReentryCard/u);
+});
+
 test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

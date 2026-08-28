@@ -23,6 +23,19 @@ export function buildReentryCardWithStats(state, projectId, now = Date.now()) {
   return buildIndexedReentryCard(buildReentryIndex(state, [projectId]), projectId, now, true);
 }
 
+export function getLatestProjectCheckpoint(state, projectId) {
+  let latest = null;
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const checkpoint of safeCollection(state?.checkpoints)) {
+    if (checkpoint.projectId !== projectId) continue;
+    const candidateTime = timeOf(checkpoint.createdAt);
+    if (candidateTime < latestTime) continue;
+    latest = checkpoint;
+    latestTime = candidateTime;
+  }
+  return latest;
+}
+
 export function buildReentryCards(state, projectIds, now = Date.now()) {
   const safeProjectIds = Array.isArray(projectIds) ? projectIds : [];
   const index = buildReentryIndex(state, safeProjectIds);

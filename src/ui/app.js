@@ -12,7 +12,7 @@ import { buildQuickCaptureProjectWindow, prepareQuickCapture, projectNextActionF
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { triggerBlobDownload } from "../core/download.js";
 import { buildWorkspaceCounts, buildWorkspaceOverview } from "../core/insights.js";
-import { buildReentryCard, buildReentryCards, buildReentryCardWithStats } from "../core/reentry.js";
+import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, getLatestProjectCheckpoint } from "../core/reentry.js";
 import { buildReentryBrief, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession, prepareQuickCheckpointReview } from "../core/session.js";
@@ -1043,7 +1043,7 @@ export class ReentryApp {
     if (state.sessions.some((item) => item.status === "active")) throw new Error("已有活动会话，请先为它留下检查点。 ");
     const project = state.projects.find((item) => item.id === data.projectId);
     if (!project || project.status === "archived") throw new Error("项目不可用，无法开始会话。 ");
-    const sourceCheckpoint = buildReentryCard(state, project.id)?.checkpoint;
+    const sourceCheckpoint = getLatestProjectCheckpoint(state, project.id);
     const session = createSession(
       { projectId: project.id, intention: data.intention, sourceCheckpointId: sourceCheckpoint?.id ?? null },
       isoAtOrAfter(Date.now(), project.updatedAt, sourceCheckpoint?.createdAt)

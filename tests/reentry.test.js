@@ -5,6 +5,7 @@ import {
   buildReentryCard,
   buildReentryCards,
   buildReentryCardWithStats,
+  getLatestProjectCheckpoint,
   getProjectActivity,
   getProjectStats,
   rankProjectsForReentry
@@ -121,6 +122,26 @@ test("getProjectActivity ignores other projects and falls back to createdAt", ()
   });
 
   assert.equal(getProjectActivity(state, "p1").lastActivityAt, project.createdAt);
+});
+
+test("getLatestProjectCheckpoint streams only the target checkpoints with deterministic ties", () => {
+  const timestamp = at(-1_000);
+  const checkpoints = [
+    { id: "other", projectId: "p2", createdAt: at(10_000) },
+    { id: "older", projectId: "p1", createdAt: at(-2_000) },
+    { id: "tie-old", projectId: "p1", createdAt: timestamp },
+    { id: "tie-new", projectId: "p1", createdAt: timestamp }
+  ];
+  for (const method of ["filter", "find", "map", "sort"]) {
+    Object.defineProperty(checkpoints, method, {
+      value() { throw new Error(`${method} must not be used`); },
+      configurable: true
+    });
+  }
+
+  assert.equal(getLatestProjectCheckpoint({ checkpoints }, "p1")?.id, "tie-new");
+  assert.equal(getLatestProjectCheckpoint({ checkpoints }, "missing"), null);
+  assert.equal(getLatestProjectCheckpoint({ checkpoints: null }, "p1"), null);
 });
 
 test("buildReentryCard uses the newest timestamped evidence instead of blindly trusting a checkpoint", () => {
