@@ -19,11 +19,18 @@ function fakeFile({ size, text = "{}", readError = null } = {}) {
 }
 
 describe("readBackupFile", () => {
-  test("accepts valid JSON exactly at the byte boundary", async () => {
-    const file = fakeFile({ size: MAX_BACKUP_FILE_BYTES, text: '{"ready":true}' });
+  test("accepts valid JSON when declared and observed UTF-8 sizes agree", async () => {
+    const text = '{"ready":"复航🚀"}';
+    const file = fakeFile({ size: new TextEncoder().encode(text).byteLength, text });
 
-    assert.deepEqual(await readBackupFile(file), { ready: true });
+    assert.deepEqual(await readBackupFile(file), { ready: "复航🚀" });
     assert.equal(file.reads, 1);
+  });
+
+  test("fallback reads reject dishonest sizes while allowing a decoded UTF-8 BOM", async () => {
+    await assert.rejects(readBackupFile(fakeFile({ size: 1, text: "{}" })), /声明大小与实际内容不一致/u);
+    await assert.rejects(readBackupFile(fakeFile({ size: 4, text: "{}" })), /声明大小与实际内容不一致/u);
+    assert.deepEqual(await readBackupFile(fakeFile({ size: 5, text: "{}" })), {});
   });
 
   test("rejects oversized files before reading their content", async () => {

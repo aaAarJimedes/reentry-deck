@@ -114,8 +114,13 @@ async function readBackupTextFallback(file, signal) {
   const text = await file.text();
   if (signal?.aborted) throw backupReadError("备份读取已取消。 ");
   if (typeof text !== "string") throw new TypeError("Invalid backup text");
-  if (utf8ByteLength(text) > MAX_BACKUP_FILE_BYTES) {
+  const actualBytes = utf8ByteLength(text);
+  if (actualBytes > MAX_BACKUP_FILE_BYTES) {
     throw backupReadError("备份实际内容超过 25 MB，已停止导入以保护页面稳定性。 ");
+  }
+  const byteOrderMarkWasDecoded = file.size === actualBytes + 3;
+  if (file.size !== actualBytes && !byteOrderMarkWasDecoded) {
+    throw backupReadError("备份声明大小与实际内容不一致，已停止导入。 ");
   }
   return text;
 }
