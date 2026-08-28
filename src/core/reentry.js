@@ -36,6 +36,24 @@ export function getLatestProjectCheckpoint(state, projectId) {
   return latest;
 }
 
+export function prepareSessionStart(state, projectId) {
+  for (const session of safeCollection(state?.sessions)) {
+    if (session.status === "active") throw new Error("已有活动会话，请先为它留下检查点。 ");
+  }
+  const projects = safeCollection(state?.projects);
+  for (let index = 0; index < projects.length; index += 1) {
+    const project = projects[index];
+    if (project.id !== projectId) continue;
+    if (project.status === "archived") throw new Error("项目不可用，无法开始会话。 ");
+    return {
+      project,
+      projectIndex: index,
+      sourceCheckpoint: getLatestProjectCheckpoint(state, project.id)
+    };
+  }
+  throw new Error("项目不可用，无法开始会话。 ");
+}
+
 export function buildReentryCards(state, projectIds, now = Date.now()) {
   const safeProjectIds = Array.isArray(projectIds) ? projectIds : [];
   const index = buildReentryIndex(state, safeProjectIds);

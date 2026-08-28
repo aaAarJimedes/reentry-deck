@@ -8,6 +8,7 @@ import {
   getLatestProjectCheckpoint,
   getProjectActivity,
   getProjectStats,
+  prepareSessionStart,
   rankProjectsForReentry
 } from "../src/core/reentry.js";
 
@@ -142,6 +143,33 @@ test("getLatestProjectCheckpoint streams only the target checkpoints with determ
   assert.equal(getLatestProjectCheckpoint({ checkpoints }, "p1")?.id, "tie-new");
   assert.equal(getLatestProjectCheckpoint({ checkpoints }, "missing"), null);
   assert.equal(getLatestProjectCheckpoint({ checkpoints: null }, "p1"), null);
+});
+
+test("prepareSessionStart validates availability and returns a stable project plan", () => {
+  const projects = [makeProject("other"), makeProject("target")];
+  const sessions = [{ id: "done", projectId: "other", status: "completed" }];
+  const checkpoints = [
+    { id: "old", projectId: "target", createdAt: at(-2_000) },
+    { id: "latest", projectId: "target", createdAt: at(-1_000) }
+  ];
+  for (const collection of [projects, sessions, checkpoints]) {
+    Object.defineProperty(collection, "find", { value() { throw new Error("find must not be used"); } });
+  }
+
+  const plan = prepareSessionStart(makeState({ projects, sessions, checkpoints }), "target");
+
+  assert.equal(plan.project, projects[1]);
+  assert.equal(plan.projectIndex, 1);
+  assert.equal(plan.sourceCheckpoint, checkpoints[1]);
+  assert.throws(
+    () => prepareSessionStart(makeState({ projects, sessions: [{ id: "live", status: "active" }] }), "target"),
+    /已有活动会话/u
+  );
+  assert.throws(() => prepareSessionStart(makeState({ projects }), "missing"), /项目不可用/u);
+  assert.throws(
+    () => prepareSessionStart(makeState({ projects: [makeProject("target", { status: "archived" })] }), "target"),
+    /项目不可用/u
+  );
 });
 
 test("buildReentryCard uses the newest timestamped evidence instead of blindly trusting a checkpoint", () => {

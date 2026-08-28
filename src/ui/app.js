@@ -12,7 +12,7 @@ import { buildQuickCaptureProjectWindow, prepareQuickCapture, projectNextActionF
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { triggerBlobDownload } from "../core/download.js";
 import { buildWorkspaceCounts, buildWorkspaceOverview } from "../core/insights.js";
-import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, getLatestProjectCheckpoint } from "../core/reentry.js";
+import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepareSessionStart } from "../core/reentry.js";
 import { buildReentryBrief, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, inspectSession, locateActiveSessionContext, prepareQuickCheckpointReview, prepareQuickDock } from "../core/session.js";
@@ -1040,18 +1040,18 @@ export class ReentryApp {
 
   #startSession(data, form) {
     const state = this.#store.getState();
-    if (state.sessions.some((item) => item.status === "active")) throw new Error("已有活动会话，请先为它留下检查点。 ");
-    const project = state.projects.find((item) => item.id === data.projectId);
-    if (!project || project.status === "archived") throw new Error("项目不可用，无法开始会话。 ");
-    const sourceCheckpoint = getLatestProjectCheckpoint(state, project.id);
+    const { project, projectIndex, sourceCheckpoint } = prepareSessionStart(state, data.projectId);
     const session = createSession(
       { projectId: project.id, intention: data.intention, sourceCheckpointId: sourceCheckpoint?.id ?? null },
       isoAtOrAfter(Date.now(), project.updatedAt, sourceCheckpoint?.createdAt)
     );
     this.#focusSelector = '[data-form="capture-crumb"] textarea';
     this.#store.update((next) => {
+      const item = next.projects[projectIndex];
+      if (!item || item.id !== project.id || item.status === "archived") {
+        throw new Error("项目在开始会话前已不可用。 ");
+      }
       next.sessions.push(session);
-      const item = next.projects.find((candidate) => candidate.id === project.id);
       item.lastOpenedAt = session.startedAt;
       item.updatedAt = session.startedAt;
       if (item.status === "paused") item.status = "active";

@@ -225,9 +225,11 @@ test("starting a session selects only its latest checkpoint instead of building 
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const handler = source.match(/#startSession\(data, form\) \{([\s\S]*?)\n  \}\n\n  #captureCrumb/u)?.[1] ?? "";
 
-  assert.match(source, /getLatestProjectCheckpoint/u);
-  assert.match(handler, /getLatestProjectCheckpoint\(state, project\.id\)/u);
+  assert.match(source, /prepareSessionStart/u);
+  assert.match(handler, /prepareSessionStart\(state, data\.projectId\)/u);
+  assert.match(handler, /next\.projects\[projectIndex\]/u);
   assert.doesNotMatch(handler, /buildReentryCard/u);
+  assert.doesNotMatch(handler, /next\.projects\.find/u);
 });
 
 test("quick capture reuses its validated project position inside the transaction", async () => {
