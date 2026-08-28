@@ -230,6 +230,16 @@ test("starting a session selects only its latest checkpoint instead of building 
   assert.doesNotMatch(handler, /buildReentryCard/u);
 });
 
+test("quick capture reuses its validated project position inside the transaction", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const handler = source.match(/#quickCapture\(data, form\) \{([\s\S]*?)\n  \}\n\n  #saveCheckpoint/u)?.[1] ?? "";
+
+  assert.match(handler, /\{ crumb, projectIndex, projectTitle, linkedToActiveSession \}/u);
+  assert.match(handler, /const target = next\.projects\[projectIndex\]/u);
+  assert.match(handler, /target\.id !== crumb\.projectId \|\| target\.status === "archived"/u);
+  assert.doesNotMatch(handler, /next\.projects\.find/u);
+});
+
 test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

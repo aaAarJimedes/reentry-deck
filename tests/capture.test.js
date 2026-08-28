@@ -19,6 +19,7 @@ describe("prepareQuickCapture", () => {
 
     const result = prepareQuickCapture(state, { projectId: "p1", type: "decision", text: "  Keep this  ", pinned: "on" }, NOW);
 
+    assert.equal(result.projectIndex, 0);
     assert.equal(result.projectTitle, "Target");
     assert.equal(result.linkedToActiveSession, true);
     assert.equal(result.crumb.projectId, "p1");
@@ -60,6 +61,26 @@ describe("prepareQuickCapture", () => {
     assert.throws(() => prepareQuickCapture(state, { projectId: "archived", type: "note", text: "x" }, NOW), /目标项目不可用/);
     assert.throws(() => prepareQuickCapture(state, { projectId: "active", type: "mystery", text: "x" }, NOW), /记录类型不可用/);
     assert.throws(() => prepareQuickCapture(state, { projectId: "active", type: "note", text: "   " }, NOW), /先写下一条记录/);
+  });
+
+  test("streams project and session lookup while returning the stable project position", () => {
+    const state = createEmptyState(NOW);
+    state.projects.push(
+      createProject({ id: "first" }, NOW),
+      createProject({ id: "target", title: "Late target" }, NOW)
+    );
+    state.sessions.push(
+      createSession({ id: "other", projectId: "first" }, NOW),
+      createSession({ id: "target-session", projectId: "target" }, NOW)
+    );
+    Object.defineProperty(state.projects, "find", { value() { throw new Error("project find must not be used"); } });
+    Object.defineProperty(state.sessions, "find", { value() { throw new Error("session find must not be used"); } });
+
+    const result = prepareQuickCapture(state, { projectId: "target", type: "note", text: "captured" }, NOW);
+
+    assert.equal(result.projectIndex, 1);
+    assert.equal(result.crumb.sessionId, "target-session");
+    assert.equal(result.projectTitle, "Late target");
   });
 });
 

@@ -1088,11 +1088,14 @@ export class ReentryApp {
 
   #quickCapture(data, form) {
     const state = this.#store.getState();
-    const { crumb, projectTitle, linkedToActiveSession } = prepareQuickCapture(state, data);
+    const { crumb, projectIndex, projectTitle, linkedToActiveSession } = prepareQuickCapture(state, data);
     this.#focusSelector = '[data-action="open-quick-capture"]';
     this.#store.update((next) => {
+      const target = next.projects[projectIndex];
+      if (!target || target.id !== crumb.projectId || target.status === "archived") {
+        throw new Error("目标项目在保存前已不可用。 ");
+      }
       next.crumbs.push(crumb);
-      const target = next.projects.find((item) => item.id === crumb.projectId);
       target.updatedAt = crumb.createdAt;
       if (crumb.type === "next") {
         target.nextAction = projectNextActionFromCrumb(crumb);

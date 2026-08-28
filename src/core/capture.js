@@ -47,10 +47,25 @@ export function projectNextActionFromCrumb(crumb) {
 }
 
 export function prepareQuickCapture(state, input, now = Date.now()) {
-  const project = state?.projects?.find((item) => item.id === input?.projectId && item.status !== "archived");
+  const projects = Array.isArray(state?.projects) ? state.projects : [];
+  let project = null;
+  let projectIndex = -1;
+  for (let index = 0; index < projects.length; index += 1) {
+    const candidate = projects[index];
+    if (candidate.id !== input?.projectId || candidate.status === "archived") continue;
+    project = candidate;
+    projectIndex = index;
+    break;
+  }
   if (!project) throw new Error("目标项目不可用。 ");
   if (!CRUMB_TYPES.includes(input?.type)) throw new Error("记录类型不可用。 ");
-  const session = state.sessions.find((item) => item.projectId === project.id && item.status === "active") ?? null;
+  let session = null;
+  for (const candidate of Array.isArray(state?.sessions) ? state.sessions : []) {
+    if (candidate.projectId === project.id && candidate.status === "active") {
+      session = candidate;
+      break;
+    }
+  }
   const crumb = createCrumb({
     projectId: project.id,
     sessionId: session?.id ?? null,
@@ -62,6 +77,7 @@ export function prepareQuickCapture(state, input, now = Date.now()) {
 
   return {
     crumb,
+    projectIndex,
     projectTitle: project.title,
     linkedToActiveSession: Boolean(session)
   };
