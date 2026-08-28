@@ -53,7 +53,7 @@ test("user-triggered mutation surfaces are guarded by the shared action boundary
   assert.match(source, /addEventListener\("click", \(event\) => this\.#runUserAction\(\(\) => this\.#onClick\(event\)\), listenerOptions\)/);
   assert.match(source, /addEventListener\("change", \(event\) => this\.#runUserAction\(\(\) => this\.#onChange\(event\)\), listenerOptions\)/);
   assert.match(source, /addEventListener\("keydown", \(event\) => this\.#runUserAction\(\(\) => this\.#onKeydown\(event\)\), listenerOptions\)/);
-  assert.match(source, /requestAnimationFrame\(\(\) => this\.#runUserAction/);
+  assert.match(source, /requestAnimationFrame\(\(\) => \{[\s\S]*?this\.#runUserAction/u);
   assert.match(source, /操作未完成，请根据最新状态重试/);
 });
 
@@ -65,6 +65,23 @@ test("app destruction releases listeners, subscriptions, and toast timers", asyn
   assert.match(source, /this\.#unsubscribeStore\?\.\(\)/);
   assert.match(source, /for \(const timerId of this\.#toastTimers\.values\(\)\) window\.clearTimeout\(timerId\)/);
   assert.match(source, /this\.#store\.destroy\?\.\(\)/);
+  assert.match(source, /if \(this\.#destroyed\) return/u);
+  assert.match(source, /this\.#destroyed = true/u);
+  assert.match(source, /this\.#renderSequence \+= 1/u);
+});
+
+test("deferred UI callbacks cannot outlive their render or app instance", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
+  const command = source.match(/#runCommand\(command, dialog\) \{([\s\S]*?)\n  \}\n\n  #createProject/u)?.[1] ?? "";
+  const open = source.match(/#openDialog\(id\) \{([\s\S]*?)\n  \}\n\n  #focusDialogControl/u)?.[1] ?? "";
+  const announce = source.match(/#announce\(message\) \{([\s\S]*?)\n  \}\n\n  async #requestPersistentStorage/u)?.[1] ?? "";
+
+  assert.match(render, /const renderSequence = \+\+this\.#renderSequence/u);
+  assert.ok((render.match(/renderSequence !== this\.#renderSequence/gu)?.length ?? 0) >= 3);
+  assert.match(command, /if \(this\.#destroyed\) return/u);
+  assert.match(open, /!this\.#destroyed && dialog\.isConnected && dialog\.open/u);
+  assert.match(announce, /!this\.#destroyed && region\.isConnected/u);
 });
 
 test("quick-dock continuation advances workspace time through the follow-up session", async () => {

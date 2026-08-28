@@ -115,6 +115,8 @@ export class ReentryApp {
   #colorSchemeListener = null;
   #sessionHealthSignature = "none";
   #calendarDaySignature = "invalid";
+  #renderSequence = 0;
+  #destroyed = false;
 
   constructor(root, store) {
     this.#root = root;
@@ -152,6 +154,9 @@ export class ReentryApp {
   }
 
   destroy() {
+    if (this.#destroyed) return;
+    this.#destroyed = true;
+    this.#renderSequence += 1;
     window.clearInterval(this.#timerId);
     this.#importRequestGate.invalidate();
     this.#importReadController?.abort();
@@ -174,6 +179,8 @@ export class ReentryApp {
   }
 
   render({ preserveDialog = false } = {}) {
+    if (this.#destroyed) return;
+    const renderSequence = ++this.#renderSequence;
     const transientDialog = preserveDialog ? this.#captureTransientDialog() : null;
     const captureDraft = preserveDialog ? this.#captureInlineCaptureDraft() : null;
     this.#noticeQueue.push(...this.#store.drainNotices());
@@ -234,17 +241,25 @@ export class ReentryApp {
     this.#refreshTimers();
 
     if (reopenImportPreview && this.#pendingImport) {
-      requestAnimationFrame(() => transientDialog?.id === "import-preview-dialog"
-        ? this.#restoreTransientDialog(transientDialog)
-        : this.#openDialog("import-preview-dialog"));
+      requestAnimationFrame(() => {
+        if (this.#destroyed || renderSequence !== this.#renderSequence) return;
+        if (transientDialog?.id === "import-preview-dialog") this.#restoreTransientDialog(transientDialog);
+        else this.#openDialog("import-preview-dialog");
+      });
     } else if (transientDialog) {
-      requestAnimationFrame(() => this.#restoreTransientDialog(transientDialog));
+      requestAnimationFrame(() => {
+        if (this.#destroyed || renderSequence !== this.#renderSequence) return;
+        this.#restoreTransientDialog(transientDialog);
+      });
     }
 
     if (this.#focusSelector) {
       const selector = this.#focusSelector;
       this.#focusSelector = null;
-      window.setTimeout(() => this.#root.querySelector(selector)?.focus(), 0);
+      window.setTimeout(() => {
+        if (this.#destroyed || renderSequence !== this.#renderSequence) return;
+        this.#root.querySelector(selector)?.focus();
+      }, 0);
     }
   }
 
@@ -966,6 +981,7 @@ export class ReentryApp {
   }
 
   #runUserAction(action) {
+    if (this.#destroyed) return;
     try {
       action();
     } catch (error) {
@@ -1055,16 +1071,19 @@ export class ReentryApp {
 
   #runCommand(command, dialog) {
     dialog?.close();
-    requestAnimationFrame(() => this.#runUserAction(() => {
-      if (command === "quick-capture") this.#openDialog("quick-capture-dialog");
-      if (command === "quick-dock") this.#quickDock(undefined, false);
-      if (command === "new-project") this.#openDialog("new-project-dialog");
-      if (command === "undo") this.#restorePrevious("topbar");
-      if (command === "export") this.#exportData();
-      if (command === "home") location.hash = "#/";
-      if (command === "archive") location.hash = "#/archive";
-      if (command === "settings") location.hash = "#/settings";
-    }));
+    requestAnimationFrame(() => {
+      if (this.#destroyed) return;
+      this.#runUserAction(() => {
+        if (command === "quick-capture") this.#openDialog("quick-capture-dialog");
+        if (command === "quick-dock") this.#quickDock(undefined, false);
+        if (command === "new-project") this.#openDialog("new-project-dialog");
+        if (command === "undo") this.#restorePrevious("topbar");
+        if (command === "export") this.#exportData();
+        if (command === "home") location.hash = "#/";
+        if (command === "archive") location.hash = "#/archive";
+        if (command === "settings") location.hash = "#/settings";
+      });
+    });
   }
 
   #createProject(data, form) {
@@ -1603,7 +1622,9 @@ export class ReentryApp {
       return;
     }
     dialog.showModal();
-    requestAnimationFrame(() => this.#focusDialogControl(dialog));
+    requestAnimationFrame(() => {
+      if (!this.#destroyed && dialog.isConnected && dialog.open) this.#focusDialogControl(dialog);
+    });
   }
 
   #focusDialogControl(dialog) {
@@ -1669,7 +1690,9 @@ export class ReentryApp {
     const region = this.#root.querySelector("#live-region");
     if (!region) return;
     region.textContent = "";
-    requestAnimationFrame(() => { region.textContent = message; });
+    requestAnimationFrame(() => {
+      if (!this.#destroyed && region.isConnected) region.textContent = message;
+    });
   }
 
   async #requestPersistentStorage() {
