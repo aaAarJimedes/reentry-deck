@@ -122,14 +122,58 @@ function buildAttentionDeckWithCards(state, now, options, reentryCards) {
   const staleAfterDays = Number.isFinite(options.staleAfterDays)
     ? Math.max(1, options.staleAfterDays)
     : Math.max(1, Number(state.settings?.staleAfterDays) || 7);
+  const limit = normalizeLimit(options.limit, 4);
+  if (!limit) return [];
+  const attention = [];
+  for (const card of reentryCards) {
+    const project = card.project;
+    if (project.status === "archived") continue;
+    const item = attentionForProject(project, card, now, staleAfterDays);
+    if (item.score <= 0) continue;
+    if (attention.length < limit) {
+      pushWorstAttention(attention, item);
+      continue;
+    }
+    if (compareAttention(item, attention[0]) >= 0) continue;
+    attention[0] = item;
+    sinkWorstAttention(attention, 0);
+  }
+  return attention.sort(compareAttention);
+}
 
-  const projects = state.projects.filter((project) => project.status !== "archived");
-  const cards = new Map(reentryCards.map((card) => [card.project.id, card]));
-  return projects
-    .map((project) => attentionForProject(project, cards.get(project.id), now, staleAfterDays))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score || timeOf(a.card.lastActivityAt) - timeOf(b.card.lastActivityAt) || compareCodeUnits(a.project.id, b.project.id))
-    .slice(0, normalizeLimit(options.limit, 4));
+function pushWorstAttention(heap, item) {
+  heap.push(item);
+  let index = heap.length - 1;
+  while (index > 0) {
+    const parent = Math.floor((index - 1) / 2);
+    if (compareAttention(heap[index], heap[parent]) <= 0) break;
+    const previous = heap[parent];
+    heap[parent] = heap[index];
+    heap[index] = previous;
+    index = parent;
+  }
+}
+
+function sinkWorstAttention(heap, start) {
+  let index = start;
+  while (true) {
+    const left = index * 2 + 1;
+    if (left >= heap.length) return;
+    const right = left + 1;
+    let worse = left;
+    if (right < heap.length && compareAttention(heap[right], heap[left]) > 0) worse = right;
+    if (compareAttention(heap[worse], heap[index]) <= 0) return;
+    const previous = heap[index];
+    heap[index] = heap[worse];
+    heap[worse] = previous;
+    index = worse;
+  }
+}
+
+function compareAttention(left, right) {
+  return right.score - left.score
+    || timeOf(left.card.lastActivityAt) - timeOf(right.card.lastActivityAt)
+    || compareCodeUnits(left.project.id, right.project.id);
 }
 
 function attentionForProject(project, card, now, staleAfterDays) {

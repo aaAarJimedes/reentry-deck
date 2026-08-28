@@ -158,6 +158,28 @@ test("buildAttentionDeck explains risk without including healthy or archived wor
   assert.deepEqual(buildAttentionDeck(data, NOW, { limit: 0 }), []);
 });
 
+test("buildAttentionDeck sorts only its bounded output under a broad risk match", () => {
+  const projects = Array.from({ length: 5_000 }, (_, index) => project(`risk-${String(4_999 - index).padStart(4, "0")}`, {
+    status: "blocked"
+  }));
+  const data = state({ projects });
+  const originalSort = Array.prototype.sort;
+  let largestSortedLength = 0;
+  Array.prototype.sort = function (...args) {
+    largestSortedLength = Math.max(largestSortedLength, this.length);
+    return originalSort.apply(this, args);
+  };
+  let deck;
+  try {
+    deck = buildAttentionDeck(data, NOW, { limit: 4 });
+  } finally {
+    Array.prototype.sort = originalSort;
+  }
+
+  assert.deepEqual(deck.map((item) => item.project.id), ["risk-0000", "risk-0001", "risk-0002", "risk-0003"]);
+  assert.equal(largestSortedLength, 4);
+});
+
 test("buildWorkspaceOverview shares one reentry index across ranking, review, and attention", () => {
   const projects = Array.from({ length: 1_000 }, (_, index) => project(`p${index}`, {
     status: index % 17 === 0 ? "blocked" : "active"
