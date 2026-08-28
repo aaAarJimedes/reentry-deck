@@ -291,6 +291,7 @@ export class ReentryApp {
     const activeFocusableIndex = focusables.indexOf(document.activeElement);
     return {
       id: dialog.id,
+      contextKey: this.#dialogContextKey(dialog),
       activeControlIndex,
       activeFocusableIndex,
       controls: controls.map((control) => ({
@@ -302,6 +303,16 @@ export class ReentryApp {
         selectionEnd: typeof control.selectionEnd === "number" ? control.selectionEnd : null
       }))
     };
+  }
+
+  #dialogContextKey(dialog) {
+    const value = (name) => dialog.querySelector(`[name="${name}"]`)?.value ?? "";
+    if (dialog.id === "start-session-dialog") return `${dialog.id}:${value("projectId")}`;
+    if (dialog.id === "checkpoint-dialog") return `${dialog.id}:${dialog.dataset.contextId ?? ""}`;
+    if (dialog.id === "quick-review-dialog") return `${dialog.id}:${value("projectId")}:${value("sourceCheckpointId")}`;
+    if (dialog.id === "edit-project-dialog") return `${dialog.id}:${value("projectId")}`;
+    if (dialog.id === "archive-confirm-dialog") return `${dialog.id}:${dialog.dataset.contextId ?? ""}`;
+    return dialog.id;
   }
 
   #captureInlineCaptureDraft() {
@@ -342,6 +353,7 @@ export class ReentryApp {
   #restoreTransientDialog(snapshot) {
     const dialog = this.#root.querySelector(`#${CSS.escape(snapshot.id)}`);
     if (!dialog) return;
+    if (!this.#validateTransientDialogContext(snapshot, dialog)) return;
     const controls = [...dialog.querySelectorAll("input, select, textarea")]
       .filter((control) => control.type !== "file" && control.type !== "hidden");
     const focusables = [...dialog.querySelectorAll("button, input, select, textarea")]
@@ -365,6 +377,33 @@ export class ReentryApp {
       && typeof active.setSelectionRange === "function") {
       active.setSelectionRange(saved.selectionStart, saved.selectionEnd);
     }
+  }
+
+  #validateTransientDialogContext(snapshot, dialog) {
+    try {
+      if (snapshot.id === "start-session-dialog") {
+        const projectId = dialog.querySelector('[name="projectId"]')?.value;
+        const plan = prepareSessionDialog(this.#store.getState(), projectId);
+        if (plan.activeSession) throw new Error("已有活动会话");
+      }
+      if (snapshot.id === "edit-project-dialog") {
+        const pending = this.#pendingProjectEdit;
+        if (!pending) return false;
+        prepareProjectEdit(this.#store.getState(), pending.projectId, pending.editToken);
+      }
+      if (snapshot.id === "archive-confirm-dialog") {
+        if (!this.#pendingArchiveId) return false;
+        prepareProjectArchive(this.#store.getState(), this.#pendingArchiveId);
+      }
+      if (snapshot.contextKey === this.#dialogContextKey(dialog)) return true;
+    } catch {
+      // The record changed while another tab owned the latest state.
+    }
+    if (snapshot.id === "edit-project-dialog") this.#pendingProjectEdit = null;
+    if (snapshot.id === "checkpoint-dialog") this.#pendingCheckpointSessionId = null;
+    if (snapshot.id === "archive-confirm-dialog") this.#pendingArchiveId = null;
+    this.#toast("工作区变化使原对话框失效，请重新打开。", "error");
+    return false;
   }
 
   #renderSidebar(route, workspaceCounts) {
@@ -803,7 +842,7 @@ export class ReentryApp {
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">${icon("play")} 开始计时</button></div>
         </form>
       </dialog>
-      <dialog id="checkpoint-dialog" aria-labelledby="checkpoint-title">
+      <dialog id="checkpoint-dialog" data-context-id="${attr(activeSession?.id ?? "")}" aria-labelledby="checkpoint-title">
         <div class="dialog-header"><div><h2 id="checkpoint-title">留下可靠检查点</h2><p>给下次回来的自己一条短而清楚的路。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <form class="dialog-body" data-form="checkpoint">
           <label class="field"><span class="required">现在停在哪里</span><textarea name="summary" maxlength="${IMPORT_LIMITS.checkpointSummary}" placeholder="已经完成什么、当前看到什么结果？" required></textarea></label>
@@ -843,7 +882,7 @@ export class ReentryApp {
           <div class="search-results" data-search-results aria-live="polite">${this.#renderSearchResults("")}</div>
         </div>
       </dialog>
-      <dialog id="archive-confirm-dialog" aria-labelledby="archive-confirm-title" aria-describedby="archive-confirm-description">
+      <dialog id="archive-confirm-dialog" data-context-id="${attr(pendingArchiveProject?.id ?? "")}" aria-labelledby="archive-confirm-title" aria-describedby="archive-confirm-description">
         <div class="dialog-header"><div><h2 id="archive-confirm-title">移入归档舱？</h2><p id="archive-confirm-description">项目会变为只读，但所有会话、轨迹和检查点都会保留，之后可随时恢复。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="取消归档并关闭">${icon("close")}</button></div>
         <div class="dialog-body">
           <p class="import-rollback-note">准备归档：<strong data-archive-project-title>${pendingArchiveProject ? `“${escapeHTML(pendingArchiveProject.title)}”` : ""}</strong></p>

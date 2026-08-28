@@ -14,7 +14,7 @@ test("project archival uses an accessible in-app confirmation instead of window.
   assert.doesNotMatch(source, /window\.confirm\s*\(/);
   assert.match(
     source,
-    /<dialog id="archive-confirm-dialog" aria-labelledby="archive-confirm-title" aria-describedby="archive-confirm-description">/
+    /<dialog id="archive-confirm-dialog"[^>]* aria-labelledby="archive-confirm-title" aria-describedby="archive-confirm-description">/
   );
   assert.match(source, /id="archive-confirm-description"/);
   assert.match(source, /data-archive-project-title/);
@@ -149,8 +149,11 @@ test("interactive refresh paths reuse the invariant-safe render context", async 
   assert.doesNotMatch(refresh, /(?:getState|sessions\.find)/u);
 });
 
-test("dialog redraw restoration preserves button focus as well as field values and selections", async () => {
+test("dialog redraw restoration preserves controls only while their entity context remains valid", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
+  const capture = source.match(/#captureTransientDialog\(\) \{([\s\S]*?)\n  \}\n\n  #dialogContextKey/u)?.[1] ?? "";
+  const restore = source.match(/#restoreTransientDialog\(snapshot\) \{([\s\S]*?)\n  \}\n\n  #validateTransientDialogContext/u)?.[1] ?? "";
+  const validate = source.match(/#validateTransientDialogContext\(snapshot, dialog\) \{([\s\S]*?)\n  \}\n\n  #renderSidebar/u)?.[1] ?? "";
 
   assert.doesNotMatch(source, /dialog\.id === "import-preview-dialog"\) return null/u);
   assert.match(source, /querySelectorAll\("button, input, select, textarea"\)/u);
@@ -159,6 +162,16 @@ test("dialog redraw restoration preserves button focus as well as field values a
   assert.match(source, /const active = focusables\[snapshot\.activeFocusableIndex\]/u);
   assert.match(source, /active === controls\[snapshot\.activeControlIndex\]/u);
   assert.match(source, /transientDialog\?\.id === "import-preview-dialog"/u);
+  assert.match(capture, /contextKey: this\.#dialogContextKey\(dialog\)/u);
+  assert.match(restore, /if \(!this\.#validateTransientDialogContext\(snapshot, dialog\)\) return/u);
+  assert.match(validate, /prepareSessionDialog\(this\.#store\.getState\(\), projectId\)/u);
+  assert.match(validate, /if \(plan\.activeSession\) throw new Error/u);
+  assert.match(validate, /prepareProjectEdit\(this\.#store\.getState\(\), pending\.projectId, pending\.editToken\)/u);
+  assert.match(validate, /prepareProjectArchive\(this\.#store\.getState\(\), this\.#pendingArchiveId\)/u);
+  assert.match(validate, /snapshot\.contextKey === this\.#dialogContextKey\(dialog\)/u);
+  assert.match(source, /quick-review-dialog"\) return `\$\{dialog\.id\}:\$\{value\("projectId"\)\}:\$\{value\("sourceCheckpointId"\)\}`/u);
+  assert.match(source, /<dialog id="checkpoint-dialog" data-context-id="\$\{attr\(activeSession\?\.id \?\? ""\)\}"/u);
+  assert.match(source, /<dialog id="archive-confirm-dialog" data-context-id="\$\{attr\(pendingArchiveProject\?\.id \?\? ""\)\}"/u);
 });
 
 test("external redraw preserves an inline capture draft only for the same session", async () => {
