@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildAttentionDeck, buildWeeklyReview, buildWorkspaceOverview } from "../src/core/insights.js";
+import { buildAttentionDeck, buildWeeklyReview, buildWorkspaceCounts, buildWorkspaceOverview } from "../src/core/insights.js";
 
 const NOW = Date.parse("2026-08-28T12:00:00.000Z");
 const HOUR = 3_600_000;
@@ -32,6 +32,37 @@ function state(overrides = {}) {
     ...overrides
   };
 }
+
+test("buildWorkspaceCounts shares one local-day snapshot across streaming status metrics", () => {
+  const localNoon = new Date(2026, 5, 15, 12).getTime();
+  const data = state({
+    projects: [
+      project("active"),
+      project("paused", { status: "paused" }),
+      project("blocked", { status: "blocked" }),
+      project("archived", { status: "archived" })
+    ],
+    crumbs: [
+      { createdAt: new Date(2026, 5, 15, 0, 0, 0, 0).toISOString() },
+      { createdAt: new Date(2026, 5, 15, 23, 59, 59, 999).toISOString() },
+      { createdAt: new Date(2026, 5, 16, 0, 0, 0, 0).toISOString() }
+    ],
+    checkpoints: [{}, {}]
+  });
+  data.projects.filter = () => { throw new Error("counts must not filter projects"); };
+  data.crumbs.filter = () => { throw new Error("counts must not filter crumbs"); };
+
+  assert.deepEqual(buildWorkspaceCounts(data, localNoon), {
+    unarchivedProjects: 3,
+    activeProjects: 1,
+    pausedProjects: 1,
+    blockedProjects: 1,
+    archivedProjects: 1,
+    crumbsToday: 2,
+    checkpoints: 2
+  });
+  assert.equal(buildWorkspaceCounts(data, "invalid").crumbsToday, 0);
+});
 
 test("buildWeeklyReview calculates bounded local evidence and nearby project switches", () => {
   const data = state({

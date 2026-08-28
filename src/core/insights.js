@@ -5,6 +5,38 @@ const DAY_MS = 86_400_000;
 const NEARBY_SWITCH_MS = 4 * 3_600_000;
 const MAX_COUNTED_SESSION_MS = 12 * 3_600_000;
 
+export function buildWorkspaceCounts(state, now = Date.now()) {
+  const counts = {
+    unarchivedProjects: 0,
+    activeProjects: 0,
+    pausedProjects: 0,
+    blockedProjects: 0,
+    archivedProjects: 0,
+    crumbsToday: 0,
+    checkpoints: Array.isArray(state?.checkpoints) ? state.checkpoints.length : 0
+  };
+  for (const project of Array.isArray(state?.projects) ? state.projects : []) {
+    if (project.status === "archived") {
+      counts.archivedProjects += 1;
+      continue;
+    }
+    counts.unarchivedProjects += 1;
+    if (project.status === "active") counts.activeProjects += 1;
+    else if (project.status === "paused") counts.pausedProjects += 1;
+    else if (project.status === "blocked") counts.blockedProjects += 1;
+  }
+  const reference = new Date(now);
+  const referenceTimestamp = reference.getTime();
+  if (!Number.isFinite(referenceTimestamp)) return counts;
+  const dayStart = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate()).getTime();
+  const dayEnd = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate() + 1).getTime();
+  for (const crumb of Array.isArray(state?.crumbs) ? state.crumbs : []) {
+    const timestamp = timeOf(crumb.createdAt);
+    if (timestamp >= dayStart && timestamp < dayEnd) counts.crumbsToday += 1;
+  }
+  return counts;
+}
+
 export function buildWeeklyReview(state, now = Date.now(), options = {}) {
   const cardProjectIds = activeProjectIds(state.projects);
   return buildWeeklyReviewWithCards(state, now, options, buildReentryCards(state, cardProjectIds, now));

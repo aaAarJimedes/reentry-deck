@@ -11,7 +11,7 @@ import {
 import { prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture.js";
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { triggerBlobDownload } from "../core/download.js";
-import { buildWorkspaceOverview } from "../core/insights.js";
+import { buildWorkspaceCounts, buildWorkspaceOverview } from "../core/insights.js";
 import { buildReentryCard, buildReentryCards, getProjectStats } from "../core/reentry.js";
 import { buildReentryBrief, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
@@ -177,6 +177,7 @@ export class ReentryApp {
     const currentProject = route.name === "project" ? state.projects.find((item) => item.id === route.id) : null;
     const activeSession = state.sessions.find((item) => item.status === "active") ?? null;
     const activeProject = activeSession ? state.projects.find((item) => item.id === activeSession.projectId) : null;
+    const workspaceCounts = buildWorkspaceCounts(state);
     const theme = state.settings.theme ?? "system";
     this.#sessionHealthSignature = sessionHealthSignature(
       activeSession,
@@ -190,12 +191,12 @@ export class ReentryApp {
 
     this.#root.innerHTML = `
       <div class="app-shell">
-        ${this.#renderSidebar(route, state)}
+        ${this.#renderSidebar(route, workspaceCounts)}
         <div class="content-column">
-          ${this.#renderTopbar(route, currentProject, activeSession)}
+          ${this.#renderTopbar(route, currentProject, activeSession, workspaceCounts)}
           <main class="main-content" id="main-content" tabindex="-1">
             ${this.#renderNotices()}
-            ${this.#renderRoute(route, state, currentProject, activeSession)}
+            ${this.#renderRoute(route, state, currentProject, activeSession, workspaceCounts)}
           </main>
         </div>
       </div>
@@ -274,9 +275,9 @@ export class ReentryApp {
     }
   }
 
-  #renderSidebar(route, state) {
-    const activeCount = state.projects.filter((item) => item.status !== "archived").length;
-    const archivedCount = state.projects.filter((item) => item.status === "archived").length;
+  #renderSidebar(route, workspaceCounts) {
+    const activeCount = workspaceCounts.unarchivedProjects;
+    const archivedCount = workspaceCounts.archivedProjects;
     return `
       <aside class="sidebar" aria-label="主导航">
         <a class="brand" href="#/" aria-label="复航台首页">
@@ -295,11 +296,11 @@ export class ReentryApp {
       </aside>`;
   }
 
-  #renderTopbar(route, project, activeSession) {
+  #renderTopbar(route, project, activeSession, workspaceCounts) {
     const context = project ? "项目现场" : route.name === "archive" ? "历史项目" : route.name === "settings" ? "隐私与迁移" : "本地工作区";
     const title = project?.title ?? routeTitle(route);
     const canUndo = this.#store.hasPreviousSnapshot();
-    const canCapture = this.#store.getState().projects.some((item) => item.status !== "archived");
+    const canCapture = workspaceCounts.unarchivedProjects > 0;
     return `
       <header class="topbar">
         <div class="topbar-context"><span class="topbar-eyebrow">${escapeHTML(context)}</span><span class="topbar-title">${escapeHTML(title)}</span></div>
@@ -313,23 +314,21 @@ export class ReentryApp {
       </header>`;
   }
 
-  #renderRoute(route, state, project, activeSession) {
+  #renderRoute(route, state, project, activeSession, workspaceCounts) {
     if (route.name === "archive") return this.#renderArchive(state);
     if (route.name === "settings") return this.#renderSettings(state);
     if (route.name === "notFound") return this.#renderNotFound();
     if (route.name === "project") return project ? (project.status === "archived" ? this.#renderArchivedProject(state, project) : this.#renderProject(state, project, activeSession)) : this.#renderNotFound();
-    return this.#renderDashboard(state, activeSession);
+    return this.#renderDashboard(state, activeSession, workspaceCounts);
   }
 
-  #renderDashboard(state, activeSession) {
-    const projects = state.projects.filter((item) => item.status !== "archived");
-    if (!projects.length) return this.#renderEmptyDashboard();
+  #renderDashboard(state, activeSession, workspaceCounts) {
+    if (!workspaceCounts.unarchivedProjects) return this.#renderEmptyDashboard();
     const { rankedProjects: ranked, weeklyReview, attentionDeck } = buildWorkspaceOverview(state);
     const projectWindow = buildCollectionWindow(ranked, this.#collectionLimits.get("home"));
     const lead = ranked[0];
-    const crumbsToday = state.crumbs.filter((item) => isToday(item.createdAt)).length;
-    const activeProjects = projects.filter((item) => item.status === "active").length;
-    const blockedProjects = projects.filter((item) => item.status === "blocked").length;
+    const activeProjects = workspaceCounts.activeProjects;
+    const blockedProjects = workspaceCounts.blockedProjects;
 
     return `
       <section class="page-heading">
@@ -341,9 +340,9 @@ export class ReentryApp {
       </section>
       ${lead ? this.#renderHero(lead, activeSession) : ""}
       <section class="metrics-grid" aria-label="工作区概览">
-        ${metric("航行中", activeProjects, `${projects.length} 个未归档项目`)}
-        ${metric("今日轨迹", crumbsToday, "条面包屑")}
-        ${metric("可靠检查点", state.checkpoints.length, "次可恢复现场")}
+        ${metric("航行中", activeProjects, `${workspaceCounts.unarchivedProjects} 个未归档项目`)}
+        ${metric("今日轨迹", workspaceCounts.crumbsToday, "条面包屑")}
+        ${metric("可靠检查点", workspaceCounts.checkpoints, "次可恢复现场")}
         ${metric("受阻项目", blockedProjects, blockedProjects ? "需要一次澄清" : "目前航路通畅")}
       </section>
       ${this.#renderWorkspacePulse(weeklyReview, attentionDeck)}
@@ -1643,12 +1642,6 @@ function awayLabel(days) {
   if (days < 1) return `离开约 ${Math.max(1, Math.round(days * 24))} 小时`;
   if (days < 2) return "上次在昨天";
   return `已离开 ${Math.floor(days)} 天`;
-}
-
-function isToday(isoDate) {
-  const date = new Date(isoDate);
-  const now = new Date();
-  return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
 }
 
 function formatBytes(bytes) {
