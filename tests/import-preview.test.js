@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { buildImportPreview, checksumSerializedSnapshotData, checksumSnapshotData, readImportSnapshot } from "../src/core/import-preview.js";
+import { IMPORT_METADATA_SCAN_LIMIT, buildImportPreview, checksumSerializedSnapshotData, checksumSnapshotData, readImportSnapshot } from "../src/core/import-preview.js";
 import { createCheckpoint, createCrumb, createEmptyState, createProject, createSession } from "../src/core/model.js";
 
 const T0 = Date.parse("2026-08-20T08:00:00.000Z");
@@ -49,11 +49,19 @@ describe("import snapshot inspection", () => {
     }, T1).source.appVersion;
     assert.equal(unsafeMetadata, null);
 
+    const oversizedMetadata = readImportSnapshot({
+      format: "reentry-deck-backup",
+      appVersion: "v".repeat(IMPORT_METADATA_SCAN_LIMIT + 1),
+      data: raw
+    }, T1).source.appVersion;
+    assert.equal(oversizedMetadata, null);
+
     for (const exportedAt of [
       "2026-08-27T12:00:00Z",
       "2026-08-27T20:00:00.000+08:00",
       "08/27/2026 12:00:00",
-      " 2026-08-27T12:00:00.000Z "
+      " 2026-08-27T12:00:00.000Z ",
+      "2".repeat(IMPORT_METADATA_SCAN_LIMIT + 1)
     ]) {
       const source = readImportSnapshot({
         format: "reentry-deck-backup",

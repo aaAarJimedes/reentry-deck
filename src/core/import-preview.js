@@ -3,6 +3,8 @@ import { compactText, containsUnsafeTextControl, normalizeState, validateImportC
 const COLLECTION_NAMES = Object.freeze(["projects", "sessions", "crumbs", "checkpoints"]);
 const DETAIL_LIMIT = 6;
 const CHECKSUM_PATTERN = /^fnv1a32:[0-9a-f]{8}$/u;
+export const IMPORT_METADATA_SCAN_LIMIT = 320;
+const CANONICAL_ISO_LENGTH = 24;
 
 export function checksumSnapshotData(value) {
   const serialized = JSON.stringify(value) ?? "";
@@ -228,11 +230,12 @@ function hasOrderDifference(current, incoming) {
 }
 
 function cleanMetadata(value) {
-  return typeof value === "string" && value.trim() && !containsUnsafeTextControl(value) ? compactText(value, 80) : null;
+  if (typeof value !== "string" || value.length > IMPORT_METADATA_SCAN_LIMIT) return null;
+  return value.trim() && !containsUnsafeTextControl(value) ? compactText(value, 80) : null;
 }
 
 function validDate(value) {
-  if (typeof value !== "string") return false;
+  if (typeof value !== "string" || value.length !== CANONICAL_ISO_LENGTH) return false;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
 }
