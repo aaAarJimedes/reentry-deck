@@ -637,7 +637,7 @@ describe("AppStore updates and persistence", () => {
     const storage = new MemoryStorage();
     const store = new AppStore(storage, T0, null);
     const before = store.getState();
-    storage.setItem(WRITE_LOCK_KEY, JSON.stringify({ owner: "other-tab", expiresAt: Date.now() + 60_000 }));
+    storage.setItem(WRITE_LOCK_KEY, JSON.stringify({ owner: "other-tab", expiresAt: Date.now() + 1_000 }));
 
     assert.throws(
       () => store.update((draft) => draft.projects.push(createProject({ id: "blocked" }, T1)), T1),
@@ -645,6 +645,18 @@ describe("AppStore updates and persistence", () => {
     );
     assert.strictEqual(store.getState(), before);
     assert.equal(storage.getItem(STORAGE_KEY), null);
+  });
+
+  test("an implausibly distant lease cannot make the workspace permanently read-only", () => {
+    const storage = new MemoryStorage();
+    const store = new AppStore(storage, T0, null);
+    storage.setItem(WRITE_LOCK_KEY, JSON.stringify({ owner: "clock-rollback", expiresAt: Date.now() + 60_000 }));
+
+    const saved = store.update((draft) => draft.projects.push(createProject({ id: "recovered" }, T1)), T1);
+
+    assert.deepEqual(saved.projects.map((project) => project.id), ["recovered"]);
+    assert.deepEqual(persisted(storage).projects.map((project) => project.id), ["recovered"]);
+    assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
   });
 
   test("a lease that expires before the primary write aborts without committing", () => {

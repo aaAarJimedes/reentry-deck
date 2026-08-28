@@ -2,7 +2,7 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.87.0";
+export const APP_VERSION = "0.88.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
@@ -375,7 +375,8 @@ function isActiveWriteLock(raw, now) {
     return typeof value?.owner === "string"
       && value.owner.length > 0
       && Number.isFinite(value.expiresAt)
-      && value.expiresAt > now;
+      && value.expiresAt > now
+      && value.expiresAt <= now + WRITE_LOCK_TTL_MS;
   } catch {
     return false;
   }
