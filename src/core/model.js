@@ -404,7 +404,7 @@ function validateSettings(errors, settings) {
   }
   if (!settings) return;
   if (settings.theme !== undefined && !["system", "light", "dark"].includes(settings.theme)) addImportError(errors, `界面主题无效：${settings.theme}`);
-  if (settings.staleAfterDays !== undefined && (!Number.isFinite(settings.staleAfterDays) || settings.staleAfterDays < 1 || settings.staleAfterDays > 365)) addImportError(errors, "陈旧阈值必须在 1 到 365 天之间");
+  if (settings.staleAfterDays !== undefined && (!Number.isSafeInteger(settings.staleAfterDays) || settings.staleAfterDays < 1 || settings.staleAfterDays > 365)) addImportError(errors, "陈旧阈值必须是 1 到 365 之间的整数");
   if (settings.reducedMotion !== undefined && typeof settings.reducedMotion !== "boolean") addImportError(errors, "减少动态效果设置无效");
 }
 

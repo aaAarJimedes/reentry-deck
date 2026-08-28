@@ -478,11 +478,24 @@ describe("validateImportCandidate", () => {
     assert.match(errors.join("；"), /项目时间无效：p1.updatedAt/);
     assert.match(errors.join("；"), /会话结束时间早于开始时间：s1/);
     assert.match(errors.join("；"), /界面主题无效：neon/);
-    assert.match(errors.join("；"), /陈旧阈值必须在 1 到 365 天之间/);
+    assert.match(errors.join("；"), /陈旧阈值必须是 1 到 365 之间的整数/);
     assert.match(errors.join("；"), /减少动态效果设置无效/);
     assert.match(errors.join("；"), /修订号无效/);
     assert.match(errors.join("；"), /当前选中项目引用不存在/);
     assert.match(errors.join("；"), /面包屑置顶状态无效：bad-pin/);
+  });
+
+  test("requires the attention threshold to be a safe whole number of days", () => {
+    for (const staleAfterDays of [0, 1.5, 366, NaN, Infinity, "7"]) {
+      const state = createEmptyState(NOW);
+      state.settings.staleAfterDays = staleAfterDays;
+      assert.match(validateImportCandidate(state).join("；"), /陈旧阈值必须是 1 到 365 之间的整数/u, String(staleAfterDays));
+    }
+    for (const staleAfterDays of [1, 7, 365]) {
+      const state = createEmptyState(NOW);
+      state.settings.staleAfterDays = staleAfterDays;
+      assert.deepEqual(validateImportCandidate(state), [], String(staleAfterDays));
+    }
   });
 
   test("rejects invisible controls in persisted text and identifiers while preserving ordinary layout whitespace", () => {

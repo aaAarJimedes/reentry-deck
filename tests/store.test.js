@@ -440,7 +440,13 @@ describe("AppStore updates and persistence", () => {
         mutate(draft) {
           draft.settings.staleAfterDays = 366;
         },
-        pattern: /陈旧阈值必须在 1 到 365 天之间/
+        pattern: /陈旧阈值必须是 1 到 365 之间的整数/
+      },
+      {
+        mutate(draft) {
+          draft.settings.staleAfterDays = 1.5;
+        },
+        pattern: /陈旧阈值必须是 1 到 365 之间的整数/
       }
     ];
 
