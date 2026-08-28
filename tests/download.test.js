@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { DOWNLOAD_REVOKE_DELAY_MS, triggerBlobDownload } from "../src/core/download.js";
+import { DOWNLOAD_FILENAME_LIMIT, DOWNLOAD_REVOKE_DELAY_MS, safeDownloadFilename, triggerBlobDownload } from "../src/core/download.js";
 
 function harness({ clickError = null, scheduleError = null } = {}) {
   const events = [];
@@ -58,6 +58,17 @@ function harness({ clickError = null, scheduleError = null } = {}) {
 }
 
 describe("triggerBlobDownload", () => {
+  test("projects filenames to a bounded portable download name", () => {
+    assert.equal(safeDownloadFilename("  report\\Q3:final?.json.  "), "report-Q3-final-.json");
+    assert.equal(safeDownloadFilename("CON.json"), "_CON.json");
+    assert.equal(safeDownloadFilename("\u0000\u0007  .  "), "download.json");
+    assert.equal(safeDownloadFilename(null), "download.json");
+    const bounded = safeDownloadFilename(`${"😀".repeat(100)}forbidden-tail`);
+    assert.equal(bounded.length, DOWNLOAD_FILENAME_LIMIT);
+    assert.doesNotMatch(bounded, /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u);
+    assert.doesNotMatch(bounded, /forbidden-tail/u);
+  });
+
   test("clicks an attached link before deferred object-URL cleanup", () => {
     const context = harness();
     triggerBlobDownload("backup", "reentry.json", context.dependencies);
