@@ -15,6 +15,8 @@ export function safeDownloadFilename(value) {
       continue;
     }
     if (/[\u0000-\u001f\u007f-\u009f\u200b\u200e\u200f\u202a-\u202e\u2060-\u206f\ufeff]/u.test(character)) continue;
+    const unit = character.charCodeAt(0);
+    if (character.length === 1 && unit >= 0xd800 && unit <= 0xdfff) continue;
     const projected = /[\\/:*?"<>|]/u.test(character) ? "-" : character;
     if (result.length + (pendingSpace ? 1 : 0) + projected.length > DOWNLOAD_FILENAME_LIMIT) break;
     if (pendingSpace) result += " ";

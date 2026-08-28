@@ -329,6 +329,21 @@ describe("copyPlainText", () => {
     assert.equal(conversions, 0);
   });
 
+  test("rejects malformed UTF-16 before reading browser copy capabilities", async () => {
+    let capabilityReads = 0;
+    const dependencies = {
+      get clipboard() {
+        capabilityReads += 1;
+        throw new Error("clipboard must not be read");
+      }
+    };
+
+    await assert.rejects(() => copyPlainText("broken \ud800 text", dependencies), /损坏的 Unicode/u);
+    await assert.rejects(() => copyPlainText("broken \udc00 text", dependencies), /损坏的 Unicode/u);
+    assert.equal(capabilityReads, 0);
+    assert.equal(await copyPlainText("complete 👩‍💻 text", { clipboard: { writeText: async () => {} } }), "clipboard");
+  });
+
   test("does not let fallback cleanup or focus restoration mask a successful copy", async () => {
     const result = await copyPlainText("brief", {
       clipboard: null,

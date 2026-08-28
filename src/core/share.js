@@ -167,6 +167,7 @@ export async function copyPlainText(value, dependencies = {}) {
   if (typeof value !== "string") throw new TypeError("复制内容必须是字符串。 ");
   const text = value;
   if (text.length > COPY_TEXT_LIMIT) throw new Error("复制内容超过 64 KiB 安全上限。 ");
+  if (containsLoneSurrogate(text)) throw new Error("复制内容包含损坏的 Unicode 字符。 ");
   if (!text.trim()) throw new Error("没有可复制的简报内容。 ");
   const clipboard = dependencies.clipboard ?? globalThis.navigator?.clipboard;
   let clipboardError = null;
@@ -203,6 +204,22 @@ export async function copyPlainText(value, dependencies = {}) {
     if (attached || control.isConnected === true) safelyRemove(control);
     restoreFocus(previousFocus);
   }
+}
+
+function containsLoneSurrogate(value) {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        index += 1;
+        continue;
+      }
+      return true;
+    }
+    if (unit >= 0xdc00 && unit <= 0xdfff) return true;
+  }
+  return false;
 }
 
 function captureFocus(element) {
