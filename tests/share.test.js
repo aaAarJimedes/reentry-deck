@@ -125,6 +125,21 @@ describe("buildWorkspaceHandoff", () => {
     assert.match(handoff, /当前没有明显的现场缺口/u);
     assert.match(handoff, /平均复航 0%/u);
   });
+
+  test("bounds attention reason reads and skips malformed cards without truncating valid output", () => {
+    const reasons = ["one", "two", "three"];
+    Object.defineProperty(reasons, 3, { get() { throw new Error("reason window exceeded"); } });
+    reasons.length = 50_000;
+    const handoff = buildWorkspaceHandoff({
+      rankedProjects: [null, { project: { title: "Valid", status: "paused" }, nextAction: "Resume" }],
+      rankedTotal: 1,
+      attentionDeck: [null, { project: { title: "Valid" }, reasons }]
+    }, 0);
+
+    assert.match(handoff, /1\. Valid｜暂泊｜复航 0%/u);
+    assert.match(handoff, /Valid：one；two；three/u);
+    assert.ok(handoff.length < 3_000);
+  });
 });
 
 describe("copyPlainText", () => {

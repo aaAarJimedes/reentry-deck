@@ -1,6 +1,8 @@
 import { IMPORT_LIMITS, compactText } from "./model.js";
 
 export const WORKSPACE_HANDOFF_PROJECT_LIMIT = 5;
+const WORKSPACE_HANDOFF_ATTENTION_LIMIT = 4;
+const WORKSPACE_HANDOFF_REASON_LIMIT = 3;
 
 export function buildReentryBrief(card) {
   if (!card?.project) throw new TypeError("缺少可生成简报的项目现场。 ");
@@ -25,7 +27,7 @@ export function buildWorkspaceHandoff(overview, now = Date.now()) {
   const attention = Array.isArray(overview.attentionDeck) ? overview.attentionDeck : [];
   let activeCard = null;
   for (const card of ranked) {
-    if (card?.activeSession) {
+    if (card?.project && card.activeSession) {
       activeCard = card;
       break;
     }
@@ -40,7 +42,8 @@ export function buildWorkspaceHandoff(overview, now = Date.now()) {
   ];
   let projectCount = 0;
   for (const card of ranked) {
-    if (!card?.project || projectCount >= WORKSPACE_HANDOFF_PROJECT_LIMIT) break;
+    if (projectCount >= WORKSPACE_HANDOFF_PROJECT_LIMIT) break;
+    if (!card?.project) continue;
     projectCount += 1;
     const completeness = Number.isFinite(card.completeness)
       ? Math.max(0, Math.min(100, Math.round(card.completeness)))
@@ -52,17 +55,10 @@ export function buildWorkspaceHandoff(overview, now = Date.now()) {
   lines.push("", "值得核对：");
   let attentionCount = 0;
   for (const item of attention) {
-    if (!item?.project || attentionCount >= 4) break;
+    if (attentionCount >= WORKSPACE_HANDOFF_ATTENTION_LIMIT) break;
+    if (!item?.project) continue;
     attentionCount += 1;
-    let reasons = "需要人工核对现场";
-    if (Array.isArray(item.reasons)) {
-      let joined = "";
-      for (const reason of item.reasons) {
-        const bounded = briefLine(reason, IMPORT_LIMITS.returnHint);
-        if (bounded) joined += `${joined ? "；" : ""}${bounded}`;
-      }
-      if (joined) reasons = briefLine(joined, IMPORT_LIMITS.checkpointSummary);
-    }
+    const reasons = boundedReasonList(item.reasons) || "需要人工核对现场";
     lines.push(`- ${briefLine(item.project.title, IMPORT_LIMITS.projectTitle)}：${reasons}`);
   }
   if (!attentionCount) lines.push("- 当前没有明显的现场缺口");
@@ -116,6 +112,17 @@ function boundedPercent(value) {
 
 function workspaceStatus(value) {
   return { active: "推进中", paused: "暂泊", blocked: "受阻" }[value] ?? "状态未知";
+}
+
+function boundedReasonList(values) {
+  if (!Array.isArray(values)) return "";
+  let joined = "";
+  for (let index = 0; index < values.length && index < WORKSPACE_HANDOFF_REASON_LIMIT; index += 1) {
+    const reason = briefLine(values[index], IMPORT_LIMITS.returnHint);
+    if (!reason) continue;
+    joined = briefLine(`${joined}${joined ? "；" : ""}${reason}`, IMPORT_LIMITS.checkpointSummary);
+  }
+  return joined;
 }
 
 export async function copyPlainText(value, dependencies = {}) {
