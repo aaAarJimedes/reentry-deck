@@ -3,7 +3,7 @@
 // The build id provides a clean release boundary. Runtime requests also use a
 // network-first strategy, so a forgotten bump cannot strand online clients on
 // an old shell; the cached release remains the complete offline fallback.
-const BUILD_ID = "2026-08-28.121";
+const BUILD_ID = "2026-08-28.122";
 const CACHE_PREFIX = "reentry-deck-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const NETWORK_TIMEOUT_MS = 4_000;
@@ -115,6 +115,15 @@ async function refreshRuntimeCache(cachePromise, request, response) {
   }
 }
 
+function deferRuntimeRefresh(defer, cachePromise, request, response) {
+  try {
+    defer(refreshRuntimeCache(cachePromise, request, response.clone()));
+  } catch {
+    // Response cloning is part of the optional cache refresh. A valid network
+    // response remains usable even if the host refuses to clone its body.
+  }
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(precacheShell());
   // Deliberately do not call skipWaiting(): open tabs keep using their complete
@@ -155,7 +164,7 @@ async function serveNavigation(request, defer) {
   try {
     const response = await fetchWithTimeout(request);
     if (isUsableResponse(response)) {
-      defer(refreshRuntimeCache(cachePromise, documentURL, response.clone()));
+      deferRuntimeRefresh(defer, cachePromise, documentURL, response);
     } else {
       const cache = await cachePromise;
       const cachedDocument = await matchRuntimeCache(cache, documentURL);
@@ -183,7 +192,7 @@ async function serveShellAsset(request, canonicalURL, defer) {
   try {
     const response = await fetchWithTimeout(request);
     if (isUsableResponse(response)) {
-      defer(refreshRuntimeCache(cachePromise, canonicalURL, response.clone()));
+      deferRuntimeRefresh(defer, cachePromise, canonicalURL, response);
     } else {
       const cache = await cachePromise;
       const cachedResponse = await matchRuntimeCache(cache, canonicalURL);

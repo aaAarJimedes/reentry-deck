@@ -251,6 +251,25 @@ describe("service worker lifecycle", () => {
     assert.equal(harness.pendingTimers, 0);
   });
 
+  test("runtime response clone failure never replaces a successful network response with stale cache", async () => {
+    await lifecyclePromise(harness.handlers.get("install"));
+    harness.setFetch(async (request) => {
+      const response = new Response(`fresh:${new URL(request.url).pathname}`, { status: 200 });
+      Object.defineProperty(response, "clone", {
+        value() { throw new Error("body cannot be cloned"); }
+      });
+      return response;
+    });
+    const fetchHandler = harness.handlers.get("fetch");
+
+    const navigation = await interceptedResponse(fetchHandler, { method: "GET", mode: "navigate", url: scope });
+    const asset = await interceptedResponse(fetchHandler, { method: "GET", mode: "cors", url: `${scope}src/main.js` });
+
+    assert.equal(await navigation.text(), "fresh:/");
+    assert.equal(await asset.text(), "fresh:/src/main.js");
+    assert.equal(harness.pendingTimers, 0);
+  });
+
   test("runtime cache open or read denial never hides the network and has an explicit offline failure", async () => {
     await lifecyclePromise(harness.handlers.get("install"));
     const fetchHandler = harness.handlers.get("fetch");
