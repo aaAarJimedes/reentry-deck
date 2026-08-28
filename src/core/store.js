@@ -2,7 +2,7 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSerializedSnapshotData, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.136.0";
+export const APP_VERSION = "0.137.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
@@ -12,6 +12,7 @@ export class AppStore {
   #storage;
   #state;
   #persistedRaw = null;
+  #serializedState = "";
   #listeners = new Set();
   #failedListeners = new WeakSet();
   #storageListener = null;
@@ -31,6 +32,7 @@ export class AppStore {
       this.notices.push(`浏览器本地存储不可访问，已用临时空白工作区启动：${errorMessage(error)}`);
     }
     this.#state = freezeState(this.#load(now, this.#persistedRaw));
+    this.#serializedState = JSON.stringify(this.#state);
     if (eventTarget?.addEventListener) {
       this.#eventTarget = eventTarget;
       this.#storageListener = (event) => {
@@ -98,7 +100,9 @@ export class AppStore {
         next = createEmptyState(isoAtOrAfter(now, this.#state.meta.updatedAt));
         next.meta.revision = this.#state.meta.revision + 1;
       }
+      const serializedNext = JSON.stringify(next);
       this.#persistedRaw = current;
+      this.#serializedState = serializedNext;
       this.#rejectedRaw = null;
       this.#hasRejectedRaw = false;
       this.#state = freezeState(next);
@@ -163,7 +167,7 @@ export class AppStore {
   }
 
   exportSnapshotText(now = Date.now()) {
-    const serializedData = JSON.stringify(this.#state);
+    const serializedData = this.#serializedState;
     const metadata = JSON.stringify({
       format: "reentry-deck-backup",
       exportedAt: isoAtOrAfter(now, this.#state.meta.updatedAt),
@@ -311,6 +315,7 @@ export class AppStore {
       this.#verifyPrimaryWrite(serialized);
     }
     this.#persistedRaw = serialized;
+    this.#serializedState = serialized;
   }
 
   #acquireWriteLock(now = Date.now()) {

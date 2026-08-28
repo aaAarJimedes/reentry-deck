@@ -1272,6 +1272,32 @@ describe("AppStore replacement, snapshots, and reset", () => {
     assert.ok(text.length < JSON.stringify(store.exportSnapshot(), null, 2).length);
   });
 
+  test("exportSnapshotText reuses the serialization captured by the last committed state", () => {
+    const store = new AppStore(new MemoryStorage(), T0, null);
+    store.update((draft) => draft.projects.push(createProject({ id: "p1", title: "Cached" }, T0)), T1);
+    const nativeStringify = JSON.stringify;
+    let stateSerializationAttempts = 0;
+    JSON.stringify = (value, ...args) => {
+      if (value === store.getState()) {
+        stateSerializationAttempts += 1;
+        throw new Error("current state must not be serialized again");
+      }
+      return nativeStringify(value, ...args);
+    };
+    let first;
+    let second;
+    try {
+      first = store.exportSnapshotText(T2);
+      second = store.exportSnapshotText(T2);
+    } finally {
+      JSON.stringify = nativeStringify;
+    }
+
+    assert.equal(stateSerializationAttempts, 0);
+    assert.equal(first, second);
+    assert.deepEqual(JSON.parse(first).data, store.getState());
+  });
+
   test("a snapshot round trip preserves data while applying import revision semantics", () => {
     const source = new AppStore(new MemoryStorage(), T0);
     source.update((draft) => {
