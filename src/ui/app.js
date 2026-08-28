@@ -957,11 +957,8 @@ export class ReentryApp {
     if (event.defaultPrevented) return;
     if (this.#root.querySelector("dialog[open]")) return;
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "s") {
-      const activeSession = this.#store.getState().sessions.find((item) => item.status === "active");
-      if (activeSession) {
-        event.preventDefault();
-        this.#quickDock(activeSession.id, false);
-      }
+      event.preventDefault();
+      this.#quickDock(undefined, false);
       return;
     }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
@@ -1002,7 +999,7 @@ export class ReentryApp {
     dialog?.close();
     requestAnimationFrame(() => this.#runUserAction(() => {
       if (command === "quick-capture") this.#openDialog("quick-capture-dialog");
-      if (command === "quick-dock") this.#quickDockActiveSession();
+      if (command === "quick-dock") this.#quickDock(undefined, false);
       if (command === "new-project") this.#openDialog("new-project-dialog");
       if (command === "undo") this.#restorePrevious("topbar");
       if (command === "export") this.#exportData();
@@ -1176,6 +1173,7 @@ export class ReentryApp {
       const state = this.#store.getState();
       const now = Date.now();
       const { input, session: activeSession, sessionIndex, project, projectIndex } = prepareQuickDock(state, sessionId, now);
+      const targetSessionId = activeSession.id;
       const eventTime = isoAtOrAfter(now, activeSession.startedAt, project.updatedAt);
       const checkpoint = createCheckpoint(input, eventTime);
       const recordedNextAction = input.nextAction !== QUICK_DOCK_NOT_RECORDED.nextAction;
@@ -1189,7 +1187,7 @@ export class ReentryApp {
       this.#store.update((next) => {
         const current = next.sessions[sessionIndex];
         const currentProject = next.projects[projectIndex];
-        if (current?.id !== sessionId || current.status !== "active"
+        if (current?.id !== targetSessionId || current.status !== "active"
           || currentProject?.id !== current.projectId || currentProject.status === "archived") {
           throw new Error("会话状态刚刚发生变化，请重新确认。 ");
         }
@@ -1210,18 +1208,12 @@ export class ReentryApp {
         }
       }, followUp ? Date.parse(followUp.startedAt) : now);
 
-      this.#acknowledgedStaleSessions.delete(sessionId);
+      this.#acknowledgedStaleSessions.delete(targetSessionId);
       this.#announce(continueAfter ? "旧会话已标记中断，并已开始接续会话" : "会话已快速停靠");
       this.#toast(continueAfter ? "旧现场已保留，接续会话已经开始。" : "已用现有证据生成低置信度检查点。 ");
     } catch (error) {
       this.#toast(error.message, "error");
     }
-  }
-
-  #quickDockActiveSession() {
-    const activeSession = this.#store.getState().sessions.find((item) => item.status === "active");
-    if (!activeSession) throw new Error("当前没有需要停靠的活动会话。 ");
-    this.#quickDock(activeSession.id, false);
   }
 
   #editProject(data, form) {

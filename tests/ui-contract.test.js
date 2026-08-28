@@ -162,10 +162,12 @@ test("emergency docking is discoverable, modal-safe, and project-contextual", as
   const handler = source.match(/#onKeydown\(event\) \{([\s\S]*?)\n  \}\n\n  #runCommand/u)?.[1] ?? "";
 
   assert.match(handler, /event\.shiftKey && event\.key\.toLowerCase\(\) === "s"/u);
-  assert.match(handler, /this\.#quickDock\(activeSession\.id, false\)/u);
+  assert.match(handler, /this\.#quickDock\(undefined, false\)/u);
+  assert.doesNotMatch(handler, /sessions\.find\(/u);
   assert.ok(handler.indexOf('querySelector("dialog[open]")') < handler.indexOf('key.toLowerCase() === "s"'));
   assert.match(source, /\["quick-dock", "archive", "应急停靠", "立即收拢活动会话 · Ctrl\/⌘ Shift S", false\]/u);
-  assert.match(source, /if \(command === "quick-dock"\) this\.#quickDockActiveSession\(\)/u);
+  assert.match(source, /if \(command === "quick-dock"\) this\.#quickDock\(undefined, false\)/u);
+  assert.doesNotMatch(source, /#quickDockActiveSession/u);
   assert.match(source, /aria-label="快速停靠：\$\{attr\(controlContext\(project\.title\)\)\}" title="快速停靠（Ctrl\/⌘ Shift S）"/u);
 });
 
@@ -267,11 +269,13 @@ test("active capture and manual checkpoint transactions reuse validated context 
 
 test("quick docking reuses the core plan's active-context positions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
-  const handler = source.match(/#quickDock\(sessionId, continueAfter\) \{([\s\S]*?)\n  \}\n\n  #quickDockActiveSession/u)?.[1] ?? "";
+  const handler = source.match(/#quickDock\(sessionId, continueAfter\) \{([\s\S]*?)\n  \}\n\n  #editProject/u)?.[1] ?? "";
 
   assert.match(handler, /prepareQuickDock\(state, sessionId, now\)/u);
+  assert.match(handler, /const targetSessionId = activeSession\.id/u);
   assert.match(handler, /next\.sessions\[sessionIndex\]/u);
   assert.match(handler, /next\.projects\[projectIndex\]/u);
+  assert.match(handler, /current\?\.id !== targetSessionId/u);
   assert.doesNotMatch(handler, /(?:state|next)\.(?:sessions|projects)\.find/u);
 });
 
