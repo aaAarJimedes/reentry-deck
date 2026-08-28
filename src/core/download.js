@@ -26,13 +26,18 @@ export function safeDownloadFilename(value) {
   }
   result = result.replace(/^[. ]+|[. ]+$/gu, "");
   if (!result) return "download.json";
-  if (/^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(result)) {
+  if (isWindowsDeviceFilename(result)) {
     if (result.length === DOWNLOAD_FILENAME_LIMIT) {
       result = result.slice(0, /[\udc00-\udfff]$/u.test(result) ? -2 : -1);
     }
     result = `_${result}`;
   }
   return result;
+}
+
+function isWindowsDeviceFilename(value) {
+  const stem = value.split(".", 1)[0].replace(/[. ]+$/gu, "");
+  return /^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])$/iu.test(stem);
 }
 
 export function triggerBlobDownload(blob, filename, dependencies = {}) {

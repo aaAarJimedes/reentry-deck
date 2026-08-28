@@ -62,6 +62,10 @@ describe("triggerBlobDownload", () => {
     assert.equal(safeDownloadFilename("  report\\Q3:final?.json.  "), "report-Q3-final-.json");
     assert.equal(safeDownloadFilename("CON.json"), "_CON.json");
     assert.equal(safeDownloadFilename("CONOUT$.log"), "_CONOUT$.log");
+    assert.equal(safeDownloadFilename("CON .json"), "_CON .json");
+    assert.equal(safeDownloadFilename("COM¹.txt"), "_COM¹.txt");
+    assert.equal(safeDownloadFilename("LPT².report.json"), "_LPT².report.json");
+    assert.equal(safeDownloadFilename("COM10.txt"), "COM10.txt");
     assert.equal(safeDownloadFilename("report\u202Egnp.exe\u200b"), "reportgnp.exe");
     assert.equal(safeDownloadFilename("bad\ud800name\udc00.json"), "badname.json");
     assert.equal(safeDownloadFilename("\u0000\u0007  .  "), "download.json");
