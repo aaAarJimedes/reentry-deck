@@ -119,6 +119,20 @@ test("session lifecycle warnings refresh after time boundaries without erasing a
   assert.match(source, /document\.visibilityState === "visible"\) this\.#refreshTimers\(\)/u);
 });
 
+test("stale-session acknowledgement is single-use and bound to the current active session", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
+  const acknowledge = source.match(/#continueStaleSession\(sessionId\) \{([\s\S]*?)\n  \}\n\n  #quickDock/u)?.[1] ?? "";
+
+  assert.match(source, /#acknowledgedStaleSessionId = null/u);
+  assert.doesNotMatch(source, /acknowledgedStaleSessions|new Set\(\)/u);
+  assert.match(render, /!activeSession \|\| this\.#acknowledgedStaleSessionId !== activeSession\.id/u);
+  assert.match(acknowledge, /this\.#activeSession\?\.id !== sessionId/u);
+  assert.match(acknowledge, /this\.#acknowledgedStaleSessionId = sessionId/u);
+  assert.match(source, /Boolean\(activeSession && activeSession\.id === this\.#acknowledgedStaleSessionId\)/u);
+  assert.match(source, /session\.id !== this\.#acknowledgedStaleSessionId/u);
+});
+
 test("interactive refresh paths reuse the invariant-safe render context", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";

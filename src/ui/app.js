@@ -95,7 +95,7 @@ export class ReentryApp {
   #workspaceCounts = null;
   #activeSession = null;
   #noticeQueue = [];
-  #acknowledgedStaleSessions = new Set();
+  #acknowledgedStaleSessionId = null;
   #pendingImport = null;
   #pendingProjectEdit = null;
   #pendingCheckpointSessionId = null;
@@ -169,6 +169,7 @@ export class ReentryApp {
     this.#pendingProjectEdit = null;
     this.#pendingCheckpointSessionId = null;
     this.#activeSession = null;
+    this.#acknowledgedStaleSessionId = null;
     this.#eventController.abort();
     this.#colorSchemeQuery?.removeEventListener?.("change", this.#colorSchemeListener);
     this.#colorSchemeQuery = null;
@@ -204,6 +205,7 @@ export class ReentryApp {
     const { counts: workspaceCounts, currentProject, activeSession, activeProject } = frame;
     this.#workspaceCounts = workspaceCounts;
     this.#activeSession = activeSession;
+    if (!activeSession || this.#acknowledgedStaleSessionId !== activeSession.id) this.#acknowledgedStaleSessionId = null;
     const currentReentryCard = currentProject
       ? currentProject.status === "archived"
         ? buildReentryCard(state, currentProject.id, now)
@@ -212,7 +214,7 @@ export class ReentryApp {
     const theme = state.settings.theme ?? "system";
     this.#sessionHealthSignature = sessionHealthSignature(
       activeSession,
-      activeSession ? this.#acknowledgedStaleSessions.has(activeSession.id) : false,
+      Boolean(activeSession && activeSession.id === this.#acknowledgedStaleSessionId),
       now
     );
     this.#calendarDaySignature = localDaySignature(now);
@@ -564,7 +566,7 @@ export class ReentryApp {
 
   #renderFocusPanel(project, session) {
     const health = inspectSession(session);
-    const showStaleWarning = health.stale && !this.#acknowledgedStaleSessions.has(session.id);
+    const showStaleWarning = health.stale && session.id !== this.#acknowledgedStaleSessionId;
     return `
       <section class="panel focus-panel" aria-labelledby="focus-heading">
         <div class="panel-header inline-between"><div><h2 id="focus-heading">工作现场已展开</h2><p>计时以开始时间为准，关闭页面也不会失真。</p></div><span class="status-pill" data-status="active">会话中</span></div>
@@ -1250,7 +1252,8 @@ export class ReentryApp {
   }
 
   #continueStaleSession(sessionId) {
-    this.#acknowledgedStaleSessions.add(sessionId);
+    if (!sessionId || this.#activeSession?.id !== sessionId) throw new Error("活动会话已经变化，请重新确认。 ");
+    this.#acknowledgedStaleSessionId = sessionId;
     this.#focusSelector = '[data-form="capture-crumb"] textarea';
     this.render();
     this.#announce("继续原会话；计时保持不变");
@@ -1296,7 +1299,7 @@ export class ReentryApp {
         }
       }, followUp ? Date.parse(followUp.startedAt) : now);
 
-      this.#acknowledgedStaleSessions.delete(targetSessionId);
+      if (this.#acknowledgedStaleSessionId === targetSessionId) this.#acknowledgedStaleSessionId = null;
       this.#announce(continueAfter ? "旧会话已标记中断，并已开始接续会话" : "会话已快速停靠");
       this.#toast(continueAfter ? "旧现场已保留，接续会话已经开始。" : "已用现有证据生成低置信度检查点。 ");
     } catch (error) {
@@ -1647,7 +1650,7 @@ export class ReentryApp {
     const activeSession = this.#activeSession;
     const nextSignature = sessionHealthSignature(
       activeSession,
-      activeSession ? this.#acknowledgedStaleSessions.has(activeSession.id) : false,
+      Boolean(activeSession && activeSession.id === this.#acknowledgedStaleSessionId),
       now
     );
     const nextDaySignature = localDaySignature(now);
