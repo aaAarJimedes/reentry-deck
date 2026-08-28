@@ -7,8 +7,8 @@ const shortDateTime = new Intl.DateTimeFormat("zh-CN", {
 });
 
 export function elapsedSeconds(startedAt, endedAt = Date.now()) {
-  const start = new Date(startedAt).getTime();
-  const end = typeof endedAt === "number" ? endedAt : new Date(endedAt).getTime();
+  const start = timestampOf(startedAt);
+  const end = timestampOf(endedAt);
   if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
   return Math.max(0, Math.floor((end - start) / 1000));
 }
@@ -28,9 +28,10 @@ export function formatDuration(totalSeconds, { compact = false } = {}) {
 }
 
 export function formatRelative(isoDate, now = Date.now()) {
-  const timestamp = new Date(isoDate).getTime();
-  if (!Number.isFinite(timestamp)) return "时间未知";
-  const difference = timestamp - now;
+  const timestamp = timestampOf(isoDate);
+  const reference = timestampOf(now);
+  if (!Number.isFinite(timestamp) || !Number.isFinite(reference)) return "时间未知";
+  const difference = timestamp - reference;
   const absolute = Math.abs(difference);
   if (absolute < 60_000) return "刚刚";
   if (absolute < 3_600_000) return rtf.format(Math.round(difference / 60_000), "minute");
@@ -45,6 +46,13 @@ export function formatDateTime(isoDate) {
 }
 
 export function daysSince(isoDate, now = Date.now()) {
-  const timestamp = new Date(isoDate).getTime();
-  return Number.isFinite(timestamp) ? Math.max(0, (now - timestamp) / 86_400_000) : 0;
+  const timestamp = timestampOf(isoDate);
+  const reference = timestampOf(now);
+  return Number.isFinite(timestamp) && Number.isFinite(reference) ? Math.max(0, (reference - timestamp) / 86_400_000) : 0;
+}
+
+function timestampOf(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : Number.NaN;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : Number.NaN;
 }

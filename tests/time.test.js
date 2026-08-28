@@ -80,6 +80,9 @@ test("formatDuration normalizes non-finite durations instead of leaking Infinity
 
 test("formatRelative returns unknown for invalid input and just-now inside the first minute", () => {
   assert.equal(formatRelative("not-a-date", NOW), "时间未知");
+  assert.equal(formatRelative(at(0), "not-a-date"), "时间未知");
+  assert.equal(formatRelative(at(0), Infinity), "时间未知");
+  assert.equal(formatRelative(at(-MINUTE), new Date(NOW)), "1分钟前");
   assert.equal(formatRelative(at(0), NOW), "刚刚");
   assert.equal(formatRelative(at(-MINUTE + 1), NOW), "刚刚");
   assert.equal(formatRelative(at(MINUTE - 1), NOW), "刚刚");
@@ -127,4 +130,7 @@ test("daysSince returns elapsed fractional days and clamps future/invalid dates"
   assert.equal(daysSince(at(-1.5 * DAY), NOW), 1.5);
   assert.equal(daysSince(at(DAY), NOW), 0);
   assert.equal(daysSince("not-a-date", NOW), 0);
+  assert.equal(daysSince(at(-DAY), "not-a-date"), 0);
+  assert.equal(daysSince(at(-DAY), Infinity), 0);
+  assert.equal(daysSince(at(-DAY), new Date(NOW)), 1);
 });
