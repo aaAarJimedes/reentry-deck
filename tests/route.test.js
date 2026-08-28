@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { parseRoute } from "../src/ui/app.js";
+import { ROUTE_HASH_LIMIT, parseRoute } from "../src/ui/app.js";
 
 describe("parseRoute", () => {
   test("accepts only the canonical top-level routes", () => {
@@ -34,5 +34,12 @@ describe("parseRoute", () => {
     ]) {
       assert.deepEqual(parseRoute(hash), { name: "notFound" }, hash);
     }
+  });
+
+  test("rejects the total hash budget before route segmentation", () => {
+    const validUnicodeId = "界".repeat(200);
+    assert.ok(`#/project/${encodeURIComponent(validUnicodeId)}`.length < ROUTE_HASH_LIMIT);
+    assert.deepEqual(parseRoute(`#/project/${encodeURIComponent(validUnicodeId)}`), { name: "project", id: validUnicodeId });
+    assert.deepEqual(parseRoute(`#/${"segment/".repeat(ROUTE_HASH_LIMIT)}`), { name: "notFound" });
   });
 });

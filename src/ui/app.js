@@ -1548,8 +1548,12 @@ function controlContext(value) {
   return compactText(String(value ?? "").replace(/\s+/gu, " "), 80) || "未命名内容";
 }
 
+export const ROUTE_HASH_LIMIT = 2_420;
+
 export function parseRoute(hash) {
-  const value = String(hash ?? "").replace(/^#\/?/, "");
+  const raw = String(hash ?? "");
+  if (raw.length > ROUTE_HASH_LIMIT) return { name: "notFound" };
+  const value = raw.replace(/^#\/?/, "");
   if (!value) return { name: "home" };
   const segments = value.split("/");
   const [name, encodedId] = segments;
