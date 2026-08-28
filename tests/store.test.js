@@ -118,6 +118,26 @@ describe("MemoryStorage", () => {
 });
 
 describe("AppStore loading and recovery", () => {
+  test("storage diagnostics retain only a bounded recent text window", () => {
+    let reads = 0;
+    const storage = {
+      getItem() {
+        reads += 1;
+        if (reads === 1) return null;
+        throw new Error(`read denied ${"x".repeat(1_000)}`);
+      }
+    };
+    const store = new AppStore(storage, T0, null);
+
+    for (let index = 0; index < 20; index += 1) store.refreshFromStorage();
+
+    const notices = store.drainNotices();
+    assert.equal(notices.length, 8);
+    assert.ok(notices.every((notice) => notice.length <= 500));
+    assert.match(notices[0], /read denied/u);
+    assert.deepEqual(store.drainNotices(), []);
+  });
+
   test("starts safely when the browser denies storage reads", () => {
     const deniedStorage = {
       getItem() {

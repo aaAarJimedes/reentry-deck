@@ -1,13 +1,15 @@
-import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate, validateState } from "./model.js";
+import { compactText, createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate, validateState } from "./model.js";
 import { buildImportPreview, checksumSerializedSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.152.0";
+export const APP_VERSION = "0.153.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
 const WRITE_LOCK_TTL_MS = 5_000;
 const STORAGE_ENTRY_SCAN_LIMIT = 10_000;
+const MAX_STORE_NOTICES = 8;
+const MAX_STORE_NOTICE_LENGTH = 500;
 
 export class AppStore {
   #storage;
@@ -30,7 +32,7 @@ export class AppStore {
       this.#persistedRaw = this.#storage?.getItem(STORAGE_KEY) ?? null;
     } catch (error) {
       this.#storage = null;
-      this.notices.push(`浏览器本地存储不可访问，已用临时空白工作区启动：${errorMessage(error)}`);
+      this.#addNotice(`浏览器本地存储不可访问，已用临时空白工作区启动：${errorMessage(error)}`);
     }
     this.#state = freezeState(this.#load(now, this.#persistedRaw));
     this.#serializedState = JSON.stringify(this.#state);
@@ -74,12 +76,17 @@ export class AppStore {
     return this.notices.splice(0);
   }
 
+  #addNotice(message) {
+    this.notices.push(compactText(message, MAX_STORE_NOTICE_LENGTH));
+    if (this.notices.length > MAX_STORE_NOTICES) this.notices.splice(0, this.notices.length - MAX_STORE_NOTICES);
+  }
+
   refreshFromStorage(now = Date.now()) {
     let current;
     try {
       current = this.#storage?.getItem(STORAGE_KEY) ?? null;
     } catch (error) {
-      this.notices.push(`无法读取另一个标签页的更新，当前页面保持不变：${errorMessage(error)}`);
+      this.#addNotice(`无法读取另一个标签页的更新，当前页面保持不变：${errorMessage(error)}`);
       this.#emit("external");
       return false;
     }
@@ -114,14 +121,14 @@ export class AppStore {
       this.#hasRejectedRaw = false;
       this.#state = freezeState(next);
       if (sameRevisionCollision) {
-        this.notices.push("检测到另一个标签页写入了相同修订号的不同内容；已采用实际持久化版本，下一次保存将继续递增修订号。 ");
+        this.#addNotice("检测到另一个标签页写入了相同修订号的不同内容；已采用实际持久化版本，下一次保存将继续递增修订号。 ");
       }
       this.#emit("external");
       return true;
     } catch (error) {
       this.#rejectedRaw = current;
       this.#hasRejectedRaw = true;
-      this.notices.push(`另一个标签页写入的数据无法安全采用，当前页面未采用它：${error.message}`);
+      this.#addNotice(`另一个标签页写入的数据无法安全采用，当前页面未采用它：${error.message}`);
       this.#emit("external");
       return false;
     }
@@ -227,13 +234,13 @@ export class AppStore {
       if (previous) {
         try {
           const recovered = parseSavedState(previous, now);
-          this.notices.push("主数据损坏，已自动恢复到上一个可用版本。请尽快导出备份。");
+          this.#addNotice("主数据损坏，已自动恢复到上一个可用版本。请尽快导出备份。");
           return recovered;
         } catch {
           // Fall through to a clean state while preserving the unreadable strings in storage.
         }
       }
-      this.notices.push(`本地数据无法读取，已用空白工作区启动：${error.message}`);
+      this.#addNotice(`本地数据无法读取，已用空白工作区启动：${error.message}`);
       return createEmptyState(now);
     }
   }
@@ -298,7 +305,7 @@ export class AppStore {
         this.#storage.setItem(STORAGE_KEY, serialized);
         this.#verifyPrimaryWrite(serialized);
         releasedPrevious = true;
-        this.notices.push("浏览器存储空间接近上限，已释放可再生的滚动撤销快照以完成本次保存；请尽快导出完整备份。 ");
+        this.#addNotice("浏览器存储空间接近上限，已释放可再生的滚动撤销快照以完成本次保存；请尽快导出完整备份。 ");
       } catch (retryError) {
         try {
           if (this.#storage.getItem(PREVIOUS_KEY) === null) {
@@ -380,7 +387,7 @@ export class AppStore {
     try {
       latest = this.#storage.getItem(STORAGE_KEY);
     } catch (error) {
-      this.notices.push(`本地数据已写入，但无法立即复核提交结果：${errorMessage(error)}`);
+      this.#addNotice(`本地数据已写入，但无法立即复核提交结果：${errorMessage(error)}`);
       return;
     }
     if (latest === expected) return;
@@ -396,7 +403,7 @@ export class AppStore {
       } catch (error) {
         if (this.#failedListeners.has(listener)) continue;
         this.#failedListeners.add(listener);
-        this.notices.push(`工作区状态已处理，但一个界面订阅未能响应：${errorMessage(error)}`);
+        this.#addNotice(`工作区状态已处理，但一个界面订阅未能响应：${errorMessage(error)}`);
       }
     }
   }
