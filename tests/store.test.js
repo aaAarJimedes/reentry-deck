@@ -736,6 +736,38 @@ describe("AppStore updates and persistence", () => {
     assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
   });
 
+  test("rechecks the primary value after writing the rolling snapshot and before publishing", () => {
+    class SnapshotInterleavingStorage extends MemoryStorage {
+      externalRaw = null;
+      replaceDuringSnapshot = false;
+
+      setItem(key, value) {
+        super.setItem(key, value);
+        if (key === PREVIOUS_KEY && this.replaceDuringSnapshot) {
+          this.replaceDuringSnapshot = false;
+          super.setItem(STORAGE_KEY, this.externalRaw);
+        }
+      }
+    }
+    const storage = new SnapshotInterleavingStorage();
+    const store = new AppStore(storage, T0, null);
+    store.update((draft) => draft.projects.push(createProject({ id: "original" }, T0)), T0);
+    const external = stateWithProject("snapshot-winner", "Snapshot winner");
+    external.meta.revision = 2;
+    external.meta.updatedAt = new Date(T1).toISOString();
+    storage.externalRaw = JSON.stringify(external);
+    storage.replaceDuringSnapshot = true;
+
+    assert.throws(
+      () => store.update((draft) => { draft.projects[0].title = "Must not publish"; }, T1),
+      /保存完成时替换了数据/u
+    );
+
+    assert.deepEqual(store.getState().projects.map((project) => project.id), ["snapshot-winner"]);
+    assert.deepEqual(persisted(storage).projects.map((project) => project.id), ["snapshot-winner"]);
+    assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
+  });
+
   test("an active foreign write lease fails before recipes can overwrite storage", () => {
     const storage = new MemoryStorage();
     const store = new AppStore(storage, T0, null);

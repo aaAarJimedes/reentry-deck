@@ -2,7 +2,7 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.129.0";
+export const APP_VERSION = "0.130.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
@@ -283,7 +283,6 @@ export class AppStore {
         throw new Error(`本地保存失败，原数据仍然保留：${retryError.message}`);
       }
     }
-    this.#persistedRaw = serialized;
     const shouldSavePrevious = current && !this.#skipNextPreviousWrite && !releasedPrevious;
     this.#skipNextPreviousWrite = false;
     if (shouldSavePrevious) {
@@ -293,7 +292,9 @@ export class AppStore {
         // The current write already succeeded. A missing rollback copy is safer
         // than rejecting all future edits near the browser's quota limit.
       }
+      this.#verifyPrimaryWrite(serialized);
     }
+    this.#persistedRaw = serialized;
   }
 
   #acquireWriteLock(now = Date.now()) {
