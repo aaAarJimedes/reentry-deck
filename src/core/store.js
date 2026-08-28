@@ -2,7 +2,7 @@ import { compactText, createEmptyState, isoAtOrAfter, normalizeState, validateIm
 import { buildImportPreview, checksumSerializedSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.163.0";
+export const APP_VERSION = "0.164.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
@@ -128,7 +128,7 @@ export class AppStore {
     } catch (error) {
       this.#rejectedRaw = current;
       this.#hasRejectedRaw = true;
-      this.#addNotice(`另一个标签页写入的数据无法安全采用，当前页面未采用它：${error.message}`);
+      this.#addNotice(`另一个标签页写入的数据无法安全采用，当前页面未采用它：${errorMessage(error)}`);
       this.#emit("external");
       return false;
     }
@@ -240,7 +240,7 @@ export class AppStore {
           // Fall through to a clean state while preserving the unreadable strings in storage.
         }
       }
-      this.#addNotice(`本地数据无法读取，已用空白工作区启动：${error.message}`);
+      this.#addNotice(`本地数据无法读取，已用空白工作区启动：${errorMessage(error)}`);
       return createEmptyState(now);
     }
   }
@@ -297,7 +297,7 @@ export class AppStore {
         // Without a readable rollback value there is nothing safe to reclaim.
       }
       if (!isQuotaExceeded(error) || previous === null) {
-        throw new Error(`本地保存失败，原数据仍然保留：${error.message}`);
+        throw new Error(`本地保存失败，原数据仍然保留：${errorMessage(error)}`);
       }
       try {
         this.#assertWritePreconditions(current);
@@ -314,7 +314,7 @@ export class AppStore {
         } catch {
           // Best effort only: never overwrite a rollback value another tab created.
         }
-        throw new Error(`本地保存失败，原数据仍然保留：${retryError.message}`);
+        throw new Error(`本地保存失败，原数据仍然保留：${errorMessage(retryError)}`);
       }
     }
     const shouldSavePrevious = current && !this.#skipNextPreviousWrite && !releasedPrevious;

@@ -568,6 +568,30 @@ describe("AppStore updates and persistence", () => {
     assert.equal(emissions, 0);
   });
 
+  test("a non-Error storage rejection still produces a stable save diagnostic", () => {
+    class PrimitiveFailureStorage extends MemoryStorage {
+      failNextCurrentWrite = false;
+
+      setItem(key, value) {
+        if (key === STORAGE_KEY && this.failNextCurrentWrite) {
+          this.failNextCurrentWrite = false;
+          throw "primitive storage rejection";
+        }
+        super.setItem(key, value);
+      }
+    }
+
+    const storage = new PrimitiveFailureStorage();
+    const store = new AppStore(storage, T0, null);
+    storage.failNextCurrentWrite = true;
+
+    assert.throws(
+      () => store.update((draft) => { draft.settings.staleAfterDays = 30; }, T1),
+      /本地保存失败，原数据仍然保留：访问被拒绝/u
+    );
+    assert.equal(store.getState().settings.staleAfterDays, 7);
+  });
+
   test("mutating a previously emitted state cannot change an older state object", () => {
     const store = new AppStore(new MemoryStorage(), T0);
     const first = store.update((draft) => draft.projects.push(createProject({ id: "p1", title: "First" }, T0)), T1);

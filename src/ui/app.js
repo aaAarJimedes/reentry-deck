@@ -84,6 +84,10 @@ export function resolveThemeAppearance(theme, prefersDark = false) {
   return Object.freeze({ dark, themeColor: dark ? "#111a19" : "#f4efe6" });
 }
 
+export function userFacingErrorMessage(error, fallback = "操作未完成，请根据最新状态重试。 ") {
+  return typeof error?.message === "string" && error.message.trim() ? error.message : fallback;
+}
+
 const ICONS = {
   home: '<path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/>',
   archive: '<path d="M4 7h16v13H4zM3 3h18v4H3zM9 11h6"/>',
@@ -1032,7 +1036,7 @@ export class ReentryApp {
       if (form.dataset.form === "quick-review") this.#reviewQuickCheckpoint(data, form);
       if (form.dataset.form === "edit-project") this.#editProject(data, form);
     } catch (error) {
-      this.#toast(error.message, "error");
+      this.#toast(userFacingErrorMessage(error), "error");
     }
   }
 
@@ -1075,10 +1079,7 @@ export class ReentryApp {
     try {
       action();
     } catch (error) {
-      const message = typeof error?.message === "string" && error.message.trim()
-        ? error.message
-        : "操作未完成，请根据最新状态重试。 ";
-      this.#toast(message, "error");
+      this.#toast(userFacingErrorMessage(error), "error");
     }
   }
 
@@ -1388,7 +1389,7 @@ export class ReentryApp {
       this.#announce(continueAfter ? "旧会话已标记中断，并已开始接续会话" : "会话已快速停靠");
       this.#toast(continueAfter ? "旧现场已保留，接续会话已经开始。" : "已用现有证据生成低置信度检查点。 ");
     } catch (error) {
-      this.#toast(error.message, "error");
+      this.#toast(userFacingErrorMessage(error), "error");
     }
   }
 
@@ -1433,7 +1434,7 @@ export class ReentryApp {
       });
       this.#toast(`项目已标记为“${PROJECT_STATUS_LABELS[status]}”。`);
     } catch (error) {
-      this.#toast(error.message, "error");
+      this.#toast(userFacingErrorMessage(error), "error");
     }
   }
 
@@ -1498,7 +1499,7 @@ export class ReentryApp {
     } catch (error) {
       this.#pendingArchiveId = null;
       this.#root.querySelector("#archive-confirm-dialog")?.close();
-      this.#toast(error.message, "error");
+      this.#toast(userFacingErrorMessage(error), "error");
     }
   }
 
@@ -1549,7 +1550,7 @@ export class ReentryApp {
       this.#announce("已恢复到上一次保存；再次操作可切换回来");
       this.#toast("已恢复上一次保存；需要时可再次撤销。 ");
     } catch (error) {
-      this.#toast(error.message, "error");
+      this.#toast(userFacingErrorMessage(error), "error");
     }
   }
 
@@ -1624,7 +1625,7 @@ export class ReentryApp {
       this.#announce("复航简报已复制");
       this.#toast("复航简报已复制到剪贴板。 ");
     } catch (error) {
-      if (isCurrentRequest()) this.#toast(`无法复制简报：${error.message}`, "error");
+      if (isCurrentRequest()) this.#toast(`无法复制简报：${userFacingErrorMessage(error)}`, "error");
     }
   }
 
@@ -1638,7 +1639,7 @@ export class ReentryApp {
       this.#announce("工作区交接清单已复制");
       this.#toast("工作区交接清单已复制到剪贴板。 ");
     } catch (error) {
-      if (isCurrentRequest()) this.#toast(`无法复制交接清单：${error.message}`, "error");
+      if (isCurrentRequest()) this.#toast(`无法复制交接清单：${userFacingErrorMessage(error)}`, "error");
     }
   }
 
@@ -1663,7 +1664,7 @@ export class ReentryApp {
       this.render();
       this.#openDialog("import-preview-dialog");
     } catch (error) {
-      if (isCurrentRequest()) this.#toast(`无法导入：${error.message}`, "error");
+      if (isCurrentRequest()) this.#toast(`无法导入：${userFacingErrorMessage(error)}`, "error");
     } finally {
       if (this.#importReadController === controller) this.#importReadController = null;
       if (isCurrentRequest()) input.value = "";
@@ -1696,7 +1697,7 @@ export class ReentryApp {
       pending.refreshed = true;
       this.render();
       this.#openDialog("import-preview-dialog");
-      this.#toast(`无法导入：${error.message}`, "error");
+      this.#toast(`无法导入：${userFacingErrorMessage(error)}`, "error");
     }
   }
 
