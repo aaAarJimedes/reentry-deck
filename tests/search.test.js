@@ -247,3 +247,53 @@ test("getProjectResources skips no-link history before reading timestamps or all
   assert.deepEqual(resources.map((item) => item.url), ["https://docs.example.org/start"]);
   assert.equal(irrelevantTimestampReads, 0);
 });
+
+test("getProjectResources retains only the best unique resource window at the record boundary", () => {
+  const crumbs = Array.from({ length: 49_999 }, (_, index) => ({
+    id: `crumb-${index}`,
+    projectId: "p1",
+    type: "note",
+    text: `resource https://docs.example/${index}`,
+    createdAt: new Date(Date.parse("2026-01-01T00:00:00.000Z") + index).toISOString()
+  }));
+  for (const method of ["filter", "map", "sort", "find"]) {
+    Object.defineProperty(crumbs, method, {
+      value: () => { throw new Error(`source array ${method} must not be used`); },
+      configurable: true
+    });
+  }
+  const projects = [{ id: "p1", description: "", nextAction: "", createdAt: "2026-01-01T00:00:00.000Z" }];
+  Object.defineProperty(projects, "find", {
+    value: () => { throw new Error("source project find must not be used"); },
+    configurable: true
+  });
+
+  const resources = getProjectResources({ projects, crumbs, checkpoints: [] }, "p1");
+
+  assert.equal(resources.length, 20);
+  assert.deepEqual(resources.map((item) => item.sourceId), Array.from({ length: 20 }, (_, index) => `crumb-${49_998 - index}`));
+  assert.equal(resources[0].url, "https://docs.example/49998");
+  assert.equal(resources.at(-1).url, "https://docs.example/49979");
+});
+
+test("getProjectResources upgrades selected duplicate URLs when stronger evidence appears later", () => {
+  const timestamp = "2026-01-10T00:00:00.000Z";
+  const resourceState = {
+    projects: [{ id: "p1", description: "https://shared.example/", nextAction: "", updatedAt: timestamp }],
+    crumbs: [{ id: "crumb", projectId: "p1", text: "https://shared.example/ https://crumb.example/", createdAt: timestamp }],
+    checkpoints: [{
+      id: "checkpoint",
+      projectId: "p1",
+      summary: "https://shared.example/ https://checkpoint.example/",
+      nextAction: "",
+      openLoops: "",
+      returnHint: "",
+      createdAt: timestamp
+    }]
+  };
+
+  const resources = getProjectResources(resourceState, "p1", 2);
+
+  assert.deepEqual(resources.map((item) => item.url), ["https://shared.example/", "https://checkpoint.example/"]);
+  assert.equal(resources[0].sourceId, "checkpoint");
+});

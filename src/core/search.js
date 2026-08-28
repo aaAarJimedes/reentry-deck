@@ -158,13 +158,19 @@ export function extractHttpLinks(text, limit = RESOURCE_LIMIT) {
 }
 
 export function getProjectResources(state, projectId, limit = RESOURCE_LIMIT) {
-  const project = state.projects.find((item) => item.id === projectId);
+  let project = null;
+  for (const item of state.projects) {
+    if (item.id !== projectId) continue;
+    project = item;
+    break;
+  }
   if (!project) return [];
   const safeLimit = boundedLimit(limit, RESOURCE_LIMIT, 100);
   if (!safeLimit) return [];
-  const evidence = [];
+  const selected = [];
+  const selectedByUrl = new Map();
   if (hasHttpCandidate(project.description) || hasHttpCandidate(project.nextAction)) {
-    evidence.push({
+    addResourceEvidence(selected, selectedByUrl, safeLimit, {
       sourceType: "project",
       sourceId: project.id,
       sourcePriority: 0,
@@ -176,7 +182,9 @@ export function getProjectResources(state, projectId, limit = RESOURCE_LIMIT) {
   for (let insertionIndex = 0; insertionIndex < state.crumbs.length; insertionIndex += 1) {
     const item = state.crumbs[insertionIndex];
     if (item.projectId !== projectId || !hasHttpCandidate(item.text)) continue;
-    evidence.push({ sourceType: "crumb", sourceId: item.id, sourcePriority: 1, insertionIndex, createdAt: item.createdAt, text: item.text });
+    addResourceEvidence(selected, selectedByUrl, safeLimit, {
+      sourceType: "crumb", sourceId: item.id, sourcePriority: 1, insertionIndex, createdAt: item.createdAt, text: item.text
+    });
   }
   for (let insertionIndex = 0; insertionIndex < state.checkpoints.length; insertionIndex += 1) {
     const item = state.checkpoints[insertionIndex];
@@ -185,7 +193,7 @@ export function getProjectResources(state, projectId, limit = RESOURCE_LIMIT) {
         && !hasHttpCandidate(item.nextAction)
         && !hasHttpCandidate(item.openLoops)
         && !hasHttpCandidate(item.returnHint))) continue;
-    evidence.push({
+    addResourceEvidence(selected, selectedByUrl, safeLimit, {
       sourceType: "checkpoint",
       sourceId: item.id,
       sourcePriority: 2,
@@ -194,21 +202,46 @@ export function getProjectResources(state, projectId, limit = RESOURCE_LIMIT) {
       text: [item.summary, item.nextAction, item.openLoops, item.returnHint].join("\n")
     });
   }
-  evidence.sort((a, b) => timeOf(b.createdAt) - timeOf(a.createdAt)
-    || b.sourcePriority - a.sourcePriority
-    || b.insertionIndex - a.insertionIndex);
-
   const resources = [];
-  const seen = new Set();
-  for (const item of evidence) {
-    for (const link of extractHttpLinks(item.text, safeLimit)) {
-      if (seen.has(link.url)) continue;
-      seen.add(link.url);
-      resources.push({ ...link, sourceType: item.sourceType, sourceId: item.sourceId, createdAt: item.createdAt });
-      if (resources.length >= safeLimit) return resources;
-    }
+  for (const candidate of selected) {
+    resources.push({
+      ...candidate.link,
+      sourceType: candidate.sourceType,
+      sourceId: candidate.sourceId,
+      createdAt: candidate.createdAt
+    });
   }
   return resources;
+}
+
+function addResourceEvidence(selected, selectedByUrl, limit, evidence) {
+  let linkIndex = 0;
+  for (const link of extractHttpLinks(evidence.text, limit)) {
+    const candidate = { ...evidence, link, linkIndex, time: timeOf(evidence.createdAt) };
+    linkIndex += 1;
+    const existing = selectedByUrl.get(link.url);
+    if (existing && compareResourceCandidate(existing, candidate) <= 0) continue;
+    if (existing) {
+      selected.splice(selected.indexOf(existing), 1);
+      selectedByUrl.delete(link.url);
+    }
+    let insertion = 0;
+    while (insertion < selected.length && compareResourceCandidate(selected[insertion], candidate) <= 0) insertion += 1;
+    if (insertion >= limit) continue;
+    selected.splice(insertion, 0, candidate);
+    selectedByUrl.set(link.url, candidate);
+    if (selected.length > limit) {
+      const removed = selected.pop();
+      selectedByUrl.delete(removed.link.url);
+    }
+  }
+}
+
+function compareResourceCandidate(left, right) {
+  return right.time - left.time
+    || right.sourcePriority - left.sourcePriority
+    || right.insertionIndex - left.insertionIndex
+    || left.linkIndex - right.linkIndex;
 }
 
 function hasHttpCandidate(value) {
