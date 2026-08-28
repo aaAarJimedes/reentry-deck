@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { COPY_TEXT_LIMIT, REENTRY_BRIEF_GAP_LIMIT, REENTRY_BRIEF_SIGNAL_LIMIT, WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT, WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../src/core/share.js";
+import { COPY_TEXT_LIMIT, REENTRY_BRIEF_GAP_LIMIT, REENTRY_BRIEF_SIGNAL_LIMIT, SHARE_TEXT_SCAN_LIMIT, WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT, WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../src/core/share.js";
 
 describe("buildReentryBrief", () => {
   test("builds a focused bounded plain-text handoff", () => {
@@ -110,6 +110,34 @@ describe("buildReentryBrief", () => {
 
     assert.match(brief, /未决事项：signal 1；signal 2；signal 3/u);
     assert.match(brief, /需补：gap 1；gap 2；gap 3；gap 4；gap 5；gap 6/u);
+    assert.ok(brief.length < 3_000);
+  });
+
+  test("bounds raw field normalization and ignores coercion hooks", (t) => {
+    let largestReplaceReceiver = 0;
+    const nativeReplace = String.prototype.replace;
+    t.mock.method(String.prototype, "replace", function (...args) {
+      largestReplaceReceiver = Math.max(largestReplaceReceiver, this.length);
+      return nativeReplace.apply(this, args);
+    });
+    let conversions = 0;
+    const hostileTitle = {
+      toString() {
+        conversions += 1;
+        throw new Error("coercion must not run");
+      }
+    };
+
+    const brief = buildReentryBrief({
+      project: { title: hostileTitle },
+      summary: "state ".repeat(SHARE_TEXT_SCAN_LIMIT),
+      nextAction: "next",
+      returnHint: "hint"
+    });
+
+    assert.equal(conversions, 0);
+    assert.ok(largestReplaceReceiver <= SHARE_TEXT_SCAN_LIMIT);
+    assert.match(brief, /当前状态：state/u);
     assert.ok(brief.length < 3_000);
   });
 });

@@ -5,6 +5,7 @@ export const WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT = 20;
 export const REENTRY_BRIEF_SIGNAL_LIMIT = 3;
 export const REENTRY_BRIEF_GAP_LIMIT = 6;
 export const COPY_TEXT_LIMIT = 64 * 1024;
+export const SHARE_TEXT_SCAN_LIMIT = 4_096;
 const WORKSPACE_HANDOFF_ATTENTION_LIMIT = 4;
 const WORKSPACE_HANDOFF_REASON_LIMIT = 3;
 
@@ -112,7 +113,11 @@ function evidenceStatus(card) {
 }
 
 function briefLine(value, maximum) {
-  return compactText(String(value ?? "").replace(/\s+/gu, " "), maximum);
+  if (typeof value !== "string") return "";
+  const overflow = value.length > SHARE_TEXT_SCAN_LIMIT;
+  const source = overflow ? value.slice(0, SHARE_TEXT_SCAN_LIMIT) : value;
+  const normalized = source.replace(/\s+/gu, " ");
+  return compactText(`${normalized}${overflow ? "…" : ""}`, maximum);
 }
 
 function boundedBriefList(values, limit, itemMaximum, outputMaximum, select = (value) => value) {
