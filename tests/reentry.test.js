@@ -8,6 +8,7 @@ import {
   getLatestProjectCheckpoint,
   getProjectActivity,
   getProjectStats,
+  prepareProjectArchive,
   prepareSessionDialog,
   prepareSessionStart,
   rankProjectsForReentry
@@ -192,6 +193,29 @@ test("prepareSessionDialog resolves its target and unique active blocker in one 
   assert.throws(
     () => prepareSessionDialog(makeState({ projects: [projects[1]], sessions }), "target"),
     /关联的项目不存在/u
+  );
+});
+
+test("prepareProjectArchive resolves a stable target and rejects an active project without array helpers", () => {
+  const projects = [makeProject("other"), makeProject("target")];
+  const sessions = [{ id: "done", projectId: "target", status: "completed" }];
+  for (const collection of [projects, sessions]) {
+    for (const method of ["find", "some"]) {
+      Object.defineProperty(collection, method, { value() { throw new Error(`${method} must not be used`); } });
+    }
+  }
+
+  const plan = prepareProjectArchive(makeState({ projects, sessions }), "target");
+  assert.equal(plan.project, projects[1]);
+  assert.equal(plan.projectIndex, 1);
+  assert.throws(
+    () => prepareProjectArchive(makeState({ projects, sessions: [...sessions, { id: "live", projectId: "target", status: "active" }] }), "target"),
+    /活动会话/u
+  );
+  assert.throws(() => prepareProjectArchive(makeState({ projects }), "missing"), /不在当前舰桥/u);
+  assert.throws(
+    () => prepareProjectArchive(makeState({ projects: [makeProject("target", { status: "archived" })] }), "target"),
+    /不在当前舰桥/u
   );
 });
 

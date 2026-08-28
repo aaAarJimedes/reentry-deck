@@ -70,6 +70,25 @@ export function prepareSessionStart(state, projectId) {
   };
 }
 
+export function prepareProjectArchive(state, projectId) {
+  const projects = safeCollection(state?.projects);
+  let project = null;
+  let projectIndex = -1;
+  for (let index = 0; index < projects.length; index += 1) {
+    if (projects[index]?.id !== projectId) continue;
+    project = projects[index];
+    projectIndex = index;
+    break;
+  }
+  if (!project || project.status === "archived") throw new Error("这个项目已经不在当前舰桥。 ");
+  for (const session of safeCollection(state?.sessions)) {
+    if (session?.projectId === project.id && session.status === "active") {
+      throw new Error("项目已有活动会话，请先留下检查点再归档。 ");
+    }
+  }
+  return { project, projectIndex };
+}
+
 export function buildReentryCards(state, projectIds, now = Date.now()) {
   const safeProjectIds = Array.isArray(projectIds) ? projectIds : [];
   const index = buildReentryIndex(state, safeProjectIds);

@@ -7,6 +7,9 @@ const STYLE_SOURCE_URL = new URL("../src/styles.css", import.meta.url);
 
 test("project archival uses an accessible in-app confirmation instead of window.confirm", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
+  const dialogs = source.match(/#renderDialogs\(project, activeSession, reentryCard\) \{([\s\S]*?)\n  \}\n\n  #renderImportPreviewDialog/u)?.[1] ?? "";
+  const prepare = source.match(/#prepareArchive\(projectId\) \{([\s\S]*?)\n  \}\n\n  #confirmArchive/u)?.[1] ?? "";
+  const confirm = source.match(/#confirmArchive\(\) \{([\s\S]*?)\n  \}\n\n  #restoreProject/u)?.[1] ?? "";
 
   assert.doesNotMatch(source, /window\.confirm\s*\(/);
   assert.match(
@@ -19,6 +22,13 @@ test("project archival uses an accessible in-app confirmation instead of window.
   assert.match(source, /data-action="confirm-archive">确认移入归档<\/button>/);
   assert.match(source, /if \(action === "archive-project"\) this\.#prepareArchive/);
   assert.match(source, /if \(action === "confirm-archive"\) this\.#confirmArchive/);
+  assert.match(dialogs, /project\?\.id === this\.#pendingArchiveId \? project : null/u);
+  assert.doesNotMatch(dialogs, /state\.projects\.find/u);
+  assert.match(prepare, /prepareProjectArchive\(state, projectId\)/u);
+  assert.doesNotMatch(prepare, /(?:projects\.find|sessions\.some)/u);
+  assert.match(confirm, /prepareProjectArchive\(next, projectId\)/u);
+  assert.match(confirm, /next\.projects\[projectIndex\]/u);
+  assert.doesNotMatch(confirm, /(?:projects\.find|sessions\.some)/u);
 });
 
 test("user-triggered mutation surfaces are guarded by the shared action boundary", async () => {

@@ -12,7 +12,7 @@ import { buildQuickCaptureProjectWindow, prepareQuickCapture, projectNextActionF
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { triggerBlobDownload } from "../core/download.js";
 import { buildWorkspaceCounts, buildWorkspaceFrame, buildWorkspaceOverview } from "../core/insights.js";
-import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepareSessionDialog, prepareSessionStart } from "../core/reentry.js";
+import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepareProjectArchive, prepareSessionDialog, prepareSessionStart } from "../core/reentry.js";
 import { WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, inspectSession, locateActiveSessionContext, prepareQuickCheckpointReview, prepareQuickDock } from "../core/session.js";
@@ -687,7 +687,7 @@ export class ReentryApp {
   #renderDialogs(project, activeSession, reentryCard) {
     const colors = { fern: "#2f6b61", amber: "#d99752", clay: "#b9644d", sky: "#568695", plum: "#785e76", slate: "#65736f" };
     const state = this.#store.getState();
-    const pendingArchiveProject = state.projects.find((item) => item.id === this.#pendingArchiveId);
+    const pendingArchiveProject = project?.id === this.#pendingArchiveId ? project : null;
     const reviewCheckpoint = reentryCard?.checkpoint ?? null;
     const captureWindow = buildQuickCaptureProjectWindow(state, {
       preferredIds: [project?.id, activeSession?.projectId, state.ui.selectedProjectId]
@@ -1293,12 +1293,7 @@ export class ReentryApp {
 
   #prepareArchive(projectId) {
     const state = this.#store.getState();
-    if (state.sessions.some((item) => item.projectId === projectId && item.status === "active")) {
-      this.#toast("请先结束活动会话，再归档项目。", "error");
-      return;
-    }
-    const project = state.projects.find((item) => item.id === projectId);
-    if (!project || project.status === "archived") return;
+    const { project } = prepareProjectArchive(state, projectId);
     this.#pendingArchiveId = projectId;
     const dialog = this.#root.querySelector("#archive-confirm-dialog");
     const title = dialog?.querySelector("[data-archive-project-title]");
@@ -1310,15 +1305,13 @@ export class ReentryApp {
     const projectId = this.#pendingArchiveId;
     if (!projectId) return;
     try {
-      const state = this.#store.getState();
-      const project = state.projects.find((item) => item.id === projectId);
-      if (!project || project.status === "archived") throw new Error("这个项目已经不在当前舰桥。 ");
-      if (state.sessions.some((item) => item.projectId === projectId && item.status === "active")) {
-        throw new Error("项目已有活动会话，请先留下检查点再归档。 ");
-      }
       this.#pendingArchiveId = null;
       this.#store.update((next) => {
-        const item = next.projects.find((candidate) => candidate.id === projectId);
+        const { projectIndex } = prepareProjectArchive(next, projectId);
+        const item = next.projects[projectIndex];
+        if (!item || item.id !== projectId || item.status === "archived") {
+          throw new Error("项目在归档期间发生了变化，请重新打开确认。 ");
+        }
         item.status = "archived";
         item.archivedAt = isoAtOrAfter(Date.now(), item.updatedAt);
         item.updatedAt = item.archivedAt;
