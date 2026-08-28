@@ -1,8 +1,8 @@
-import { compactText, createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate, validateState } from "./model.js";
+import { compactText, createEmptyState, isoAtOrAfter, makeId, normalizeState, validateImportCandidate, validateState } from "./model.js";
 import { buildImportPreview, checksumSerializedSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.167.0";
+export const APP_VERSION = "0.168.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
@@ -333,7 +333,7 @@ export class AppStore {
   }
 
   #acquireWriteLock(now = Date.now()) {
-    const owner = globalThis.crypto?.randomUUID?.() ?? `${now}-${Math.random().toString(36).slice(2)}`;
+    const owner = makeId("lease");
     const token = JSON.stringify({ owner, expiresAt: now + WRITE_LOCK_TTL_MS });
     try {
       const existing = this.#storage.getItem(WRITE_LOCK_KEY);

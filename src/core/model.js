@@ -32,8 +32,26 @@ export const IMPORT_LIMITS = Object.freeze({
   reportedErrors: 50
 });
 
+let fallbackIdSequence = 0;
+
 export function makeId(prefix = "item") {
-  const randomPart = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  let randomPart = null;
+  try {
+    const candidate = globalThis.crypto?.randomUUID?.();
+    if (typeof candidate === "string" && candidate) randomPart = candidate;
+  } catch {
+    // A restricted crypto provider must not make local record creation unavailable.
+  }
+  if (!randomPart) {
+    fallbackIdSequence = fallbackIdSequence >= Number.MAX_SAFE_INTEGER ? 1 : fallbackIdSequence + 1;
+    let entropy = "";
+    try {
+      entropy = Math.random().toString(36).slice(2);
+    } catch {
+      // The monotonic per-page sequence still prevents same-tick collisions.
+    }
+    randomPart = `${Date.now()}-${fallbackIdSequence}${entropy ? `-${entropy}` : ""}`;
+  }
   return `${prefix}_${randomPart}`;
 }
 

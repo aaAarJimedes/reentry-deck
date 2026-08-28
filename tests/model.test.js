@@ -50,6 +50,18 @@ describe("model constants and helpers", () => {
     assert.notEqual(first, second);
   });
 
+  test("makeId remains unique when secure randomness exists but is denied", (t) => {
+    t.mock.method(globalThis.crypto, "randomUUID", () => { throw new Error("crypto denied"); });
+    t.mock.method(Date, "now", () => NOW);
+    t.mock.method(Math, "random", () => 0.5);
+
+    const first = makeId("fallback");
+    const second = makeId("fallback");
+    assert.match(first, new RegExp(`^fallback_${NOW}-\\d+-`, "u"));
+    assert.match(second, new RegExp(`^fallback_${NOW}-\\d+-`, "u"));
+    assert.notEqual(first, second);
+  });
+
   test("isoAtOrAfter preserves the latest valid business anchor during clock rollback", () => {
     const earlier = "2026-08-27T23:00:00.000Z";
     const later = "2026-08-28T05:00:00.000Z";
