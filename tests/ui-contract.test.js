@@ -99,6 +99,18 @@ test("workspace search exposes the same query budget enforced by the core", asyn
   assert.match(source, /#onInput\(event\) \{\s+if \(event\.isComposing\) return;/u);
 });
 
+test("command availability reuses workspace counts and disables ambiguous docking", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const commands = source.match(/#renderQuickCommands\(\) \{([\s\S]*?)\n  \}\n\n  #onKeydown/u)?.[1] ?? "";
+
+  assert.match(source, /this\.#workspaceCounts = workspaceCounts/u);
+  assert.match(commands, /counts\.unarchivedProjects > 0/u);
+  assert.match(commands, /const activeSessionCount = counts\.activeSessions/u);
+  assert.match(commands, /activeSessionCount !== 1/u);
+  assert.match(commands, /检测到 \$\{activeSessionCount\} 个活动会话/u);
+  assert.doesNotMatch(commands, /\.(?:projects|sessions)\.some/u);
+});
+
 test("backup reads ignore stale completions and are invalidated on app destruction", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 
@@ -165,7 +177,8 @@ test("emergency docking is discoverable, modal-safe, and project-contextual", as
   assert.match(handler, /this\.#quickDock\(undefined, false\)/u);
   assert.doesNotMatch(handler, /sessions\.find\(/u);
   assert.ok(handler.indexOf('querySelector("dialog[open]")') < handler.indexOf('key.toLowerCase() === "s"'));
-  assert.match(source, /\["quick-dock", "archive", "应急停靠", "立即收拢活动会话 · Ctrl\/⌘ Shift S", false\]/u);
+  assert.match(source, /activeSessionCount === 1 \? "应急停靠" : "会话冲突"/u);
+  assert.match(source, /立即收拢活动会话 · Ctrl\/⌘ Shift S/u);
   assert.match(source, /if \(command === "quick-dock"\) this\.#quickDock\(undefined, false\)/u);
   assert.doesNotMatch(source, /#quickDockActiveSession/u);
   assert.match(source, /aria-label="快速停靠：\$\{attr\(controlContext\(project\.title\)\)\}" title="快速停靠（Ctrl\/⌘ Shift S）"/u);

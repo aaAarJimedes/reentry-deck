@@ -42,6 +42,7 @@ test("buildWorkspaceCounts shares one local-day snapshot across streaming status
       project("blocked", { status: "blocked" }),
       project("archived", { status: "archived" })
     ],
+    sessions: [{ status: "active" }, { status: "completed" }, { status: "active" }],
     crumbs: [
       { createdAt: new Date(2026, 5, 15, 0, 0, 0, 0).toISOString() },
       { createdAt: new Date(2026, 5, 15, 23, 59, 59, 999).toISOString() },
@@ -58,6 +59,7 @@ test("buildWorkspaceCounts shares one local-day snapshot across streaming status
     pausedProjects: 1,
     blockedProjects: 1,
     archivedProjects: 1,
+    activeSessions: 2,
     crumbsToday: 2,
     checkpoints: 2
   });

@@ -12,6 +12,7 @@ export function buildWorkspaceCounts(state, now = Date.now()) {
     pausedProjects: 0,
     blockedProjects: 0,
     archivedProjects: 0,
+    activeSessions: 0,
     crumbsToday: 0,
     checkpoints: Array.isArray(state?.checkpoints) ? state.checkpoints.length : 0
   };
@@ -24,6 +25,9 @@ export function buildWorkspaceCounts(state, now = Date.now()) {
     if (project.status === "active") counts.activeProjects += 1;
     else if (project.status === "paused") counts.pausedProjects += 1;
     else if (project.status === "blocked") counts.blockedProjects += 1;
+  }
+  for (const session of Array.isArray(state?.sessions) ? state.sessions : []) {
+    if (session?.status === "active") counts.activeSessions += 1;
   }
   const reference = new Date(now);
   const referenceTimestamp = reference.getTime();

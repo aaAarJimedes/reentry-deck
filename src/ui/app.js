@@ -89,6 +89,7 @@ export class ReentryApp {
   #store;
   #timerId;
   #focusSelector = null;
+  #workspaceCounts = null;
   #noticeQueue = [];
   #acknowledgedStaleSessions = new Set();
   #pendingImport = null;
@@ -189,6 +190,7 @@ export class ReentryApp {
         : buildReentryCardWithStats(state, currentProject.id, now)
       : null;
     const workspaceCounts = buildWorkspaceCounts(state, now);
+    this.#workspaceCounts = workspaceCounts;
     const theme = state.settings.theme ?? "system";
     this.#sessionHealthSignature = sessionHealthSignature(
       activeSession,
@@ -937,11 +939,12 @@ export class ReentryApp {
   }
 
   #renderQuickCommands() {
-    const hasProjects = this.#store.getState().projects.some((item) => item.status !== "archived");
-    const hasActiveSession = this.#store.getState().sessions.some((item) => item.status === "active");
+    const counts = this.#workspaceCounts ?? buildWorkspaceCounts(this.#store.getState());
+    const hasProjects = counts.unarchivedProjects > 0;
+    const activeSessionCount = counts.activeSessions;
     const canUndo = this.#store.hasPreviousSnapshot();
     const commands = [
-      ...(hasActiveSession ? [["quick-dock", "archive", "应急停靠", "立即收拢活动会话 · Ctrl/⌘ Shift S", false]] : []),
+      ...(activeSessionCount ? [["quick-dock", activeSessionCount === 1 ? "archive" : "alert", activeSessionCount === 1 ? "应急停靠" : "会话冲突", activeSessionCount === 1 ? "立即收拢活动会话 · Ctrl/⌘ Shift S" : `检测到 ${activeSessionCount} 个活动会话，需先恢复有效备份`, activeSessionCount !== 1]] : []),
       ["quick-capture", "trail", "快捷记录", "选择项目并保存一条证据", !hasProjects],
       ["new-project", "plus", "建立项目", "创建一个新的工作现场", false],
       ["undo", "undo", "撤销上次保存", "可再次操作切回", !canUndo],
