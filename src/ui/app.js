@@ -53,6 +53,22 @@ const COLOR_LABELS = {
 const MAX_VISIBLE_TOASTS = 4;
 const MAX_TOAST_MESSAGE_LENGTH = 500;
 const MAX_REMEMBERED_TIMELINES = 24;
+export const MAX_TRANSIENT_CONTROL_VALUE_LENGTH = 2_400;
+
+export function boundTransientControlValue(value, maxLength = -1) {
+  const declaredLimit = Number.isSafeInteger(maxLength) && maxLength >= 0
+    ? maxLength
+    : MAX_TRANSIENT_CONTROL_VALUE_LENGTH;
+  return String(value ?? "").slice(0, Math.min(declaredLimit, MAX_TRANSIENT_CONTROL_VALUE_LENGTH));
+}
+
+export function normalizeTransientSelection(value, start, end) {
+  if (!Number.isSafeInteger(start) || start < 0 || !Number.isSafeInteger(end) || end < 0) return null;
+  const length = String(value ?? "").length;
+  const first = Math.min(start, length);
+  const second = Math.min(end, length);
+  return first <= second ? [first, second] : [second, first];
+}
 
 export function resolveThemeAppearance(theme, prefersDark = false) {
   const dark = theme === "dark" || (theme === "system" && prefersDark);
@@ -294,14 +310,18 @@ export class ReentryApp {
       contextKey: this.#dialogContextKey(dialog),
       activeControlIndex,
       activeFocusableIndex,
-      controls: controls.map((control) => ({
-        tag: control.tagName,
-        type: control.type,
-        value: control.value,
-        checked: control.checked,
-        selectionStart: typeof control.selectionStart === "number" ? control.selectionStart : null,
-        selectionEnd: typeof control.selectionEnd === "number" ? control.selectionEnd : null
-      }))
+      controls: controls.map((control) => {
+        const value = boundTransientControlValue(control.value, control.maxLength);
+        const selection = normalizeTransientSelection(value, control.selectionStart, control.selectionEnd);
+        return {
+          tag: control.tagName,
+          type: control.type,
+          value,
+          checked: control.checked,
+          selectionStart: selection?.[0] ?? null,
+          selectionEnd: selection?.[1] ?? null
+        };
+      })
     };
   }
 
@@ -361,10 +381,11 @@ export class ReentryApp {
     snapshot.controls.forEach((saved, index) => {
       const control = controls[index];
       if (!control || control.tagName !== saved.tag || control.type !== saved.type) return;
+      const value = boundTransientControlValue(saved.value, control.maxLength);
       if (control.type === "checkbox" || control.type === "radio") {
         control.checked = saved.checked;
-      } else if (control.tagName !== "SELECT" || [...control.options].some((option) => option.value === saved.value)) {
-        control.value = saved.value;
+      } else if (control.tagName !== "SELECT" || [...control.options].some((option) => option.value === value)) {
+        control.value = value;
       }
     });
     dialog.showModal();
@@ -372,10 +393,11 @@ export class ReentryApp {
     if (!active || active.disabled) return;
     active.focus();
     const saved = snapshot.controls[snapshot.activeControlIndex];
+    const selection = normalizeTransientSelection(active.value, saved?.selectionStart, saved?.selectionEnd);
     if (active === controls[snapshot.activeControlIndex]
-      && saved?.selectionStart !== null
+      && selection
       && typeof active.setSelectionRange === "function") {
-      active.setSelectionRange(saved.selectionStart, saved.selectionEnd);
+      active.setSelectionRange(...selection);
     }
   }
 
