@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { REENTRY_BRIEF_GAP_LIMIT, REENTRY_BRIEF_SIGNAL_LIMIT, WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT, WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../src/core/share.js";
+import { COPY_TEXT_LIMIT, REENTRY_BRIEF_GAP_LIMIT, REENTRY_BRIEF_SIGNAL_LIMIT, WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT, WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../src/core/share.js";
 
 describe("buildReentryBrief", () => {
   test("builds a focused bounded plain-text handoff", () => {
@@ -242,6 +242,31 @@ describe("copyPlainText", () => {
       }
     }), /无法写入剪贴板：denied/u);
     assert.equal(removed, true);
+  });
+
+  test("rejects oversized text before reading browser copy capabilities", async () => {
+    let clipboardReads = 0;
+    const dependencies = {
+      get clipboard() {
+        clipboardReads += 1;
+        throw new Error("clipboard must not be read");
+      },
+      get document() {
+        throw new Error("document must not be read");
+      }
+    };
+
+    await assert.rejects(
+      () => copyPlainText("x".repeat(COPY_TEXT_LIMIT + 1), dependencies),
+      /超过 64 KiB/u
+    );
+    assert.equal(clipboardReads, 0);
+    const writes = [];
+    assert.equal(
+      await copyPlainText("x".repeat(COPY_TEXT_LIMIT), { clipboard: { writeText: async (text) => writes.push(text.length) } }),
+      "clipboard"
+    );
+    assert.deepEqual(writes, [COPY_TEXT_LIMIT]);
   });
 
   test("does not let fallback cleanup or focus restoration mask a successful copy", async () => {

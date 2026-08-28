@@ -2,7 +2,7 @@ import { compactText, createEmptyState, isoAtOrAfter, makeId, normalizeState, va
 import { buildImportPreview, checksumSerializedSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.172.0";
+export const APP_VERSION = "0.173.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
