@@ -1,8 +1,8 @@
 import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate, validateState } from "./model.js";
-import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
+import { buildImportPreview, checksumSerializedSnapshotData, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.135.0";
+export const APP_VERSION = "0.136.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
@@ -160,6 +160,17 @@ export class AppStore {
       checksum: checksumSnapshotData(data),
       data
     };
+  }
+
+  exportSnapshotText(now = Date.now()) {
+    const serializedData = JSON.stringify(this.#state);
+    const metadata = JSON.stringify({
+      format: "reentry-deck-backup",
+      exportedAt: isoAtOrAfter(now, this.#state.meta.updatedAt),
+      appVersion: APP_VERSION,
+      checksum: checksumSerializedSnapshotData(serializedData)
+    });
+    return `${metadata.slice(0, -1)},"data":${serializedData}}`;
   }
 
   hasPreviousSnapshot(now = Date.now()) {

@@ -1251,6 +1251,27 @@ describe("AppStore replacement, snapshots, and reset", () => {
     assert.equal(store.getState().projects[0].title, "Original");
   });
 
+  test("exportSnapshotText reuses one canonical data serialization without cloning the workspace", () => {
+    const store = new AppStore(new MemoryStorage(), T0);
+    store.update((draft) => draft.projects.push(createProject({ id: "p1", title: "Compact export" }, T0)), T0);
+    const nativeStructuredClone = globalThis.structuredClone;
+    globalThis.structuredClone = () => { throw new Error("workspace clone must not be used"); };
+    let text;
+    try {
+      text = store.exportSnapshotText(T2);
+    } finally {
+      globalThis.structuredClone = nativeStructuredClone;
+    }
+
+    const snapshot = JSON.parse(text);
+    assert.equal(snapshot.format, "reentry-deck-backup");
+    assert.equal(snapshot.exportedAt, new Date(T2).toISOString());
+    assert.deepEqual(snapshot.data, store.getState());
+    assert.doesNotThrow(() => new AppStore(new MemoryStorage(), T2, null).previewImport(snapshot, T2));
+    assert.doesNotMatch(text, /\r|\n/u);
+    assert.ok(text.length < JSON.stringify(store.exportSnapshot(), null, 2).length);
+  });
+
   test("a snapshot round trip preserves data while applying import revision semantics", () => {
     const source = new AppStore(new MemoryStorage(), T0);
     source.update((draft) => {

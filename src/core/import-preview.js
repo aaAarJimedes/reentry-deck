@@ -6,6 +6,11 @@ const CHECKSUM_PATTERN = /^fnv1a32:[0-9a-f]{8}$/u;
 
 export function checksumSnapshotData(value) {
   const serialized = JSON.stringify(value) ?? "";
+  return checksumSerializedSnapshotData(serialized);
+}
+
+export function checksumSerializedSnapshotData(serialized) {
+  if (typeof serialized !== "string") throw new TypeError("备份校验内容必须是字符串。 ");
   let hash = 0x811c9dc5;
   for (let index = 0; index < serialized.length; index += 1) {
     let codePoint = serialized.charCodeAt(index);

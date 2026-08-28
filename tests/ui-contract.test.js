@@ -300,6 +300,16 @@ test("dashboard exposes a bounded accessible workspace handoff copy action", asy
   assert.match(source, /const isCurrentRequest = this\.#clipboardRequestGate\.begin\(\)/u);
 });
 
+test("backup sizing and download share the compact serialized snapshot path", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const sizing = source.match(/#getBackupSize\(state\) \{([\s\S]*?)\n  \}\n\n  #renderNotFound/u)?.[1] ?? "";
+  const download = source.match(/#exportData\(\) \{([\s\S]*?)\n  \}\n\n  async #copyReentryBrief/u)?.[1] ?? "";
+
+  assert.match(sizing, /this\.#store\.exportSnapshotText\(\)/u);
+  assert.match(download, /new Blob\(\[this\.#store\.exportSnapshotText\(\)\]/u);
+  assert.doesNotMatch(`${sizing}\n${download}`, /exportSnapshot\(\)|JSON\.stringify/u);
+});
+
 test("checkpoint-only open loops are labeled as historical instead of disappearing", async () => {
   const source = await readFile(new URL("../src/ui/app.js", import.meta.url), "utf8");
 

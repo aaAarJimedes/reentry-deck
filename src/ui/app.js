@@ -667,7 +667,7 @@ export class ReentryApp {
 
   #getBackupSize(state) {
     if (this.#backupSizeState !== state) {
-      const snapshot = JSON.stringify(this.#store.exportSnapshot());
+      const snapshot = this.#store.exportSnapshotText();
       this.#backupSizeLabel = formatBytes(new Blob([snapshot]).size);
       this.#backupSizeState = state;
     }
@@ -1427,8 +1427,7 @@ export class ReentryApp {
   }
 
   #exportData() {
-    const snapshot = this.#store.exportSnapshot();
-    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+    const blob = new Blob([this.#store.exportSnapshotText()], { type: "application/json" });
     triggerBlobDownload(blob, `reentry-backup-${new Date().toISOString().slice(0, 10)}.json`);
     this.#toast("完整备份已生成。 ");
   }

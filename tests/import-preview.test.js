@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "../src/core/import-preview.js";
+import { buildImportPreview, checksumSerializedSnapshotData, checksumSnapshotData, readImportSnapshot } from "../src/core/import-preview.js";
 import { createCheckpoint, createCrumb, createEmptyState, createProject, createSession } from "../src/core/model.js";
 
 const T0 = Date.parse("2026-08-20T08:00:00.000Z");
@@ -100,6 +100,11 @@ describe("import snapshot inspection", () => {
     };
 
     for (const value of cases) assert.equal(checksumSnapshotData(value), reference(value));
+    for (const value of cases) {
+      const serialized = JSON.stringify(value);
+      assert.equal(checksumSerializedSnapshotData(serialized), reference(value));
+    }
+    assert.throws(() => checksumSerializedSnapshotData({}), /必须是字符串/u);
 
     const NativeTextEncoder = globalThis.TextEncoder;
     globalThis.TextEncoder = class {
