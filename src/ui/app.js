@@ -12,7 +12,7 @@ import { buildQuickCaptureProjectWindow, prepareQuickCapture, projectNextActionF
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { triggerBlobDownload } from "../core/download.js";
 import { buildWorkspaceCounts, buildWorkspaceFrame, buildWorkspaceOverview } from "../core/insights.js";
-import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepareProjectArchive, prepareSessionDialog, prepareSessionStart } from "../core/reentry.js";
+import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepareProjectArchive, prepareProjectEdit, prepareProjectRestore, prepareProjectStatusChange, prepareSessionDialog, prepareSessionStart } from "../core/reentry.js";
 import { WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, inspectSession, locateActiveSessionContext, prepareQuickCheckpointReview, prepareQuickDock } from "../core/session.js";
@@ -1233,8 +1233,7 @@ export class ReentryApp {
     if (!title) throw new Error("项目名称不能只包含空格。 ");
     this.#focusSelector = '[data-action="edit-project"]';
     this.#store.update((state) => {
-      const project = state.projects.find((item) => item.id === data.projectId);
-      if (!project) throw new Error("找不到要编辑的项目。 ");
+      const { project } = prepareProjectEdit(state, data.projectId);
       const changedAt = isoAtOrAfter(Date.now(), project.updatedAt);
       project.title = title;
       project.description = String(data.description ?? "").trim();
@@ -1252,8 +1251,7 @@ export class ReentryApp {
     try {
       this.#focusSelector = '[data-control="project-status"]';
       this.#store.update((state) => {
-        const project = state.projects.find((item) => item.id === projectId);
-        if (!project) throw new Error("找不到项目。 ");
+        const { project } = prepareProjectStatusChange(state, projectId, status);
         project.status = status;
         project.updatedAt = isoAtOrAfter(Date.now(), project.updatedAt);
       });
@@ -1331,8 +1329,7 @@ export class ReentryApp {
   #restoreProject(projectId) {
     this.#focusSelector = "#main-content";
     this.#store.update((state) => {
-      const project = state.projects.find((item) => item.id === projectId);
-      if (!project) throw new Error("找不到项目。 ");
+      const { project } = prepareProjectRestore(state, projectId);
       project.status = "paused";
       project.archivedAt = null;
       project.updatedAt = isoAtOrAfter(Date.now(), project.updatedAt);

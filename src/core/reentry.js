@@ -4,6 +4,7 @@ import { QUICK_DOCK_NOT_RECORDED } from "./session.js";
 const OPEN_SIGNAL_TYPES = new Set(["question", "blocker"]);
 const SUMMARY_CRUMB_TYPES = new Set(["note", "discovery", "decision"]);
 const CHANGE_CRUMB_TYPES = new Set(["note", "discovery", "decision", "next"]);
+const LIVE_PROJECT_STATUSES = new Set(["active", "paused", "blocked"]);
 
 export function getProjectActivity(state, projectId) {
   return getIndexedProjectActivity(buildReentryIndex(state, [projectId]), projectId);
@@ -71,15 +72,7 @@ export function prepareSessionStart(state, projectId) {
 }
 
 export function prepareProjectArchive(state, projectId) {
-  const projects = safeCollection(state?.projects);
-  let project = null;
-  let projectIndex = -1;
-  for (let index = 0; index < projects.length; index += 1) {
-    if (projects[index]?.id !== projectId) continue;
-    project = projects[index];
-    projectIndex = index;
-    break;
-  }
+  const { project, projectIndex } = locateProjectRecord(state, projectId);
   if (!project || project.status === "archived") throw new Error("这个项目已经不在当前舰桥。 ");
   for (const session of safeCollection(state?.sessions)) {
     if (session?.projectId === project.id && session.status === "active") {
@@ -87,6 +80,28 @@ export function prepareProjectArchive(state, projectId) {
     }
   }
   return { project, projectIndex };
+}
+
+export function prepareProjectEdit(state, projectId) {
+  const context = locateProjectRecord(state, projectId);
+  if (!context.project) throw new Error("找不到要编辑的项目。 ");
+  if (context.project.status === "archived") throw new Error("归档项目保持只读；请先恢复项目再编辑。 ");
+  return context;
+}
+
+export function prepareProjectStatusChange(state, projectId, status) {
+  if (!LIVE_PROJECT_STATUSES.has(status)) throw new Error("项目状态不可用。 ");
+  const context = locateProjectRecord(state, projectId);
+  if (!context.project) throw new Error("找不到项目。 ");
+  if (context.project.status === "archived") throw new Error("归档项目不能直接更改状态；请先恢复项目。 ");
+  return context;
+}
+
+export function prepareProjectRestore(state, projectId) {
+  const context = locateProjectRecord(state, projectId);
+  if (!context.project) throw new Error("找不到要恢复的项目。 ");
+  if (context.project.status !== "archived") throw new Error("项目已不在归档舱，请刷新后重试。 ");
+  return context;
 }
 
 export function buildReentryCards(state, projectIds, now = Date.now()) {
@@ -197,6 +212,14 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
   };
   if (stats) card.stats = stats;
   return card;
+}
+
+function locateProjectRecord(state, projectId) {
+  const projects = safeCollection(state?.projects);
+  for (let index = 0; index < projects.length; index += 1) {
+    if (projects[index]?.id === projectId) return { project: projects[index], projectIndex: index };
+  }
+  return { project: null, projectIndex: -1 };
 }
 
 export function rankProjectsForReentry(state, now = Date.now()) {

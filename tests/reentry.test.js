@@ -9,6 +9,9 @@ import {
   getProjectActivity,
   getProjectStats,
   prepareProjectArchive,
+  prepareProjectEdit,
+  prepareProjectRestore,
+  prepareProjectStatusChange,
   prepareSessionDialog,
   prepareSessionStart,
   rankProjectsForReentry
@@ -217,6 +220,23 @@ test("prepareProjectArchive resolves a stable target and rejects an active proje
     () => prepareProjectArchive(makeState({ projects: [makeProject("target", { status: "archived" })] }), "target"),
     /不在当前舰桥/u
   );
+});
+
+test("project change plans enforce live and archived lifecycle boundaries", () => {
+  const live = makeProject("live");
+  const archived = makeProject("archived", { status: "archived" });
+  const projects = [live, archived];
+  Object.defineProperty(projects, "find", { value() { throw new Error("find must not be used"); } });
+  const state = makeState({ projects });
+
+  assert.deepEqual(prepareProjectEdit(state, "live"), { project: live, projectIndex: 0 });
+  assert.deepEqual(prepareProjectStatusChange(state, "live", "blocked"), { project: live, projectIndex: 0 });
+  assert.deepEqual(prepareProjectRestore(state, "archived"), { project: archived, projectIndex: 1 });
+  assert.throws(() => prepareProjectEdit(state, "archived"), /保持只读/u);
+  assert.throws(() => prepareProjectStatusChange(state, "archived", "paused"), /不能直接更改状态/u);
+  assert.throws(() => prepareProjectStatusChange(state, "live", "archived"), /状态不可用/u);
+  assert.throws(() => prepareProjectRestore(state, "live"), /不在归档舱/u);
+  assert.throws(() => prepareProjectRestore(state, "missing"), /找不到/u);
 });
 
 test("buildReentryCard uses the newest timestamped evidence instead of blindly trusting a checkpoint", () => {
