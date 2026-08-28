@@ -906,6 +906,26 @@ describe("AppStore updates and persistence", () => {
     assert.equal(persisted(storage).projects[0].title, "Writable again");
   });
 
+  test("treats differently formatted but semantically identical external JSON as idempotent", () => {
+    const storage = new MemoryStorage();
+    const current = stateWithProject("current", "Current");
+    storage.setItem(STORAGE_KEY, JSON.stringify(current));
+    const store = new AppStore(storage, T0, null);
+    const before = store.getState();
+    const sources = [];
+    store.subscribe((_state, event) => sources.push(event.source));
+    storage.setItem(STORAGE_KEY, JSON.stringify(current, null, 2));
+
+    assert.equal(store.refreshFromStorage(T1), false);
+    assert.strictEqual(store.getState(), before);
+    assert.deepEqual(store.drainNotices(), []);
+    assert.deepEqual(sources, []);
+
+    const saved = store.update((draft) => { draft.projects[0].title = "Still writable"; }, T1);
+    assert.equal(saved.meta.revision, current.meta.revision + 1);
+    assert.equal(persisted(storage).projects[0].title, "Still writable");
+  });
+
   test("rejects a forward external revision whose workspace time moves backward", () => {
     const storage = new MemoryStorage();
     const current = stateWithProject("current", "Current");

@@ -2,7 +2,7 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSerializedSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.139.0";
+export const APP_VERSION = "0.140.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
@@ -102,6 +102,12 @@ export class AppStore {
         next.meta.revision = this.#state.meta.revision + 1;
       }
       const serializedNext = JSON.stringify(next);
+      if (serializedNext === this.#serializedState) {
+        this.#persistedRaw = current;
+        this.#rejectedRaw = null;
+        this.#hasRejectedRaw = false;
+        return false;
+      }
       this.#persistedRaw = current;
       this.#serializedState = serializedNext;
       this.#rejectedRaw = null;
