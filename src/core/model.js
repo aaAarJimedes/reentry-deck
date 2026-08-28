@@ -99,7 +99,8 @@ export function containsUnsafeIdControl(value) {
   return typeof value === "string" && (UNSAFE_ID_CONTROL_PATTERN.test(value) || containsLoneSurrogate(value));
 }
 
-function containsLoneSurrogate(value) {
+export function containsLoneSurrogate(value) {
+  if (typeof value !== "string") return false;
   for (let index = 0; index < value.length; index += 1) {
     const unit = value.charCodeAt(index);
     if (unit >= 0xd800 && unit <= 0xdbff) {

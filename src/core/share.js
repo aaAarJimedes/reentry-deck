@@ -1,4 +1,4 @@
-import { IMPORT_LIMITS, compactText } from "./model.js";
+import { IMPORT_LIMITS, compactText, containsLoneSurrogate } from "./model.js";
 
 export const WORKSPACE_HANDOFF_PROJECT_LIMIT = 5;
 export const WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT = 20;
@@ -204,22 +204,6 @@ export async function copyPlainText(value, dependencies = {}) {
     if (attached || control.isConnected === true) safelyRemove(control);
     restoreFocus(previousFocus);
   }
-}
-
-function containsLoneSurrogate(value) {
-  for (let index = 0; index < value.length; index += 1) {
-    const unit = value.charCodeAt(index);
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-      const next = value.charCodeAt(index + 1);
-      if (next >= 0xdc00 && next <= 0xdfff) {
-        index += 1;
-        continue;
-      }
-      return true;
-    }
-    if (unit >= 0xdc00 && unit <= 0xdfff) return true;
-  }
-  return false;
 }
 
 function captureFocus(element) {

@@ -10,6 +10,7 @@ import {
   SESSION_CLOSE_REASONS,
   SESSION_STATUSES,
   compactText,
+  containsLoneSurrogate,
   createCheckpoint,
   createCrumb,
   createEmptyState,
@@ -85,6 +86,14 @@ describe("model constants and helpers", () => {
     assert.equal(compactText(null, 10), "");
     assert.equal(compactText("😀😀😀", 5), "😀😀…");
     assert.doesNotMatch(compactText("😀😀😀", 4), /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u);
+  });
+
+  test("containsLoneSurrogate distinguishes complete pairs from malformed UTF-16", () => {
+    assert.equal(containsLoneSurrogate("plain 👩‍💻 text"), false);
+    assert.equal(containsLoneSurrogate("\ud800"), true);
+    assert.equal(containsLoneSurrogate("\udc00"), true);
+    assert.equal(containsLoneSurrogate("a\ud800b"), true);
+    assert.equal(containsLoneSurrogate(null), false);
   });
 });
 
