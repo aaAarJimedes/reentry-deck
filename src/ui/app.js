@@ -15,7 +15,7 @@ import { buildWorkspaceCounts, buildWorkspaceOverview } from "../core/insights.j
 import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, getLatestProjectCheckpoint } from "../core/reentry.js";
 import { buildReentryBrief, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
-import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession, prepareQuickCheckpointReview } from "../core/session.js";
+import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession, locateActiveSessionContext, prepareQuickCheckpointReview } from "../core/session.js";
 import {
   COLLECTION_PAGE_SIZE,
   TIMELINE_PAGE_SIZE,
@@ -1064,9 +1064,9 @@ export class ReentryApp {
 
   #captureCrumb(data) {
     const state = this.#store.getState();
-    const session = state.sessions.find((item) => item.status === "active");
-    if (!session) throw new Error("没有活动会话，无法记录现场。 ");
-    const project = state.projects.find((item) => item.id === session.projectId);
+    const context = locateActiveSessionContext(state);
+    if (!context) throw new Error("没有活动会话，无法记录现场。 ");
+    const { session, sessionIndex, project, projectIndex } = context;
     const crumb = createCrumb(
       { projectId: session.projectId, sessionId: session.id, type: data.type, text: data.text },
       isoAtOrAfter(Date.now(), session.startedAt, project?.updatedAt)
@@ -1074,12 +1074,17 @@ export class ReentryApp {
     if (!crumb.text) throw new Error("先写下一条记录。 ");
     this.#focusSelector = '[data-form="capture-crumb"] textarea';
     this.#store.update((next) => {
+      const currentSession = next.sessions[sessionIndex];
+      const currentProject = next.projects[projectIndex];
+      if (currentSession?.id !== session.id || currentSession.status !== "active"
+        || currentProject?.id !== session.projectId || currentProject.status === "archived") {
+        throw new Error("活动现场在保存前已发生变化。 ");
+      }
       next.crumbs.push(crumb);
-      const project = next.projects.find((item) => item.id === session.projectId);
-      project.updatedAt = crumb.createdAt;
+      currentProject.updatedAt = crumb.createdAt;
       if (crumb.type === "next") {
-        project.nextAction = projectNextActionFromCrumb(crumb);
-        project.nextActionUpdatedAt = crumb.createdAt;
+        currentProject.nextAction = projectNextActionFromCrumb(crumb);
+        currentProject.nextActionUpdatedAt = crumb.createdAt;
       }
     });
     this.#announce(`${CRUMB_LABELS[crumb.type]}已记录`);
@@ -1109,9 +1114,9 @@ export class ReentryApp {
 
   #saveCheckpoint(data, form) {
     const state = this.#store.getState();
-    const session = state.sessions.find((item) => item.status === "active");
-    if (!session) throw new Error("活动会话已经结束。 ");
-    const project = state.projects.find((item) => item.id === session.projectId);
+    const context = locateActiveSessionContext(state);
+    if (!context) throw new Error("活动会话已经结束。 ");
+    const { session, sessionIndex, project, projectIndex } = context;
     const checkpoint = createCheckpoint(
       { ...data, projectId: session.projectId, sessionId: session.id },
       isoAtOrAfter(Date.now(), session.startedAt, project?.updatedAt)
@@ -1119,16 +1124,20 @@ export class ReentryApp {
     if (!checkpoint.summary || !checkpoint.nextAction) throw new Error("状态摘要和第一物理动作不能为空。 ");
     this.#focusSelector = "#main-content";
     this.#store.update((next) => {
+      const currentSession = next.sessions[sessionIndex];
+      const currentProject = next.projects[projectIndex];
+      if (currentSession?.id !== session.id || currentSession.status !== "active"
+        || currentProject?.id !== session.projectId || currentProject.status === "archived") {
+        throw new Error("活动现场在保存检查点前已发生变化。 ");
+      }
       next.checkpoints.push(checkpoint);
-      const currentSession = next.sessions.find((item) => item.id === session.id);
       currentSession.status = "completed";
       currentSession.endedAt = checkpoint.createdAt;
       currentSession.checkpointId = checkpoint.id;
       currentSession.closeReason = "checkpoint";
-      const project = next.projects.find((item) => item.id === session.projectId);
-      project.nextAction = checkpoint.nextAction;
-      project.nextActionUpdatedAt = checkpoint.createdAt;
-      project.updatedAt = checkpoint.createdAt;
+      currentProject.nextAction = checkpoint.nextAction;
+      currentProject.nextActionUpdatedAt = checkpoint.createdAt;
+      currentProject.updatedAt = checkpoint.createdAt;
     });
     form.closest("dialog")?.close();
     this.#announce("检查点已保存，会话已结束");

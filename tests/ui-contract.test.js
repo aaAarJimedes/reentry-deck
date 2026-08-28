@@ -250,6 +250,19 @@ test("quick checkpoint review reuses its validated project position inside the t
   assert.doesNotMatch(handler, /state\.projects\.find/u);
 });
 
+test("active capture and manual checkpoint transactions reuse validated context positions", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const capture = source.match(/#captureCrumb\(data\) \{([\s\S]*?)\n  \}\n\n  #quickCapture/u)?.[1] ?? "";
+  const checkpoint = source.match(/#saveCheckpoint\(data, form\) \{([\s\S]*?)\n  \}\n\n  #reviewQuickCheckpoint/u)?.[1] ?? "";
+
+  for (const handler of [capture, checkpoint]) {
+    assert.match(handler, /locateActiveSessionContext\(state\)/u);
+    assert.match(handler, /next\.sessions\[sessionIndex\]/u);
+    assert.match(handler, /next\.projects\[projectIndex\]/u);
+    assert.doesNotMatch(handler, /next\.(?:sessions|projects)\.find/u);
+  }
+});
+
 test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

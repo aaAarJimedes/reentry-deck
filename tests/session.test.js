@@ -11,6 +11,7 @@ import {
   inspectSession,
   isActiveSession,
   isSessionStale,
+  locateActiveSessionContext,
   prepareQuickCheckpointReview
 } from "../src/core/session.js";
 
@@ -174,6 +175,36 @@ test("assertSingleActiveSession returns zero or one session and rejects invarian
     /系统只允许一个/
   );
   assert.throws(() => assertSingleActiveSession({}, NOW), /会话列表无效/);
+});
+
+test("locateActiveSessionContext streams stable session and project positions", () => {
+  const sessions = [
+    { id: "done", projectId: "other", status: "completed" },
+    activeSession()
+  ];
+  const projects = [
+    { id: "other", status: "active" },
+    { id: "project-current", status: "active" }
+  ];
+  Object.defineProperty(sessions, "find", { value() { throw new Error("session find must not be used"); } });
+  Object.defineProperty(projects, "find", { value() { throw new Error("project find must not be used"); } });
+
+  const context = locateActiveSessionContext({ sessions, projects });
+
+  assert.equal(context.session, sessions[1]);
+  assert.equal(context.sessionIndex, 1);
+  assert.equal(context.project, projects[1]);
+  assert.equal(context.projectIndex, 1);
+  assert.equal(locateActiveSessionContext({ sessions: [], projects }), null);
+  assert.throws(
+    () => locateActiveSessionContext({ sessions: [activeSession(), activeSession({ id: "second" })], projects }),
+    /多个活动会话/u
+  );
+  assert.throws(() => locateActiveSessionContext({ sessions: [activeSession()], projects: [] }), /项目不存在/u);
+  assert.throws(
+    () => locateActiveSessionContext({ sessions: [activeSession()], projects: [{ id: "project-current", status: "archived" }] }),
+    /项目已归档/u
+  );
 });
 
 test("deriveQuickDockCheckpointInput uses only newest current-session evidence with documented precedence", () => {

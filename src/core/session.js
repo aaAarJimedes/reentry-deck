@@ -96,6 +96,28 @@ export function assertSingleActiveSession(state, now = Date.now(), options = {})
   return inspection.activeSession;
 }
 
+export function locateActiveSessionContext(state) {
+  const sessions = arrayOf(state?.sessions);
+  let session = null;
+  let sessionIndex = -1;
+  for (let index = 0; index < sessions.length; index += 1) {
+    if (!isActiveSession(sessions[index])) continue;
+    if (session) throw new Error("检测到多个活动会话，无法确定当前工作现场。");
+    session = sessions[index];
+    sessionIndex = index;
+  }
+  if (!session) return null;
+
+  const projects = arrayOf(state?.projects);
+  for (let index = 0; index < projects.length; index += 1) {
+    const project = projects[index];
+    if (project?.id !== session.projectId) continue;
+    if (project.status === "archived") throw new Error("活动会话关联的项目已归档，无法继续记录。");
+    return { session, sessionIndex, project, projectIndex: index };
+  }
+  throw new Error("活动会话关联的项目不存在，无法继续记录。");
+}
+
 export function deriveQuickDockCheckpointInput(state, sessionId, now = Date.now(), options = {}) {
   const activeSession = assertSingleActiveSession(state, now, options);
   if (!activeSession) throw new Error("没有可快速停靠的活动会话。");
