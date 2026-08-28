@@ -66,6 +66,21 @@ test("buildWorkspaceCounts shares one local-day snapshot across streaming status
   assert.equal(buildWorkspaceCounts(data, "invalid").crumbsToday, 0);
 });
 
+test("insight time inputs accept explicit date forms and reject coercive containers", () => {
+  const data = state();
+  const expectedStart = new Date(NOW - 7 * DAY).toISOString();
+
+  assert.equal(buildWeeklyReview(data, new Date(NOW)).windowStart, expectedStart);
+  assert.equal(buildWorkspaceOverview(data, new Date(NOW).toISOString()).weeklyReview.windowStart, expectedStart);
+  assert.deepEqual(buildAttentionDeck(data, new Date(NOW)), []);
+  assert.equal(buildWorkspaceCounts(data, null).crumbsToday, 0);
+  for (const invalidTime of ["invalid", " ", null, true, [], {}, new Date(Number.NaN)]) {
+    assert.throws(() => buildWeeklyReview(data, invalidTime), /洞察生成时间无效/u);
+    assert.throws(() => buildWorkspaceOverview(data, invalidTime), /洞察生成时间无效/u);
+    assert.throws(() => buildAttentionDeck(data, invalidTime), /洞察生成时间无效/u);
+  }
+});
+
 test("buildWorkspaceFrame resolves route and unique active context during the count passes", () => {
   const projects = [project("active"), project("target")];
   const sessions = [{ id: "done", projectId: "target", status: "completed" }, { id: "live", projectId: "active", status: "active" }];

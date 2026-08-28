@@ -41,9 +41,9 @@ export function buildWorkspaceFrame(state, currentProjectId = null, now = Date.n
     else if (project.status === "paused") counts.pausedProjects += 1;
     else if (project.status === "blocked") counts.blockedProjects += 1;
   }
-  const reference = new Date(now);
-  const referenceTimestamp = reference.getTime();
+  const referenceTimestamp = insightTimestamp(now);
   if (Number.isFinite(referenceTimestamp)) {
+    const reference = new Date(referenceTimestamp);
     const dayStart = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate()).getTime();
     const dayEnd = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate() + 1).getTime();
     for (const crumb of Array.isArray(state?.crumbs) ? state.crumbs : []) {
@@ -55,19 +55,21 @@ export function buildWorkspaceFrame(state, currentProjectId = null, now = Date.n
 }
 
 export function buildWeeklyReview(state, now = Date.now(), options = {}) {
+  const referenceTimestamp = requireInsightTimestamp(now);
   const cardProjectIds = activeProjectIds(state.projects);
-  return buildWeeklyReviewWithCards(state, now, options, buildReentryCards(state, cardProjectIds, now));
+  return buildWeeklyReviewWithCards(state, referenceTimestamp, options, buildReentryCards(state, cardProjectIds, referenceTimestamp));
 }
 
 export function buildWorkspaceOverview(state, now = Date.now(), options = {}) {
+  const referenceTimestamp = requireInsightTimestamp(now);
   const projectIds = activeProjectIds(state.projects);
-  const cards = buildReentryCards(state, projectIds, now);
+  const cards = buildReentryCards(state, projectIds, referenceTimestamp);
   const rankedProjects = rankReentryCards(cards, options.rankedLimit ?? Number.POSITIVE_INFINITY);
   return {
     rankedProjects,
     rankedTotal: cards.length,
-    weeklyReview: buildWeeklyReviewWithCards(state, now, options.weeklyReview ?? {}, cards),
-    attentionDeck: buildAttentionDeckWithCards(state, now, options.attentionDeck ?? {}, cards)
+    weeklyReview: buildWeeklyReviewWithCards(state, referenceTimestamp, options.weeklyReview ?? {}, cards),
+    attentionDeck: buildAttentionDeckWithCards(state, referenceTimestamp, options.attentionDeck ?? {}, cards)
   };
 }
 
@@ -157,8 +159,22 @@ function buildWeeklyReviewWithCards(state, now, options, cards) {
 }
 
 export function buildAttentionDeck(state, now = Date.now(), options = {}) {
+  const referenceTimestamp = requireInsightTimestamp(now);
   const projectIds = activeProjectIds(state.projects);
-  return buildAttentionDeckWithCards(state, now, options, buildReentryCards(state, projectIds, now));
+  return buildAttentionDeckWithCards(state, referenceTimestamp, options, buildReentryCards(state, projectIds, referenceTimestamp));
+}
+
+function requireInsightTimestamp(value) {
+  const timestamp = insightTimestamp(value);
+  if (!Number.isFinite(timestamp)) throw new TypeError("洞察生成时间无效。 ");
+  return timestamp;
+}
+
+function insightTimestamp(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : Number.NaN;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "string" && value.trim()) return new Date(value).getTime();
+  return Number.NaN;
 }
 
 function activeProjectIds(projects) {
