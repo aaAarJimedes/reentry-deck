@@ -151,8 +151,8 @@ function boundedReasonList(values) {
 
 export async function copyPlainText(value, dependencies = {}) {
   const text = String(value ?? "");
-  if (!text.trim()) throw new Error("没有可复制的简报内容。 ");
   if (text.length > COPY_TEXT_LIMIT) throw new Error("复制内容超过 64 KiB 安全上限。 ");
+  if (!text.trim()) throw new Error("没有可复制的简报内容。 ");
   const clipboard = dependencies.clipboard ?? globalThis.navigator?.clipboard;
   let clipboardError = null;
   if (typeof clipboard?.writeText === "function") {

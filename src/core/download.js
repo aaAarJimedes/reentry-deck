@@ -1,11 +1,15 @@
 export const DOWNLOAD_REVOKE_DELAY_MS = 1_000;
 export const DOWNLOAD_FILENAME_LIMIT = 160;
+export const DOWNLOAD_FILENAME_SCAN_LIMIT = 640;
 
 export function safeDownloadFilename(value) {
   if (typeof value !== "string") return "download.json";
   let result = "";
   let pendingSpace = false;
+  let scanned = 0;
   for (const character of value) {
+    if (scanned + character.length > DOWNLOAD_FILENAME_SCAN_LIMIT) break;
+    scanned += character.length;
     if (/\s/u.test(character)) {
       pendingSpace = Boolean(result);
       continue;

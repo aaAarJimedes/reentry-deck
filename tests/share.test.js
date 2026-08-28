@@ -260,6 +260,10 @@ describe("copyPlainText", () => {
       () => copyPlainText("x".repeat(COPY_TEXT_LIMIT + 1), dependencies),
       /超过 64 KiB/u
     );
+    await assert.rejects(
+      () => copyPlainText(" ".repeat(COPY_TEXT_LIMIT + 1), dependencies),
+      /超过 64 KiB/u
+    );
     assert.equal(clipboardReads, 0);
     const writes = [];
     assert.equal(

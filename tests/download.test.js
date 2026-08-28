@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { DOWNLOAD_FILENAME_LIMIT, DOWNLOAD_REVOKE_DELAY_MS, safeDownloadFilename, triggerBlobDownload } from "../src/core/download.js";
+import { DOWNLOAD_FILENAME_LIMIT, DOWNLOAD_FILENAME_SCAN_LIMIT, DOWNLOAD_REVOKE_DELAY_MS, safeDownloadFilename, triggerBlobDownload } from "../src/core/download.js";
 
 function harness({ clickError = null, scheduleError = null } = {}) {
   const events = [];
@@ -67,6 +67,7 @@ describe("triggerBlobDownload", () => {
     assert.equal(bounded.length, DOWNLOAD_FILENAME_LIMIT);
     assert.doesNotMatch(bounded, /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u);
     assert.doesNotMatch(bounded, /forbidden-tail/u);
+    assert.equal(safeDownloadFilename(`${" ".repeat(DOWNLOAD_FILENAME_SCAN_LIMIT)}forbidden-tail.json`), "download.json");
   });
 
   test("clicks an attached link before deferred object-URL cleanup", () => {
