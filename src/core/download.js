@@ -14,7 +14,7 @@ export function safeDownloadFilename(value) {
       pendingSpace = Boolean(result);
       continue;
     }
-    if (/[\u0000-\u001f\u007f-\u009f]/u.test(character)) continue;
+    if (/[\u0000-\u001f\u007f-\u009f\u200b\u200e\u200f\u202a-\u202e\u2060-\u206f\ufeff]/u.test(character)) continue;
     const projected = /[\\/:*?"<>|]/u.test(character) ? "-" : character;
     if (result.length + (pendingSpace ? 1 : 0) + projected.length > DOWNLOAD_FILENAME_LIMIT) break;
     if (pendingSpace) result += " ";
@@ -23,7 +23,7 @@ export function safeDownloadFilename(value) {
   }
   result = result.replace(/^[. ]+|[. ]+$/gu, "");
   if (!result) return "download.json";
-  if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(result)) {
+  if (/^(?:con|prn|aux|nul|conin\$|conout\$|com[1-9]|lpt[1-9])(?:\.|$)/iu.test(result)) {
     if (result.length === DOWNLOAD_FILENAME_LIMIT) {
       result = result.slice(0, /[\udc00-\udfff]$/u.test(result) ? -2 : -1);
     }
