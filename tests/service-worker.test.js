@@ -324,6 +324,29 @@ describe("service worker lifecycle", () => {
     assert.equal(harness.pendingTimers, 0);
   });
 
+  test("client cancellation aborts the internal fetch without an offline cache fallback", async () => {
+    await lifecyclePromise(harness.handlers.get("install"));
+    let forwardedAbort = false;
+    harness.setFetch((_request, { signal } = {}) => new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => {
+        forwardedAbort = true;
+        reject(signal.reason ?? new DOMException("aborted", "AbortError"));
+      }, { once: true });
+    }));
+    const controller = new AbortController();
+    const request = new Request(`${scope}src/main.js`, { signal: controller.signal });
+    const lifetimes = [];
+
+    const responsePromise = interceptedResponse(harness.handlers.get("fetch"), request, lifetimes);
+    for (let attempt = 0; attempt < 10 && harness.pendingTimers !== 1; attempt += 1) await Promise.resolve();
+    controller.abort();
+
+    await assert.rejects(responsePromise, { name: "AbortError" });
+    await Promise.all(lifetimes);
+    assert.equal(forwardedAbort, true);
+    assert.equal(harness.pendingTimers, 0);
+  });
+
   test("non-GET and cross-origin requests are not intercepted", async () => {
     const fetchHandler = harness.handlers.get("fetch");
 

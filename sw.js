@@ -3,7 +3,7 @@
 // The build id provides a clean release boundary. Runtime requests also use a
 // network-first strategy, so a forgotten bump cannot strand online clients on
 // an old shell; the cached release remains the complete offline fallback.
-const BUILD_ID = "2026-08-28.99";
+const BUILD_ID = "2026-08-28.100";
 const CACHE_PREFIX = "reentry-deck-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const NETWORK_TIMEOUT_MS = 4_000;
@@ -51,11 +51,16 @@ function isUsableResponse(response) {
 
 async function fetchWithTimeout(request) {
   const controller = new AbortController();
+  const requestSignal = request.signal;
+  const forwardRequestAbort = () => controller.abort(requestSignal.reason);
+  if (requestSignal?.aborted) forwardRequestAbort();
+  else requestSignal?.addEventListener("abort", forwardRequestAbort, { once: true });
   const timeoutId = setTimeout(() => controller.abort(), NETWORK_TIMEOUT_MS);
   try {
     return await fetch(request, { signal: controller.signal });
   } finally {
     clearTimeout(timeoutId);
+    requestSignal?.removeEventListener("abort", forwardRequestAbort);
   }
 }
 
@@ -157,7 +162,8 @@ async function serveNavigation(request, defer) {
       if (cachedDocument) return cachedDocument;
     }
     return response;
-  } catch {
+  } catch (error) {
+    if (request.signal?.aborted) throw error;
     const cache = await cachePromise;
     const cachedDocument = await matchRuntimeCache(cache, documentURL);
     if (cachedDocument) return cachedDocument;
@@ -184,7 +190,8 @@ async function serveShellAsset(request, canonicalURL, defer) {
       if (cachedResponse) return cachedResponse;
     }
     return response;
-  } catch {
+  } catch (error) {
+    if (request.signal?.aborted) throw error;
     const cache = await cachePromise;
     const cachedResponse = await matchRuntimeCache(cache, canonicalURL);
     if (cachedResponse) return cachedResponse;
