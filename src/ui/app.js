@@ -12,7 +12,7 @@ import { buildQuickCaptureProjectWindow, prepareQuickCapture, projectNextActionF
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { triggerBlobDownload } from "../core/download.js";
 import { buildWorkspaceCounts, buildWorkspaceOverview } from "../core/insights.js";
-import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepareSessionStart } from "../core/reentry.js";
+import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepareSessionDialog, prepareSessionStart } from "../core/reentry.js";
 import { WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, inspectSession, locateActiveSessionContext, prepareQuickCheckpointReview, prepareQuickDock } from "../core/session.js";
@@ -1023,17 +1023,14 @@ export class ReentryApp {
 
   #prepareSessionDialog(projectId) {
     const state = this.#store.getState();
-    const active = state.sessions.find((item) => item.status === "active");
-    if (active) {
-      const project = state.projects.find((item) => item.id === active.projectId);
-      this.#toast(`“${project?.title ?? "另一个项目"}”仍有活动会话，请先留下检查点。`, "error");
+    const plan = prepareSessionDialog(state, projectId);
+    if (plan.activeSession) {
+      this.#toast(`“${plan.activeProject.title}”仍有活动会话，请先留下检查点。`, "error");
       return;
     }
-    const target = state.projects.find((item) => item.id === projectId);
-    if (!target) return;
     const dialog = this.#root.querySelector("#start-session-dialog");
-    dialog.querySelector('[name="projectId"]').value = target.id;
-    dialog.querySelector('[name="intention"]').value = target.nextAction || "";
+    dialog.querySelector('[name="projectId"]').value = plan.project.id;
+    dialog.querySelector('[name="intention"]').value = plan.project.nextAction || "";
     this.#openDialog("start-session-dialog");
   }
 

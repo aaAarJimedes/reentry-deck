@@ -36,22 +36,38 @@ export function getLatestProjectCheckpoint(state, projectId) {
   return latest;
 }
 
-export function prepareSessionStart(state, projectId) {
+export function prepareSessionDialog(state, projectId) {
+  let activeSession = null;
   for (const session of safeCollection(state?.sessions)) {
-    if (session.status === "active") throw new Error("已有活动会话，请先为它留下检查点。 ");
+    if (session.status !== "active") continue;
+    if (activeSession) throw new Error("检测到多个活动会话；系统只允许一个，无法准备新会话。 ");
+    activeSession = session;
   }
   const projects = safeCollection(state?.projects);
+  let project = null;
+  let projectIndex = -1;
+  let activeProject = null;
   for (let index = 0; index < projects.length; index += 1) {
-    const project = projects[index];
-    if (project.id !== projectId) continue;
-    if (project.status === "archived") throw new Error("项目不可用，无法开始会话。 ");
-    return {
-      project,
-      projectIndex: index,
-      sourceCheckpoint: getLatestProjectCheckpoint(state, project.id)
-    };
+    const candidate = projects[index];
+    if (candidate.id === projectId) {
+      project = candidate;
+      projectIndex = index;
+    }
+    if (activeSession && candidate.id === activeSession.projectId) activeProject = candidate;
   }
-  throw new Error("项目不可用，无法开始会话。 ");
+  if (!project || project.status === "archived") throw new Error("项目不可用，无法开始会话。 ");
+  if (activeSession && !activeProject) throw new Error("活动会话关联的项目不存在，无法准备新会话。 ");
+  return { project, projectIndex, activeSession, activeProject };
+}
+
+export function prepareSessionStart(state, projectId) {
+  const plan = prepareSessionDialog(state, projectId);
+  if (plan.activeSession) throw new Error("已有活动会话，请先为它留下检查点。 ");
+  return {
+    project: plan.project,
+    projectIndex: plan.projectIndex,
+    sourceCheckpoint: getLatestProjectCheckpoint(state, plan.project.id)
+  };
 }
 
 export function buildReentryCards(state, projectIds, now = Date.now()) {

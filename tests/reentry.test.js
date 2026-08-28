@@ -8,6 +8,7 @@ import {
   getLatestProjectCheckpoint,
   getProjectActivity,
   getProjectStats,
+  prepareSessionDialog,
   prepareSessionStart,
   rankProjectsForReentry
 } from "../src/core/reentry.js";
@@ -162,13 +163,35 @@ test("prepareSessionStart validates availability and returns a stable project pl
   assert.equal(plan.projectIndex, 1);
   assert.equal(plan.sourceCheckpoint, checkpoints[1]);
   assert.throws(
-    () => prepareSessionStart(makeState({ projects, sessions: [{ id: "live", status: "active" }] }), "target"),
+    () => prepareSessionStart(makeState({ projects, sessions: [{ id: "live", projectId: "other", status: "active" }] }), "target"),
     /已有活动会话/u
   );
   assert.throws(() => prepareSessionStart(makeState({ projects }), "missing"), /项目不可用/u);
   assert.throws(
     () => prepareSessionStart(makeState({ projects: [makeProject("target", { status: "archived" })] }), "target"),
     /项目不可用/u
+  );
+});
+
+test("prepareSessionDialog resolves its target and unique active blocker in one project pass", () => {
+  const projects = [makeProject("active"), makeProject("target")];
+  const sessions = [{ id: "live", projectId: "active", status: "active" }];
+  for (const collection of [projects, sessions]) {
+    Object.defineProperty(collection, "find", { value() { throw new Error("find must not be used"); } });
+  }
+
+  const plan = prepareSessionDialog(makeState({ projects, sessions }), "target");
+  assert.equal(plan.project, projects[1]);
+  assert.equal(plan.projectIndex, 1);
+  assert.equal(plan.activeSession, sessions[0]);
+  assert.equal(plan.activeProject, projects[0]);
+  assert.throws(
+    () => prepareSessionDialog(makeState({ projects, sessions: [...sessions, { id: "other", projectId: "target", status: "active" }] }), "target"),
+    /多个活动会话/u
+  );
+  assert.throws(
+    () => prepareSessionDialog(makeState({ projects: [projects[1]], sessions }), "target"),
+    /关联的项目不存在/u
   );
 });
 
