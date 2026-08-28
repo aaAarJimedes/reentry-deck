@@ -378,6 +378,17 @@ describe("validateState", () => {
     assert.deepEqual(validateState(state), ["同一时间只能有一个活动会话"]);
   });
 
+  test("caps structural errors before a large invalid workspace can amplify diagnostics", () => {
+    const state = createEmptyState(NOW);
+    state.crumbs = Array.from({ length: IMPORT_LIMITS.reportedErrors + 10 }, () => ({}));
+
+    const errors = validateState(state);
+
+    assert.equal(errors.length, IMPORT_LIMITS.reportedErrors + 1);
+    assert.equal(errors.at(-1), "数据还包含更多问题，已停止展开错误列表");
+    assert.equal(validateImportCandidate(state).at(-1), "备份还包含更多问题，已停止展开错误列表");
+  });
+
   test("rejects an oversized live workspace before traversing its records", () => {
     const state = createEmptyState(NOW);
     state.crumbs = new Array(IMPORT_LIMITS.records + 1);
@@ -657,6 +668,19 @@ describe("validateImportCandidate", () => {
 
     assert.equal(errors.length, IMPORT_LIMITS.reportedErrors + 1);
     assert.equal(errors.at(-1), "备份还包含更多问题，已停止展开错误列表");
+  });
+
+  test("builds reference indexes without collection map projections", () => {
+    const state = createEmptyState(NOW);
+    state.projects.push(createProject({ id: "p1" }, NOW));
+    state.sessions.push(createSession({ id: "s1", projectId: "p1", status: "completed", endedAt: NOW_ISO }, NOW));
+    state.crumbs.push(createCrumb({ id: "c1", projectId: "p1", sessionId: "s1" }, NOW));
+    state.checkpoints.push(createCheckpoint({ id: "cp1", projectId: "p1", sessionId: "s1" }, NOW));
+    for (const collection of [state.projects, state.sessions, state.crumbs, state.checkpoints]) {
+      Object.defineProperty(collection, "map", { value: () => { throw new Error("collection projection allocated"); } });
+    }
+
+    assert.deepEqual(validateImportCandidate(state), []);
   });
 
   test("rejects cross-project session, crumb, and checkpoint links", () => {
