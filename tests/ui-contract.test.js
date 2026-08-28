@@ -178,6 +178,17 @@ test("quick capture project selection stays searchable and DOM-bounded", async (
   assert.doesNotMatch(source, /const captureProjects = state\.projects\.filter/u);
 });
 
+test("project routes share one reentry card with dialogs and inline stats", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /const currentReentryCard = currentProject/u);
+  assert.match(source, /buildReentryCardWithStats\(state, currentProject\.id\)/u);
+  assert.match(source, /#renderDialogs\(currentProject, activeSession, currentReentryCard\)/u);
+  assert.match(source, /const stats = card\.stats/u);
+  assert.match(source, /const reviewCheckpoint = reentryCard\?\.checkpoint/u);
+  assert.doesNotMatch(source, /getProjectStats/u);
+});
+
 test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

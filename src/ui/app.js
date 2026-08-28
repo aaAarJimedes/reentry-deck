@@ -12,7 +12,7 @@ import { buildQuickCaptureProjectWindow, prepareQuickCapture, projectNextActionF
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { triggerBlobDownload } from "../core/download.js";
 import { buildWorkspaceCounts, buildWorkspaceOverview } from "../core/insights.js";
-import { buildReentryCard, buildReentryCards, getProjectStats } from "../core/reentry.js";
+import { buildReentryCard, buildReentryCards, buildReentryCardWithStats } from "../core/reentry.js";
 import { buildReentryBrief, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, deriveQuickDockCheckpointInput, inspectSession, prepareQuickCheckpointReview } from "../core/session.js";
@@ -177,6 +177,11 @@ export class ReentryApp {
     const currentProject = route.name === "project" ? state.projects.find((item) => item.id === route.id) : null;
     const activeSession = state.sessions.find((item) => item.status === "active") ?? null;
     const activeProject = activeSession ? state.projects.find((item) => item.id === activeSession.projectId) : null;
+    const currentReentryCard = currentProject
+      ? currentProject.status === "archived"
+        ? buildReentryCard(state, currentProject.id)
+        : buildReentryCardWithStats(state, currentProject.id)
+      : null;
     const workspaceCounts = buildWorkspaceCounts(state);
     const theme = state.settings.theme ?? "system";
     this.#sessionHealthSignature = sessionHealthSignature(
@@ -196,12 +201,12 @@ export class ReentryApp {
           ${this.#renderTopbar(route, currentProject, activeSession, workspaceCounts)}
           <main class="main-content" id="main-content" tabindex="-1">
             ${this.#renderNotices()}
-            ${this.#renderRoute(route, state, currentProject, activeSession, workspaceCounts)}
+            ${this.#renderRoute(route, state, currentProject, activeSession, workspaceCounts, currentReentryCard)}
           </main>
         </div>
       </div>
       ${activeSession && activeProject && !(route.name === "project" && route.id === activeProject.id) ? this.#renderSessionDock(activeSession, activeProject) : ""}
-      ${this.#renderDialogs(currentProject, activeSession)}
+      ${this.#renderDialogs(currentProject, activeSession, currentReentryCard)}
       <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="false">${this.#renderToasts()}</div>
       <div class="sr-only" id="live-region" aria-live="polite"></div>
     `;
@@ -314,11 +319,11 @@ export class ReentryApp {
       </header>`;
   }
 
-  #renderRoute(route, state, project, activeSession, workspaceCounts) {
+  #renderRoute(route, state, project, activeSession, workspaceCounts, reentryCard) {
     if (route.name === "archive") return this.#renderArchive(state);
     if (route.name === "settings") return this.#renderSettings(state);
     if (route.name === "notFound") return this.#renderNotFound();
-    if (route.name === "project") return project ? (project.status === "archived" ? this.#renderArchivedProject(state, project) : this.#renderProject(state, project, activeSession)) : this.#renderNotFound();
+    if (route.name === "project") return project ? (project.status === "archived" ? this.#renderArchivedProject(state, project, reentryCard) : this.#renderProject(state, project, activeSession, reentryCard)) : this.#renderNotFound();
     return this.#renderDashboard(state, activeSession, workspaceCounts);
   }
 
@@ -424,9 +429,8 @@ export class ReentryApp {
       </section>`;
   }
 
-  #renderProject(state, project, activeSession) {
-    const card = buildReentryCard(state, project.id);
-    const stats = getProjectStats(state, project.id);
+  #renderProject(state, project, activeSession, card) {
+    const stats = card.stats;
     const isRunning = activeSession?.projectId === project.id;
     const anotherRunning = activeSession && !isRunning;
     const timeline = buildTimelineWindow(state.crumbs, project.id, this.#timelineLimits.get(project.id));
@@ -613,8 +617,7 @@ export class ReentryApp {
     return `<div class="collection-more"><p>已显示 ${window.shown} / ${window.total} 个${label}，其余按需载入。</p><button class="secondary-button" type="button" data-action="show-more-projects" data-scope="${scope}" aria-controls="project-window-${scope}">再显示 ${Math.min(COLLECTION_PAGE_SIZE, window.remaining)} 个<span class="sr-only">，还剩 ${window.remaining} 个未显示</span></button></div>`;
   }
 
-  #renderArchivedProject(state, project) {
-    const card = buildReentryCard(state, project.id);
+  #renderArchivedProject(state, project, card) {
     const timeline = buildTimelineWindow(state.crumbs, project.id, this.#timelineLimits.get(project.id));
     return `
       <section class="project-header">
@@ -671,11 +674,11 @@ export class ReentryApp {
     return `<div class="active-session-dock" data-stale="${stale}"><a class="dock-main" href="#/project/${encodeURIComponent(project.id)}" aria-label="返回活动会话：${attr(project.title)}"><span class="dock-pulse"></span><span class="dock-copy"><small>${stale ? "可能未收拢" : "活动会话"}</small><strong>${escapeHTML(project.title)}</strong></span><span class="dock-time js-session-timer" data-started-at="${attr(session.startedAt)}">${formatDuration(elapsedSeconds(session.startedAt))}</span>${icon("arrow")}</a><button class="dock-quick" type="button" data-action="quick-dock" data-session-id="${attr(session.id)}" aria-label="快速停靠：${attr(controlContext(project.title))}" title="快速停靠（Ctrl/⌘ Shift S）">快速停靠</button></div>`;
   }
 
-  #renderDialogs(project, activeSession) {
+  #renderDialogs(project, activeSession, reentryCard) {
     const colors = { fern: "#2f6b61", amber: "#d99752", clay: "#b9644d", sky: "#568695", plum: "#785e76", slate: "#65736f" };
     const state = this.#store.getState();
     const pendingArchiveProject = state.projects.find((item) => item.id === this.#pendingArchiveId);
-    const reviewCheckpoint = project ? buildReentryCard(state, project.id)?.checkpoint : null;
+    const reviewCheckpoint = reentryCard?.checkpoint ?? null;
     const captureWindow = buildQuickCaptureProjectWindow(state, {
       preferredIds: [project?.id, activeSession?.projectId, state.ui.selectedProjectId]
     });

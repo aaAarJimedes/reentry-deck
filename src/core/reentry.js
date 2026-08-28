@@ -19,6 +19,10 @@ export function buildReentryCard(state, projectId, now = Date.now()) {
   return buildIndexedReentryCard(buildReentryIndex(state, [projectId]), projectId, now);
 }
 
+export function buildReentryCardWithStats(state, projectId, now = Date.now()) {
+  return buildIndexedReentryCard(buildReentryIndex(state, [projectId]), projectId, now, true);
+}
+
 export function buildReentryCards(state, projectIds, now = Date.now()) {
   const safeProjectIds = Array.isArray(projectIds) ? projectIds : [];
   const index = buildReentryIndex(state, safeProjectIds);
@@ -30,7 +34,7 @@ export function buildReentryCards(state, projectIds, now = Date.now()) {
   return cards;
 }
 
-function buildIndexedReentryCard(index, projectId, now) {
+function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
   const activity = getIndexedProjectActivity(index, projectId);
   if (!activity) return null;
   const project = activity.project;
@@ -39,6 +43,9 @@ function buildIndexedReentryCard(index, projectId, now) {
   const sessions = index.sessions.get(projectId) ?? [];
   const checkpoint = checkpoints[0] ?? null;
   const checkpointTime = timeOf(checkpoint?.createdAt);
+  const stats = includeStats
+    ? { sessions: sessions.length, completedSessions: 0, crumbs: projectCrumbs.length, decisions: 0, blockers: 0, checkpoints: checkpoints.length }
+    : null;
   let latestNextCrumb = null;
   let latestSummaryCrumb = null;
   const unresolvedSignals = [];
@@ -46,6 +53,8 @@ function buildIndexedReentryCard(index, projectId, now) {
   const pinnedCrumbs = [];
   const changesSinceCheckpoint = [];
   for (const item of projectCrumbs) {
+    if (stats && item.type === "decision") stats.decisions += 1;
+    if (stats && item.type === "blocker") stats.blockers += 1;
     if (!latestNextCrumb && item.type === "next") latestNextCrumb = item;
     if (!latestSummaryCrumb && SUMMARY_CRUMB_TYPES.has(item.type)) latestSummaryCrumb = item;
     if (unresolvedSignals.length < 3 && OPEN_SIGNAL_TYPES.has(item.type) && !item.resolvedAt) unresolvedSignals.push(item);
@@ -61,6 +70,7 @@ function buildIndexedReentryCard(index, projectId, now) {
   let activeSession = null;
   const contextGapSessions = [];
   for (const item of sessions) {
+    if (stats && item.status === "completed") stats.completedSessions += 1;
     if (!activeSession && item.status === "active") activeSession = item;
     const evidenceTime = timeOf(item.endedAt ?? item.startedAt);
     const unclosed = item.status === "active";
@@ -97,7 +107,7 @@ function buildIndexedReentryCard(index, projectId, now) {
   if (!checkpoint) readinessGaps.push("完成一次可靠检查点");
   else if (!checkpoint.returnHint) readinessGaps.push("写下材料入口或恢复提示");
 
-  return {
+  const card = {
     project,
     activeSession,
     checkpoint,
@@ -119,6 +129,8 @@ function buildIndexedReentryCard(index, projectId, now) {
     contextGapSessions,
     recentTrail: projectCrumbs.slice(0, 5)
   };
+  if (stats) card.stats = stats;
+  return card;
 }
 
 export function rankProjectsForReentry(state, now = Date.now()) {

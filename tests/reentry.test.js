@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildReentryCard,
   buildReentryCards,
+  buildReentryCardWithStats,
   getProjectActivity,
   getProjectStats,
   rankProjectsForReentry
@@ -616,6 +617,7 @@ test("getProjectStats counts only matching records and recognized statuses/types
     blockers: 1,
     checkpoints: 2
   });
+  assert.deepEqual(buildReentryCardWithStats(state, "p1", NOW).stats, getProjectStats(state, "p1"));
   assert.deepEqual(getProjectStats(state, "missing"), {
     sessions: 0,
     completedSessions: 0,
@@ -624,6 +626,38 @@ test("getProjectStats counts only matching records and recognized statuses/types
     blockers: 0,
     checkpoints: 0
   });
+});
+
+test("a detailed reentry card derives stats during the same source collection pass", () => {
+  const state = makeState({
+    projects: [makeProject("p1"), makeProject("p2")],
+    sessions: [{ id: "s1", projectId: "p1", status: "completed" }, { id: "s2", projectId: "p2", status: "active" }],
+    crumbs: [{ id: "c1", projectId: "p1", type: "decision" }, { id: "c2", projectId: "p1", type: "blocker" }],
+    checkpoints: [{ id: "cp1", projectId: "p1" }, { id: "cp2", projectId: "p2" }]
+  });
+  const passes = { sessions: 0, crumbs: 0, checkpoints: 0 };
+  for (const name of Object.keys(passes)) {
+    const collection = state[name];
+    const iterate = collection[Symbol.iterator].bind(collection);
+    Object.defineProperty(collection, Symbol.iterator, {
+      value() {
+        passes[name] += 1;
+        return iterate();
+      }
+    });
+  }
+
+  const card = buildReentryCardWithStats(state, "p1", NOW);
+
+  assert.deepEqual(card.stats, {
+    sessions: 1,
+    completedSessions: 1,
+    crumbs: 2,
+    decisions: 1,
+    blockers: 1,
+    checkpoints: 1
+  });
+  assert.deepEqual(passes, { sessions: 1, crumbs: 1, checkpoints: 1 });
 });
 
 test("getProjectStats derives every counter without collection filter rescans", () => {
