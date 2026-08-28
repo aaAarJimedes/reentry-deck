@@ -15,6 +15,9 @@ test("transient dialog values obey both control and global memory limits", () =>
   assert.equal(boundTransientControlValue(long, MAX_TRANSIENT_CONTROL_VALUE_LENGTH + 1).length, MAX_TRANSIENT_CONTROL_VALUE_LENGTH);
   assert.equal(boundTransientControlValue(42, -1), "42");
   assert.equal(boundTransientControlValue(null, 10), "");
+  assert.equal(boundTransientControlValue("a🚀b", 2), "a");
+  assert.equal(boundTransientControlValue("a🚀b", 3), "a🚀");
+  assert.equal(boundTransientControlValue("a\ud83d", 2), "a\ud83d", "an existing unmatched unit is not mistaken for a cut pair");
 });
 
 test("transient selections normalize order and clamp to the restored text", () => {

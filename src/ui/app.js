@@ -59,7 +59,15 @@ export function boundTransientControlValue(value, maxLength = -1) {
   const declaredLimit = Number.isSafeInteger(maxLength) && maxLength >= 0
     ? maxLength
     : MAX_TRANSIENT_CONTROL_VALUE_LENGTH;
-  return String(value ?? "").slice(0, Math.min(declaredLimit, MAX_TRANSIENT_CONTROL_VALUE_LENGTH));
+  const text = String(value ?? "");
+  const limit = Math.min(declaredLimit, MAX_TRANSIENT_CONTROL_VALUE_LENGTH);
+  const bounded = text.slice(0, limit);
+  if (text.length <= limit || !bounded) return bounded;
+  const last = bounded.charCodeAt(bounded.length - 1);
+  const next = text.charCodeAt(bounded.length);
+  return last >= 0xd800 && last <= 0xdbff && next >= 0xdc00 && next <= 0xdfff
+    ? bounded.slice(0, -1)
+    : bounded;
 }
 
 export function normalizeTransientSelection(value, start, end) {
