@@ -140,7 +140,13 @@ describe("buildWorkspaceHandoff", () => {
 
   test("fails clearly for missing input and handles empty or malformed optional metrics", () => {
     assert.throws(() => buildWorkspaceHandoff(null), /缺少可生成/u);
-    assert.throws(() => buildWorkspaceHandoff({ rankedProjects: [] }, "invalid"), /生成时间无效/u);
+    for (const invalidTime of ["invalid", " ", null, true, [], {}]) {
+      assert.throws(() => buildWorkspaceHandoff({ rankedProjects: [] }, invalidTime), /生成时间无效/u);
+    }
+    assert.match(
+      buildWorkspaceHandoff({ rankedProjects: [] }, new Date("2026-08-28T08:00:00.000Z")),
+      /生成时间：2026-08-28T08:00:00\.000Z/u
+    );
     const handoff = buildWorkspaceHandoff({ rankedProjects: [], rankedTotal: -2 }, 0);
     assert.match(handoff, /未归档项目：0/u);
     assert.match(handoff, /当前会话：无/u);

@@ -24,8 +24,8 @@ export function buildWorkspaceHandoff(overview, now = Date.now()) {
   if (!overview || !Array.isArray(overview.rankedProjects)) {
     throw new TypeError("缺少可生成工作区交接清单的概览。 ");
   }
-  const generatedAt = new Date(now);
-  if (!Number.isFinite(generatedAt.getTime())) throw new TypeError("交接清单生成时间无效。 ");
+  const generatedAt = handoffDate(now);
+  if (!generatedAt) throw new TypeError("交接清单生成时间无效。 ");
   const ranked = overview.rankedProjects;
   const review = overview.weeklyReview ?? {};
   const attention = Array.isArray(overview.attentionDeck) ? overview.attentionDeck : [];
@@ -128,6 +128,14 @@ function boundedBriefList(values, limit, itemMaximum, outputMaximum, select = (v
 
 function nonNegativeInteger(value) {
   return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+}
+
+function handoffDate(value) {
+  let timestamp = Number.NaN;
+  if (typeof value === "number") timestamp = value;
+  else if (value instanceof Date) timestamp = value.getTime();
+  else if (typeof value === "string" && value.trim()) timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? new Date(timestamp) : null;
 }
 
 function boundedPercent(value) {
