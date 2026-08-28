@@ -3,6 +3,7 @@ import { compactText, containsUnsafeIdControl } from "./model.js";
 const RESULT_LIMIT = 40;
 const RESOURCE_LIMIT = 20;
 const MAX_RESOURCE_URL_LENGTH = 2_048;
+const HTTP_SCHEME_PATTERN = /https?:\/\//iu;
 export const SEARCH_QUERY_LIMIT = 500;
 export const SEARCH_TOKEN_LIMIT = 24;
 export const SEARCH_TOKEN_LENGTH_LIMIT = 100;
@@ -75,8 +76,9 @@ export function extractHttpLinks(text, limit = RESOURCE_LIMIT) {
   if (!safeLimit) return [];
   const results = [];
   const seen = new Set();
-  const matches = text.match(/https?:\/\/[^\s<>"'，。；！？、：（）【】《》〈〉「」『』“”‘’…]+/giu) ?? [];
-  for (const rawMatch of matches) {
+  const matches = text.matchAll(/https?:\/\/[^\s<>"'，。；！？、：（）【】《》〈〉「」『』“”‘’…]+/giu);
+  for (const match of matches) {
+    const rawMatch = match[0];
     const candidate = rawMatch.replace(/[\])},.;!?，。；！？）】》]+$/u, "");
     try {
       const url = new URL(candidate);
@@ -111,22 +113,29 @@ export function getProjectResources(state, projectId, limit = RESOURCE_LIMIT) {
   if (!project) return [];
   const safeLimit = boundedLimit(limit, RESOURCE_LIMIT, 100);
   if (!safeLimit) return [];
-  const evidence = [{
-    sourceType: "project",
-    sourceId: project.id,
-    sourcePriority: 0,
-    insertionIndex: 0,
-    createdAt: project.updatedAt ?? project.createdAt,
-    text: `${project.description}\n${project.nextAction}`
-  }];
+  const evidence = [];
+  if (hasHttpCandidate(project.description) || hasHttpCandidate(project.nextAction)) {
+    evidence.push({
+      sourceType: "project",
+      sourceId: project.id,
+      sourcePriority: 0,
+      insertionIndex: 0,
+      createdAt: project.updatedAt ?? project.createdAt,
+      text: `${project.description}\n${project.nextAction}`
+    });
+  }
   for (let insertionIndex = 0; insertionIndex < state.crumbs.length; insertionIndex += 1) {
     const item = state.crumbs[insertionIndex];
-    if (item.projectId !== projectId) continue;
+    if (item.projectId !== projectId || !hasHttpCandidate(item.text)) continue;
     evidence.push({ sourceType: "crumb", sourceId: item.id, sourcePriority: 1, insertionIndex, createdAt: item.createdAt, text: item.text });
   }
   for (let insertionIndex = 0; insertionIndex < state.checkpoints.length; insertionIndex += 1) {
     const item = state.checkpoints[insertionIndex];
-    if (item.projectId !== projectId) continue;
+    if (item.projectId !== projectId
+      || (!hasHttpCandidate(item.summary)
+        && !hasHttpCandidate(item.nextAction)
+        && !hasHttpCandidate(item.openLoops)
+        && !hasHttpCandidate(item.returnHint))) continue;
     evidence.push({
       sourceType: "checkpoint",
       sourceId: item.id,
@@ -151,6 +160,10 @@ export function getProjectResources(state, projectId, limit = RESOURCE_LIMIT) {
     }
   }
   return resources;
+}
+
+function hasHttpCandidate(value) {
+  return typeof value === "string" && HTTP_SCHEME_PATTERN.test(value);
 }
 
 function indexCandidate(input) {

@@ -191,3 +191,31 @@ test("getProjectResources prefers reliable sources and later insertions when evi
     assert.equal(resources[0].url, "https://shared.example/");
   }
 });
+
+test("getProjectResources skips no-link history before reading timestamps or allocating sort entries", () => {
+  let irrelevantTimestampReads = 0;
+  const noLink = {
+    id: "plain",
+    projectId: "p1",
+    type: "note",
+    text: "ordinary evidence without a resource",
+    get createdAt() {
+      irrelevantTimestampReads += 1;
+      throw new Error("irrelevant timestamp was read");
+    }
+  };
+  const resourceState = {
+    projects: [{ ...state.projects[0], description: "", nextAction: "" }],
+    sessions: [],
+    crumbs: [
+      ...new Array(50_000).fill(noLink),
+      { id: "linked", projectId: "p1", type: "note", text: "Guide HTTPS://docs.example.org/start", createdAt: "2026-01-10T00:00:00.000Z" }
+    ],
+    checkpoints: []
+  };
+
+  const resources = getProjectResources(resourceState, "p1");
+
+  assert.deepEqual(resources.map((item) => item.url), ["https://docs.example.org/start"]);
+  assert.equal(irrelevantTimestampReads, 0);
+});
