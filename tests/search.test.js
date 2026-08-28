@@ -103,7 +103,19 @@ test("a 50,000-record index only materializes and sorts the bounded result windo
     })),
     checkpoints: []
   };
-  const index = buildWorkspaceSearchIndex(large);
+  large.projects.map = () => {
+    throw new Error("search indexing must not map source collections");
+  };
+  const originalFilter = Array.prototype.filter;
+  Array.prototype.filter = function () {
+    throw new Error("search indexing must not allocate field filter arrays");
+  };
+  let index;
+  try {
+    index = buildWorkspaceSearchIndex(large);
+  } finally {
+    Array.prototype.filter = originalFilter;
+  }
   const results = searchWorkspaceIndex(index, "needle", { limit: 100 });
 
   assert.equal(index.candidates.length, 50_000);

@@ -16,16 +16,17 @@ export function buildWorkspaceSearchIndex(state) {
   const projects = Array.isArray(state?.projects) ? state.projects : [];
   const crumbs = Array.isArray(state?.crumbs) ? state.crumbs : [];
   const checkpoints = Array.isArray(state?.checkpoints) ? state.checkpoints : [];
-  const projectsById = new Map(projects.map((project) => [project.id, project]));
+  const projectsById = new Map();
   const candidates = [];
 
   for (const project of projects) {
+    projectsById.set(project.id, project);
     candidates.push(indexCandidate({
       id: project.id,
       kind: "project",
       project,
       title: project.title,
-      text: [project.description, project.nextAction].filter(Boolean).join(" · "),
+      text: joinSearchFields(project.description, project.nextAction),
       createdAt: project.updatedAt ?? project.createdAt
     }));
   }
@@ -50,7 +51,7 @@ export function buildWorkspaceSearchIndex(state) {
       kind: "checkpoint",
       project,
       title: checkpoint.summary,
-      text: [checkpoint.nextAction, checkpoint.openLoops, checkpoint.returnHint].filter(Boolean).join(" · "),
+      text: joinSearchFields(checkpoint.nextAction, checkpoint.openLoops, checkpoint.returnHint),
       createdAt: checkpoint.createdAt
     }));
   }
@@ -212,6 +213,13 @@ export function getProjectResources(state, projectId, limit = RESOURCE_LIMIT) {
 
 function hasHttpCandidate(value) {
   return typeof value === "string" && HTTP_SCHEME_PATTERN.test(value);
+}
+
+function joinSearchFields(first, second, third) {
+  let result = first ? String(first) : "";
+  if (second) result += `${result ? " · " : ""}${String(second)}`;
+  if (third) result += `${result ? " · " : ""}${String(third)}`;
+  return result;
 }
 
 function indexCandidate(input) {
