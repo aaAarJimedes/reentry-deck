@@ -676,6 +676,66 @@ describe("AppStore updates and persistence", () => {
     assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
   });
 
+  test("verifies the committed primary value before publishing local state", () => {
+    class PostWriteInterleavingStorage extends MemoryStorage {
+      externalRaw = null;
+      replaceNextPrimary = false;
+
+      setItem(key, value) {
+        super.setItem(key, value);
+        if (key === STORAGE_KEY && this.replaceNextPrimary) {
+          this.replaceNextPrimary = false;
+          super.setItem(key, this.externalRaw);
+        }
+      }
+    }
+    const storage = new PostWriteInterleavingStorage();
+    const store = new AppStore(storage, T0, null);
+    store.update((draft) => draft.projects.push(createProject({ id: "original" }, T0)), T0);
+    const external = stateWithProject("post-write-winner", "Post-write winner");
+    external.meta.revision = 2;
+    external.meta.updatedAt = new Date(T1).toISOString();
+    storage.externalRaw = JSON.stringify(external);
+    storage.replaceNextPrimary = true;
+
+    assert.throws(
+      () => store.update((draft) => { draft.projects[0].title = "Must not publish"; }, T1),
+      /保存完成时替换了数据/u
+    );
+
+    assert.deepEqual(store.getState().projects.map((project) => project.id), ["post-write-winner"]);
+    assert.deepEqual(persisted(storage).projects.map((project) => project.id), ["post-write-winner"]);
+    assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
+  });
+
+  test("a denied post-write verification does not misreport a successful standard write", () => {
+    class PostWriteReadDeniedStorage extends MemoryStorage {
+      denyNextPrimaryRead = false;
+
+      getItem(key) {
+        if (key === STORAGE_KEY && this.denyNextPrimaryRead) {
+          this.denyNextPrimaryRead = false;
+          throw new Error("read denied");
+        }
+        return super.getItem(key);
+      }
+
+      setItem(key, value) {
+        super.setItem(key, value);
+        if (key === STORAGE_KEY) this.denyNextPrimaryRead = true;
+      }
+    }
+    const storage = new PostWriteReadDeniedStorage();
+    const store = new AppStore(storage, T0, null);
+
+    const next = store.update((draft) => draft.projects.push(createProject({ id: "committed" }, T1)), T1);
+
+    assert.deepEqual(next.projects.map((project) => project.id), ["committed"]);
+    assert.deepEqual(persisted(storage).projects.map((project) => project.id), ["committed"]);
+    assert.match(store.notices.at(-1), /已写入，但无法立即复核/u);
+    assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
+  });
+
   test("an active foreign write lease fails before recipes can overwrite storage", () => {
     const storage = new MemoryStorage();
     const store = new AppStore(storage, T0, null);
@@ -888,6 +948,54 @@ describe("AppStore updates and persistence", () => {
     assert.deepEqual(store.getState().projects.map((project) => project.id), ["quota-winner"]);
     assert.deepEqual(persisted(storage).projects.map((project) => project.id), ["quota-winner"]);
     assert.equal(storage.getItem(PREVIOUS_KEY), beforePrevious);
+    assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
+  });
+
+  test("a displaced quota retry preserves the external tab's rolling snapshot", () => {
+    class PostRetryInterleavingStorage extends MemoryStorage {
+      quotaMode = false;
+      primaryAttempts = 0;
+      externalRaw = null;
+      externalPrevious = null;
+
+      setItem(key, value) {
+        if (!this.quotaMode || key !== STORAGE_KEY) {
+          super.setItem(key, value);
+          return;
+        }
+        this.primaryAttempts += 1;
+        if (this.primaryAttempts === 1) {
+          const error = new Error("storage full");
+          error.name = "QuotaExceededError";
+          throw error;
+        }
+        super.setItem(STORAGE_KEY, value);
+        super.setItem(STORAGE_KEY, this.externalRaw);
+        super.setItem(PREVIOUS_KEY, this.externalPrevious);
+      }
+    }
+    const storage = new PostRetryInterleavingStorage();
+    const store = new AppStore(storage, T0, null);
+    store.update((draft) => draft.projects.push(createProject({ id: "p1", title: "First" }, T0)), T0);
+    store.update((draft) => { draft.projects[0].title = "Second"; }, T1);
+    const external = stateWithProject("retry-winner", "Retry winner");
+    external.meta.revision = 3;
+    external.meta.updatedAt = new Date(T2).toISOString();
+    const externalPrevious = stateWithProject("external-rollback", "External rollback");
+    externalPrevious.meta.revision = 2;
+    externalPrevious.meta.updatedAt = new Date(T1).toISOString();
+    storage.externalRaw = JSON.stringify(external);
+    storage.externalPrevious = JSON.stringify(externalPrevious);
+    storage.quotaMode = true;
+
+    assert.throws(
+      () => store.update((draft) => { draft.projects[0].title = "Must not publish"; }, T2 + 1),
+      /保存完成时替换了数据/u
+    );
+
+    assert.deepEqual(store.getState().projects.map((project) => project.id), ["retry-winner"]);
+    assert.deepEqual(persisted(storage).projects.map((project) => project.id), ["retry-winner"]);
+    assert.deepEqual(persisted(storage, PREVIOUS_KEY).projects.map((project) => project.id), ["external-rollback"]);
     assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
   });
 

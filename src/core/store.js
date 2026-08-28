@@ -2,7 +2,7 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.122.0";
+export const APP_VERSION = "0.123.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
@@ -254,6 +254,7 @@ export class AppStore {
     try {
       this.#assertWritePreconditions(current);
       this.#storage.setItem(STORAGE_KEY, serialized);
+      this.#verifyPrimaryWrite(serialized);
     } catch (error) {
       let previous = null;
       try {
@@ -268,13 +269,16 @@ export class AppStore {
         this.#assertWritePreconditions(current);
         this.#storage.removeItem(PREVIOUS_KEY);
         this.#storage.setItem(STORAGE_KEY, serialized);
+        this.#verifyPrimaryWrite(serialized);
         releasedPrevious = true;
         this.notices.push("浏览器存储空间接近上限，已释放可再生的滚动撤销快照以完成本次保存；请尽快导出完整备份。 ");
       } catch (retryError) {
         try {
-          this.#storage.setItem(PREVIOUS_KEY, previous);
+          if (this.#storage.getItem(PREVIOUS_KEY) === null) {
+            this.#storage.setItem(PREVIOUS_KEY, previous);
+          }
         } catch {
-          // Best effort only: the primary value was never committed.
+          // Best effort only: never overwrite a rollback value another tab created.
         }
         throw new Error(`本地保存失败，原数据仍然保留：${retryError.message}`);
       }
@@ -340,6 +344,19 @@ export class AppStore {
     if (latest === expectedCurrent) return;
     this.refreshFromStorage();
     throw new Error("检测到另一个标签页在本次保存期间更新了数据；已阻止覆盖，请重试刚才的操作。 ");
+  }
+
+  #verifyPrimaryWrite(expected) {
+    let latest;
+    try {
+      latest = this.#storage.getItem(STORAGE_KEY);
+    } catch (error) {
+      this.notices.push(`本地数据已写入，但无法立即复核提交结果：${errorMessage(error)}`);
+      return;
+    }
+    if (latest === expected) return;
+    this.refreshFromStorage();
+    throw new Error("检测到另一个标签页在本次保存完成时替换了数据；已采用外部更新，请重试刚才的操作。 ");
   }
 
   #emit(source = "local") {
