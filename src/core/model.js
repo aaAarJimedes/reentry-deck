@@ -9,6 +9,14 @@ export const CHECKPOINT_CAPTURE_MODES = Object.freeze(["manual", "quick"]);
 const COLOR_PALETTE = ["fern", "amber", "clay", "sky", "plum", "slate"];
 const UNSAFE_TEXT_CONTROL_PATTERN = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b\u200e\u200f\u202a-\u202e\u2060-\u206f\ufeff]/u;
 const UNSAFE_ID_CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/u;
+const STATE_FIELDS = new Set(["schemaVersion", "meta", "settings", "projects", "sessions", "crumbs", "checkpoints", "ui"]);
+const META_FIELDS = new Set(["createdAt", "updatedAt", "revision"]);
+const SETTINGS_FIELDS = new Set(["theme", "staleAfterDays", "reducedMotion"]);
+const UI_FIELDS = new Set(["selectedProjectId"]);
+const PROJECT_FIELDS = new Set(["id", "title", "description", "descriptionUpdatedAt", "nextAction", "nextActionUpdatedAt", "color", "status", "createdAt", "updatedAt", "lastOpenedAt", "archivedAt"]);
+const SESSION_FIELDS = new Set(["id", "projectId", "intention", "status", "startedAt", "endedAt", "checkpointId", "sourceCheckpointId", "closeReason"]);
+const CRUMB_FIELDS = new Set(["id", "projectId", "sessionId", "type", "text", "pinned", "resolvedAt", "createdAt"]);
+const CHECKPOINT_FIELDS = new Set(["id", "projectId", "sessionId", "summary", "nextAction", "openLoops", "returnHint", "captureMode", "createdAt"]);
 
 export const IMPORT_LIMITS = Object.freeze({
   records: 50_000,
@@ -173,12 +181,12 @@ export function normalizeState(value, now = Date.now()) {
     schemaVersion: SCHEMA_VERSION,
     meta: {
       ...base.meta,
-      ...(isObject(value.meta) ? value.meta : {}),
+      ...pickDefined(value.meta, META_FIELDS),
       revision: safeInteger(value.meta?.revision, 0)
     },
     settings: {
       ...base.settings,
-      ...(isObject(value.settings) ? value.settings : {})
+      ...pickDefined(value.settings, SETTINGS_FIELDS)
     },
     projects,
     sessions,
@@ -236,6 +244,7 @@ export function validateImportCandidate(value) {
   if (recordCount > IMPORT_LIMITS.records) return [`备份包含 ${recordCount} 条记录，超过 ${IMPORT_LIMITS.records} 条安全上限`];
   const errors = validateState(value);
   if (errors.length) return errors;
+  validateKnownFields(errors, value, STATE_FIELDS, "备份根数据");
 
   if (value.schemaVersion !== undefined && (!Number.isSafeInteger(value.schemaVersion) || value.schemaVersion < 1)) {
     addImportError(errors, "数据版本号无效");
@@ -254,6 +263,7 @@ export function validateImportCandidate(value) {
       addImportError(errors, "项目记录必须是普通对象");
       continue;
     }
+    validateKnownFields(errors, project, PROJECT_FIELDS, `项目 ${project.id ?? "未知"}`);
     if (typeof project?.id !== "string" || !project.id) addImportError(errors, "存在无效的项目 ID");
     else validateImportId(errors, project.id, "项目");
     if (project?.status !== undefined && !PROJECT_STATUSES.includes(project.status)) addImportError(errors, `项目状态无效：${project.status}`);
@@ -274,6 +284,7 @@ export function validateImportCandidate(value) {
       addImportError(errors, "会话记录必须是普通对象");
       continue;
     }
+    validateKnownFields(errors, session, SESSION_FIELDS, `会话 ${session.id ?? "未知"}`);
     if (typeof session?.id !== "string" || !session.id) addImportError(errors, "存在无效的会话 ID");
     else validateImportId(errors, session.id, "会话");
     if (!projectIds.has(session?.projectId)) addImportError(errors, `会话引用了不存在的项目：${session?.id ?? "未知"}`);
@@ -312,6 +323,7 @@ export function validateImportCandidate(value) {
       addImportError(errors, "面包屑记录必须是普通对象");
       continue;
     }
+    validateKnownFields(errors, crumb, CRUMB_FIELDS, `面包屑 ${crumb.id ?? "未知"}`);
     if (typeof crumb?.id !== "string" || !crumb.id) addImportError(errors, "存在无效的面包屑 ID");
     else validateImportId(errors, crumb.id, "面包屑");
     if (!projectIds.has(crumb?.projectId)) addImportError(errors, `面包屑引用了不存在的项目：${crumb?.id ?? "未知"}`);
@@ -338,6 +350,7 @@ export function validateImportCandidate(value) {
       addImportError(errors, "检查点记录必须是普通对象");
       continue;
     }
+    validateKnownFields(errors, checkpoint, CHECKPOINT_FIELDS, `检查点 ${checkpoint.id ?? "未知"}`);
     if (typeof checkpoint?.id !== "string" || !checkpoint.id) addImportError(errors, "存在无效的检查点 ID");
     else validateImportId(errors, checkpoint.id, "检查点");
     if (!projectIds.has(checkpoint?.projectId)) addImportError(errors, `检查点引用了不存在的项目：${checkpoint?.id ?? "未知"}`);
@@ -360,6 +373,7 @@ export function validateImportCandidate(value) {
     }
   }
   if (value.ui !== undefined && !isObject(value.ui)) addImportError(errors, "界面状态对象无效");
+  else if (value.ui) validateKnownFields(errors, value.ui, UI_FIELDS, "界面状态");
   if (value.ui?.selectedProjectId !== undefined && value.ui.selectedProjectId !== null && !projectIds.has(value.ui.selectedProjectId)) {
     addImportError(errors, "当前选中项目引用不存在");
   }
@@ -372,6 +386,7 @@ function validateMetadata(errors, meta) {
     return;
   }
   if (!meta) return;
+  validateKnownFields(errors, meta, META_FIELDS, "元数据");
   validateDates(errors, meta, ["createdAt", "updatedAt"], "元数据", "工作区");
   if (isValidDate(meta.createdAt) && isValidDate(meta.updatedAt) && Date.parse(meta.updatedAt) < Date.parse(meta.createdAt)) {
     addImportError(errors, "工作区更新时间早于创建时间");
@@ -403,6 +418,7 @@ function validateSettings(errors, settings) {
     return;
   }
   if (!settings) return;
+  validateKnownFields(errors, settings, SETTINGS_FIELDS, "设置");
   if (settings.theme !== undefined && !["system", "light", "dark"].includes(settings.theme)) addImportError(errors, `界面主题无效：${settings.theme}`);
   if (settings.staleAfterDays !== undefined && (!Number.isSafeInteger(settings.staleAfterDays) || settings.staleAfterDays < 1 || settings.staleAfterDays > 365)) addImportError(errors, "陈旧阈值必须是 1 到 365 之间的整数");
   if (settings.reducedMotion !== undefined && typeof settings.reducedMotion !== "boolean") addImportError(errors, "减少动态效果设置无效");
@@ -435,6 +451,12 @@ function addImportError(errors, message) {
   else if (errors.length === IMPORT_LIMITS.reportedErrors) errors.push("备份还包含更多问题，已停止展开错误列表");
 }
 
+function validateKnownFields(errors, value, allowedFields, label) {
+  for (const field of Object.keys(value)) {
+    if (!allowedFields.has(field)) addImportError(errors, `${label}包含未知字段：${field}`);
+  }
+}
+
 function cleanText(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -447,6 +469,15 @@ function isObject(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+function pickDefined(value, fields) {
+  if (!isObject(value)) return {};
+  const picked = {};
+  for (const field of fields) {
+    if (value[field] !== undefined) picked[field] = value[field];
+  }
+  return picked;
 }
 
 function safeInteger(value, fallback) {

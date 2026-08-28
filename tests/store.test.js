@@ -447,6 +447,12 @@ describe("AppStore updates and persistence", () => {
           draft.settings.staleAfterDays = 1.5;
         },
         pattern: /陈旧阈值必须是 1 到 365 之间的整数/
+      },
+      {
+        mutate(draft) {
+          draft.settings.extension = { nested: { mutable: true } };
+        },
+        pattern: /设置包含未知字段：extension/
       }
     ];
 

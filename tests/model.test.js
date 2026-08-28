@@ -531,6 +531,41 @@ describe("validateImportCandidate", () => {
     assert.match(errors, /界面状态对象无效/u);
   });
 
+  test("rejects unknown schema fields instead of silently dropping or shallow-freezing them", () => {
+    const state = createEmptyState(NOW);
+    const project = createProject({ id: "p1" }, NOW);
+    const session = createSession({ id: "s1", projectId: "p1" }, NOW);
+    const crumb = createCrumb({ id: "c1", projectId: "p1", sessionId: "s1" }, NOW);
+    const checkpoint = createCheckpoint({ id: "cp1", projectId: "p1" }, NOW);
+    state.projects.push(project);
+    state.sessions.push(session);
+    state.crumbs.push(crumb);
+    state.checkpoints.push(checkpoint);
+    state.experimental = true;
+    state.meta.extra = { nested: true };
+    state.settings.extension = { nested: true };
+    state.ui.panel = "hidden";
+    project.legacyTitle = "would be dropped";
+    session.pauseReason = "unknown";
+    crumb.tags = ["unknown"];
+    checkpoint.confidence = 0.5;
+
+    const errors = validateImportCandidate(state).join("；");
+
+    assert.match(errors, /备份根数据包含未知字段：experimental/u);
+    assert.match(errors, /元数据包含未知字段：extra/u);
+    assert.match(errors, /设置包含未知字段：extension/u);
+    assert.match(errors, /界面状态包含未知字段：panel/u);
+    assert.match(errors, /项目 p1包含未知字段：legacyTitle/u);
+    assert.match(errors, /会话 s1包含未知字段：pauseReason/u);
+    assert.match(errors, /面包屑 c1包含未知字段：tags/u);
+    assert.match(errors, /检查点 cp1包含未知字段：confidence/u);
+
+    const normalized = normalizeState(state, NOW);
+    assert.equal("extra" in normalized.meta, false);
+    assert.equal("extension" in normalized.settings, false);
+  });
+
   test("accepts only canonical millisecond UTC timestamps", () => {
     const state = createEmptyState(NOW);
     state.projects.push(createProject({ id: "p1" }, NOW));
