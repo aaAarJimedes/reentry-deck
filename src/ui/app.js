@@ -90,6 +90,7 @@ export class ReentryApp {
   #timerId;
   #focusSelector = null;
   #workspaceCounts = null;
+  #activeSession = null;
   #noticeQueue = [];
   #acknowledgedStaleSessions = new Set();
   #pendingImport = null;
@@ -153,6 +154,7 @@ export class ReentryApp {
     this.#importReadController = null;
     this.#clipboardRequestGate.invalidate();
     this.#pendingImport = null;
+    this.#activeSession = null;
     this.#eventController.abort();
     this.#colorSchemeQuery?.removeEventListener?.("change", this.#colorSchemeListener);
     this.#colorSchemeQuery = null;
@@ -184,6 +186,7 @@ export class ReentryApp {
     const frame = buildWorkspaceFrame(state, route.name === "project" ? route.id : null, now);
     const { counts: workspaceCounts, currentProject, activeSession, activeProject } = frame;
     this.#workspaceCounts = workspaceCounts;
+    this.#activeSession = activeSession;
     const currentReentryCard = currentProject
       ? currentProject.status === "archived"
         ? buildReentryCard(state, currentProject.id, now)
@@ -909,7 +912,7 @@ export class ReentryApp {
     const status = form?.querySelector("[data-quick-project-status]");
     if (!select) return;
     const state = this.#store.getState();
-    const activeSession = state.sessions.find((item) => item.status === "active") ?? null;
+    const activeSession = this.#activeSession;
     const captureWindow = buildQuickCaptureProjectWindow(state, {
       query: control.value,
       preferredIds: [select.value, activeSession?.projectId, state.ui.selectedProjectId]
@@ -980,7 +983,7 @@ export class ReentryApp {
     }
     if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "c") {
       event.preventDefault();
-      if (this.#store.getState().projects.some((item) => item.status !== "archived")) this.#openDialog("quick-capture-dialog");
+      if (this.#workspaceCounts?.unarchivedProjects) this.#openDialog("quick-capture-dialog");
       return;
     }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !isTypingTarget(event.target)) {
@@ -1552,7 +1555,7 @@ export class ReentryApp {
     for (const timer of this.#root.querySelectorAll(".js-session-timer")) {
       timer.textContent = formatDuration(elapsedSeconds(timer.dataset.startedAt, now));
     }
-    const activeSession = this.#store.getState().sessions.find((item) => item.status === "active") ?? null;
+    const activeSession = this.#activeSession;
     const nextSignature = sessionHealthSignature(
       activeSession,
       activeSession ? this.#acknowledgedStaleSessions.has(activeSession.id) : false,

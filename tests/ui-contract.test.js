@@ -71,6 +71,22 @@ test("session lifecycle warnings refresh after time boundaries without erasing a
   assert.match(source, /document\.visibilityState === "visible"\) this\.#refreshTimers\(\)/u);
 });
 
+test("interactive refresh paths reuse the invariant-safe render context", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
+  const filter = source.match(/#updateQuickCaptureProjects\(control\) \{([\s\S]*?)\n  \}\n\n  #runUserAction/u)?.[1] ?? "";
+  const keydown = source.match(/#onKeydown\(event\) \{([\s\S]*?)\n  \}\n\n  #runCommand/u)?.[1] ?? "";
+  const refresh = source.match(/#refreshTimers\(\) \{([\s\S]*?)\n  \}\n\n  #toast/u)?.[1] ?? "";
+
+  assert.match(render, /this\.#activeSession = activeSession/u);
+  assert.match(filter, /const activeSession = this\.#activeSession/u);
+  assert.doesNotMatch(filter, /sessions\.find/u);
+  assert.match(keydown, /this\.#workspaceCounts\?\.unarchivedProjects/u);
+  assert.doesNotMatch(keydown, /projects\.some/u);
+  assert.match(refresh, /const activeSession = this\.#activeSession/u);
+  assert.doesNotMatch(refresh, /(?:getState|sessions\.find)/u);
+});
+
 test("dialog redraw restoration preserves button focus as well as field values and selections", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 
