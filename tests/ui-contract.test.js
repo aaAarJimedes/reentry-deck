@@ -185,7 +185,7 @@ test("external redraw preserves an inline capture draft only for the same sessio
   assert.match(capture, /sessionId = this\.#activeSession\?\.id/u);
   assert.match(capture, /if \(!focused && !text\.value\) return null/u);
   assert.match(restore, /activeSession\?\.id !== snapshot\.sessionId/u);
-  assert.match(restore, /slice\(0, IMPORT_LIMITS\.crumbText\)/u);
+  assert.match(restore, /boundTransientControlValue\(snapshot\.text, IMPORT_LIMITS\.crumbText\)/u);
   assert.match(restore, /Object\.hasOwn\(CRUMB_LABELS, snapshot\.type\)/u);
   assert.match(restore, /setSelectionRange/u);
 });

@@ -368,7 +368,7 @@ export class ReentryApp {
     const text = form?.elements?.text;
     const type = form?.elements?.type;
     if (!text || !type) return;
-    text.value = String(snapshot.text ?? "").slice(0, IMPORT_LIMITS.crumbText);
+    text.value = boundTransientControlValue(snapshot.text, IMPORT_LIMITS.crumbText);
     if (Object.hasOwn(CRUMB_LABELS, snapshot.type)) type.value = snapshot.type;
     const focusTarget = snapshot.focus === "type" ? type : snapshot.focus === "text" ? text : null;
     focusTarget?.focus();
