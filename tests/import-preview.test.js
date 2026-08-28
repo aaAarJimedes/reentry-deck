@@ -185,6 +185,25 @@ describe("import difference preview", () => {
     assert.equal(identical.collections.sessions.unchanged, 1);
   });
 
+  test("compares normalized records without serializing every shared value", () => {
+    const project = createProject({ id: "p1", title: "Focus" }, T0);
+    const current = workspace([project]);
+    current.crumbs.push(createCrumb({ id: "c1", projectId: "p1", text: "A long shared trail" }, T0));
+    const incoming = structuredClone(current);
+    const nativeStringify = JSON.stringify;
+    JSON.stringify = () => { throw new Error("record comparison serialized"); };
+    let preview;
+    try {
+      preview = buildImportPreview(incoming, current, T1);
+    } finally {
+      JSON.stringify = nativeStringify;
+    }
+
+    assert.equal(preview.hasContentChanges, false);
+    assert.equal(preview.collections.projects.unchanged, 1);
+    assert.equal(preview.collections.crumbs.unchanged, 1);
+  });
+
   test("treats record ordering as a visible import difference", () => {
     const first = createProject({ id: "first", title: "First" }, T0);
     const second = createProject({ id: "second", title: "Second" }, T0);

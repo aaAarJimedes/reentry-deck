@@ -72,10 +72,12 @@ export function readImportSnapshot(value, now = Date.now()) {
 
 export function buildImportPreview(value, currentState, now = Date.now()) {
   const { state: incomingState, source } = readImportSnapshot(value, now);
-  const collections = Object.fromEntries(
-    COLLECTION_NAMES.map((name) => [name, diffCollection(currentState[name], incomingState[name])])
-  );
-  const projectChanges = diffProjects(currentState.projects, incomingState.projects);
+  const projectDiff = diffProjects(currentState.projects, incomingState.projects);
+  const collections = { projects: projectDiff.collection };
+  for (const name of COLLECTION_NAMES) {
+    if (name !== "projects") collections[name] = diffCollection(currentState[name], incomingState[name]);
+  }
+  const projectChanges = projectDiff.details;
   const settingsChanged = !sameValue(currentState.settings, incomingState.settings);
   const selectionChanged = !sameValue(currentState.ui, incomingState.ui);
   const orderChangedCollections = Object.entries(collections)
@@ -136,6 +138,7 @@ function diffProjects(current, incoming) {
   let addedTotal = 0;
   let removedTotal = 0;
   let changedTotal = 0;
+  let unchanged = 0;
 
   for (const project of incoming) {
     if (!currentById.has(project.id)) {
@@ -153,7 +156,7 @@ function diffProjects(current, incoming) {
         beforeStatus: before.status,
         afterStatus: project.status
       });
-    }
+    } else unchanged += 1;
   }
   for (const project of current) {
     if (incomingById.has(project.id)) continue;
@@ -161,14 +164,27 @@ function diffProjects(current, incoming) {
     if (removed.length < DETAIL_LIMIT) removed.push(projectSummary(project));
   }
 
+  const orderChanged = addedTotal === 0 && removedTotal === 0 && current.length === incoming.length
+    && current.some((project, index) => project.id !== incoming[index]?.id);
   return {
-    added,
-    removed,
-    changed,
-    addedTotal,
-    removedTotal,
-    changedTotal,
-    detailLimit: DETAIL_LIMIT
+    collection: {
+      current: current.length,
+      incoming: incoming.length,
+      added: addedTotal,
+      removed: removedTotal,
+      changed: changedTotal,
+      unchanged,
+      orderChanged
+    },
+    details: {
+      added,
+      removed,
+      changed,
+      addedTotal,
+      removedTotal,
+      changedTotal,
+      detailLimit: DETAIL_LIMIT
+    }
   };
 }
 
@@ -198,7 +214,19 @@ function validDate(value) {
 }
 
 function sameValue(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  if (left === right) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") return false;
+  let leftFields = 0;
+  let rightFields = 0;
+  for (const field in left) {
+    if (!Object.hasOwn(left, field)) continue;
+    leftFields += 1;
+    if (!Object.hasOwn(right, field) || left[field] !== right[field]) return false;
+  }
+  for (const field in right) {
+    if (Object.hasOwn(right, field)) rightFields += 1;
+  }
+  return leftFields === rightFields;
 }
 
 function hashByte(hash, byte) {
