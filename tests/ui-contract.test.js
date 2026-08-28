@@ -99,6 +99,16 @@ test("toast output is text-bounded, count-bounded, and timer-bounded", async () 
   assert.match(render, /slice\(-MAX_VISIBLE_TOASTS\)/u);
 });
 
+test("storage diagnostics are consumed only after the rendered shell commits", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
+  const notices = source.match(/#renderNotices\(\) \{([\s\S]*?)\n  \}\n\n  #renderSessionInvariantNotice/u)?.[1] ?? "";
+
+  assert.match(notices, /this\.#noticeQueue\.map/u);
+  assert.doesNotMatch(notices, /(?:splice|shift|pop)\(/u);
+  assert.ok(render.indexOf("this.#root.innerHTML =") < render.indexOf("this.#noticeQueue = []"));
+});
+
 test("quick-dock continuation advances workspace time through the follow-up session", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

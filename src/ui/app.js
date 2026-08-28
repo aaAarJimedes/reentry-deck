@@ -277,6 +277,7 @@ export class ReentryApp {
       <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="false">${this.#renderToasts()}</div>
       <div class="sr-only" id="live-region" aria-live="polite"></div>
     `;
+    this.#noticeQueue = [];
     this.#root.setAttribute("aria-busy", "false");
     if (captureDraft) this.#restoreInlineCaptureDraft(captureDraft, activeSession);
     this.#refreshTimers();
@@ -965,8 +966,7 @@ export class ReentryApp {
 
   #renderNotices() {
     if (!this.#noticeQueue.length) return "";
-    const notices = this.#noticeQueue.splice(0);
-    return notices.map((notice) => `<div class="notice-banner">${icon("alert")}<span>${escapeHTML(notice)}</span></div>`).join("");
+    return this.#noticeQueue.map((notice) => `<div class="notice-banner">${icon("alert")}<span>${escapeHTML(notice)}</span></div>`).join("");
   }
 
   #renderSessionInvariantNotice(counts, activeSession, activeProject) {
