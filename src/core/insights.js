@@ -6,7 +6,7 @@ const NEARBY_SWITCH_MS = 4 * 3_600_000;
 const MAX_COUNTED_SESSION_MS = 12 * 3_600_000;
 
 export function buildWeeklyReview(state, now = Date.now(), options = {}) {
-  const cardProjectIds = state.projects.filter((project) => project.status !== "archived").map((project) => project.id);
+  const cardProjectIds = activeProjectIds(state.projects);
   return buildWeeklyReviewWithCards(state, now, options, buildReentryCards(state, cardProjectIds, now));
 }
 
@@ -22,39 +22,69 @@ export function buildWorkspaceOverview(state, now = Date.now(), options = {}) {
 function buildWeeklyReviewWithCards(state, now, options, cards) {
   const windowDays = normalizeWindowDays(options.windowDays);
   const windowStart = now - windowDays * DAY_MS;
-  const sessions = state.sessions
-    .filter((session) => overlapsWindow(session, windowStart, now))
-    .slice()
-    .sort((a, b) => timeOf(a.startedAt) - timeOf(b.startedAt) || compareCodeUnits(a.id, b.id));
+  const sessions = [];
+  for (let index = 0; index < state.sessions.length; index += 1) {
+    const session = state.sessions[index];
+    if (overlapsWindow(session, windowStart, now)) sessions.push(session);
+  }
+  sessions.sort((a, b) => timeOf(a.startedAt) - timeOf(b.startedAt) || compareCodeUnits(a.id, b.id));
   const projectMinutes = new Map();
   let focusedMs = 0;
   let cappedSessions = 0;
+  let nearbySwitches = 0;
+  let interruptions = 0;
+  let quickDocks = 0;
+  let activeSessions = 0;
 
-  for (const session of sessions) {
+  for (let index = 0; index < sessions.length; index += 1) {
+    const session = sessions[index];
     const duration = sessionDuration(session, windowStart, now);
     focusedMs += duration.countedMs;
     if (duration.capped) cappedSessions += 1;
     projectMinutes.set(session.projectId, (projectMinutes.get(session.projectId) ?? 0) + duration.countedMs);
-  }
-
-  let nearbySwitches = 0;
-  for (let index = 1; index < sessions.length; index += 1) {
+    if (session.closeReason === "interrupted") interruptions += 1;
+    if (session.closeReason === "quick-dock") quickDocks += 1;
+    if (session.status === "active") activeSessions += 1;
+    if (!index) continue;
     const previous = sessions[index - 1];
-    const current = sessions[index];
     const previousEnd = timeOf(previous.endedAt) || timeOf(previous.startedAt);
-    const gap = timeOf(current.startedAt) - previousEnd;
-    if (current.projectId !== previous.projectId && gap >= 0 && gap <= NEARBY_SWITCH_MS) nearbySwitches += 1;
+    const gap = timeOf(session.startedAt) - previousEnd;
+    if (session.projectId !== previous.projectId && gap >= 0 && gap <= NEARBY_SWITCH_MS) nearbySwitches += 1;
   }
 
-  const recentCrumbs = state.crumbs.filter((crumb) => timeOf(crumb.createdAt) >= windowStart && timeOf(crumb.createdAt) <= now);
-  const resolvedSignals = state.crumbs.filter((crumb) => timeOf(crumb.resolvedAt) >= windowStart && timeOf(crumb.resolvedAt) <= now);
-  const recoverability = cards.length
-    ? Math.round(cards.reduce((sum, card) => sum + card.completeness, 0) / cards.length)
-    : 0;
-  const topProjectEntry = [...projectMinutes.entries()].sort((a, b) => b[1] - a[1] || compareCodeUnits(a[0], b[0]))[0];
-  const topProject = topProjectEntry
-    ? state.projects.find((project) => project.id === topProjectEntry[0]) ?? null
-    : null;
+  let records = 0;
+  let decisions = 0;
+  let resolvedSignals = 0;
+  for (let index = 0; index < state.crumbs.length; index += 1) {
+    const crumb = state.crumbs[index];
+    const createdAt = timeOf(crumb.createdAt);
+    if (createdAt >= windowStart && createdAt <= now) {
+      records += 1;
+      if (crumb.type === "decision") decisions += 1;
+    }
+    const resolvedAt = timeOf(crumb.resolvedAt);
+    if (resolvedAt >= windowStart && resolvedAt <= now) resolvedSignals += 1;
+  }
+  let completenessTotal = 0;
+  for (const card of cards) completenessTotal += card.completeness;
+  const recoverability = cards.length ? Math.round(completenessTotal / cards.length) : 0;
+  let topProjectId = null;
+  let topProjectMs = 0;
+  for (const [projectId, minutes] of projectMinutes) {
+    if (topProjectId === null || minutes > topProjectMs || (minutes === topProjectMs && compareCodeUnits(projectId, topProjectId) < 0)) {
+      topProjectId = projectId;
+      topProjectMs = minutes;
+    }
+  }
+  let topProject = null;
+  if (topProjectId !== null) {
+    for (let index = 0; index < state.projects.length; index += 1) {
+      const project = state.projects[index];
+      if (project.id !== topProjectId) continue;
+      topProject = project;
+      break;
+    }
+  }
 
   return {
     windowDays,
@@ -63,20 +93,29 @@ function buildWeeklyReviewWithCards(state, now, options, cards) {
     focusedMinutes: Math.round(focusedMs / 60_000),
     cappedSessions,
     nearbySwitches,
-    interruptions: sessions.filter((session) => session.closeReason === "interrupted").length,
-    quickDocks: sessions.filter((session) => session.closeReason === "quick-dock").length,
-    activeSessions: sessions.filter((session) => session.status === "active").length,
-    records: recentCrumbs.length,
-    decisions: recentCrumbs.filter((crumb) => crumb.type === "decision").length,
-    resolvedSignals: resolvedSignals.length,
+    interruptions,
+    quickDocks,
+    activeSessions,
+    records,
+    decisions,
+    resolvedSignals,
     recoverability,
-    topProject: topProject ? { id: topProject.id, title: topProject.title, minutes: Math.round(topProjectEntry[1] / 60_000) } : null
+    topProject: topProject ? { id: topProject.id, title: topProject.title, minutes: Math.round(topProjectMs / 60_000) } : null
   };
 }
 
 export function buildAttentionDeck(state, now = Date.now(), options = {}) {
-  const projectIds = state.projects.filter((project) => project.status !== "archived").map((project) => project.id);
+  const projectIds = activeProjectIds(state.projects);
   return buildAttentionDeckWithCards(state, now, options, buildReentryCards(state, projectIds, now));
+}
+
+function activeProjectIds(projects) {
+  const ids = [];
+  for (let index = 0; index < projects.length; index += 1) {
+    const project = projects[index];
+    if (project.status !== "archived") ids.push(project.id);
+  }
+  return ids;
 }
 
 function buildAttentionDeckWithCards(state, now, options, reentryCards) {

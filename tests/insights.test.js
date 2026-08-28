@@ -53,6 +53,16 @@ test("buildWeeklyReview calculates bounded local evidence and nearby project swi
     ]
   });
 
+  data.projects.filter = () => {
+    throw new Error("weekly review must not filter source projects");
+  };
+  data.sessions.filter = () => {
+    throw new Error("weekly review must not filter source sessions");
+  };
+  data.crumbs.filter = () => {
+    throw new Error("weekly review must not filter source crumbs");
+  };
+
   const review = buildWeeklyReview(data, NOW);
   assert.equal(review.sessions, 3);
   assert.equal(review.focusedMinutes, 210);
