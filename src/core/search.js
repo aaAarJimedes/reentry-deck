@@ -111,15 +111,34 @@ export function getProjectResources(state, projectId, limit = RESOURCE_LIMIT) {
   if (!project) return [];
   const safeLimit = boundedLimit(limit, RESOURCE_LIMIT, 100);
   if (!safeLimit) return [];
-  const evidence = [
-    { sourceType: "project", sourceId: project.id, createdAt: project.updatedAt ?? project.createdAt, text: `${project.description}\n${project.nextAction}` },
-    ...state.crumbs
-      .filter((item) => item.projectId === projectId)
-      .map((item) => ({ sourceType: "crumb", sourceId: item.id, createdAt: item.createdAt, text: item.text })),
-    ...state.checkpoints
-      .filter((item) => item.projectId === projectId)
-      .map((item) => ({ sourceType: "checkpoint", sourceId: item.id, createdAt: item.createdAt, text: [item.summary, item.nextAction, item.openLoops, item.returnHint].join("\n") }))
-  ].sort((a, b) => timeOf(b.createdAt) - timeOf(a.createdAt));
+  const evidence = [{
+    sourceType: "project",
+    sourceId: project.id,
+    sourcePriority: 0,
+    insertionIndex: 0,
+    createdAt: project.updatedAt ?? project.createdAt,
+    text: `${project.description}\n${project.nextAction}`
+  }];
+  for (let insertionIndex = 0; insertionIndex < state.crumbs.length; insertionIndex += 1) {
+    const item = state.crumbs[insertionIndex];
+    if (item.projectId !== projectId) continue;
+    evidence.push({ sourceType: "crumb", sourceId: item.id, sourcePriority: 1, insertionIndex, createdAt: item.createdAt, text: item.text });
+  }
+  for (let insertionIndex = 0; insertionIndex < state.checkpoints.length; insertionIndex += 1) {
+    const item = state.checkpoints[insertionIndex];
+    if (item.projectId !== projectId) continue;
+    evidence.push({
+      sourceType: "checkpoint",
+      sourceId: item.id,
+      sourcePriority: 2,
+      insertionIndex,
+      createdAt: item.createdAt,
+      text: [item.summary, item.nextAction, item.openLoops, item.returnHint].join("\n")
+    });
+  }
+  evidence.sort((a, b) => timeOf(b.createdAt) - timeOf(a.createdAt)
+    || b.sourcePriority - a.sourcePriority
+    || b.insertionIndex - a.insertionIndex);
 
   const resources = [];
   const seen = new Set();

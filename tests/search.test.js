@@ -163,3 +163,31 @@ test("getProjectResources deduplicates newest evidence and preserves source meta
   assert.deepEqual(getProjectResources(resourceState, "p1", 0), []);
   assert.deepEqual(getProjectResources(resourceState, "missing"), []);
 });
+
+test("getProjectResources prefers reliable sources and later insertions when evidence times tie", () => {
+  for (const timestamp of ["2026-01-10T00:00:00.000Z", "invalid"]) {
+    const resourceState = structuredClone(state);
+    resourceState.projects[0].description = "项目 https://shared.example/ 与 https://project.example/";
+    resourceState.projects[0].updatedAt = timestamp;
+    resourceState.crumbs = [
+      { id: "crumb-old", projectId: "p1", type: "note", text: "旧随记 https://shared.example/ 与 https://crumb-old.example/", createdAt: timestamp },
+      { id: "crumb-new", projectId: "p1", type: "note", text: "新随记 https://shared.example/ 与 https://crumb-new.example/", createdAt: timestamp }
+    ];
+    resourceState.checkpoints = [
+      { id: "checkpoint-old", projectId: "p1", summary: "旧检查点 https://shared.example/ 与 https://checkpoint-old.example/", nextAction: "", openLoops: "", returnHint: "", createdAt: timestamp },
+      { id: "checkpoint-new", projectId: "p1", summary: "新检查点 https://shared.example/ 与 https://checkpoint-new.example/", nextAction: "", openLoops: "", returnHint: "", createdAt: timestamp }
+    ];
+
+    const resources = getProjectResources(resourceState, "p1");
+
+    assert.deepEqual(resources.map((item) => item.sourceId), [
+      "checkpoint-new",
+      "checkpoint-new",
+      "checkpoint-old",
+      "crumb-new",
+      "crumb-old",
+      "p1"
+    ]);
+    assert.equal(resources[0].url, "https://shared.example/");
+  }
+});
