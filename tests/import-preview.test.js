@@ -48,6 +48,20 @@ describe("import snapshot inspection", () => {
       data: raw
     }, T1).source.appVersion;
     assert.equal(unsafeMetadata, null);
+
+    for (const exportedAt of [
+      "2026-08-27T12:00:00Z",
+      "2026-08-27T20:00:00.000+08:00",
+      "08/27/2026 12:00:00",
+      " 2026-08-27T12:00:00.000Z "
+    ]) {
+      const source = readImportSnapshot({
+        format: "reentry-deck-backup",
+        exportedAt,
+        data: raw
+      }, T1).source;
+      assert.equal(source.exportedAt, null, exportedAt);
+    }
   });
 
   test("binds legacy defaults to the first preview instead of the later confirmation time", () => {
