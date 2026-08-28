@@ -429,6 +429,39 @@ test("buildReentryCards indexes shared collections once while preserving per-pro
   assert.deepEqual(buildReentryCards(data, ["missing"], NOW), []);
 });
 
+test("a boundary-sized reentry card derives bounded evidence without map or filter projections", () => {
+  const crumbs = Array.from({ length: 49_999 }, (_, index) => ({
+    id: `large-${index}`,
+    projectId: "p1",
+    type: "decision",
+    text: `evidence ${index}`,
+    pinned: true,
+    createdAt: at(-1_000)
+  }));
+  const data = makeState({ projects: [makeProject("p1")], crumbs });
+  const originalMap = Array.prototype.map;
+  const originalFilter = Array.prototype.filter;
+  Array.prototype.map = function () {
+    throw new Error("card derivation must not map a full project history");
+  };
+  Array.prototype.filter = function () {
+    throw new Error("card derivation must not filter a full project history");
+  };
+  let card;
+  try {
+    card = buildReentryCard(data, "p1", NOW);
+  } finally {
+    Array.prototype.map = originalMap;
+    Array.prototype.filter = originalFilter;
+  }
+
+  assert.equal(card.summaryEvidence.id, "large-49998");
+  assert.deepEqual(card.decisions.map((item) => item.id), ["large-49998", "large-49997"]);
+  assert.deepEqual(card.pinnedCrumbs.map((item) => item.id), ["large-49998", "large-49997", "large-49996"]);
+  assert.deepEqual(card.changesSinceCheckpoint.map((item) => item.id), ["large-49998", "large-49997", "large-49996"]);
+  assert.deepEqual(card.recentTrail.map((item) => item.id), ["large-49998", "large-49997", "large-49996", "large-49995", "large-49994"]);
+});
+
 test("targeted reentry projection never reads or sorts unrelated evidence payloads", () => {
   let unrelatedDateReads = 0;
   const unrelated = {

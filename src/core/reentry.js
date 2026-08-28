@@ -1,6 +1,10 @@
 import { daysSince } from "./time.js";
 import { QUICK_DOCK_NOT_RECORDED } from "./session.js";
 
+const OPEN_SIGNAL_TYPES = new Set(["question", "blocker"]);
+const SUMMARY_CRUMB_TYPES = new Set(["note", "discovery", "decision"]);
+const CHANGE_CRUMB_TYPES = new Set(["note", "discovery", "decision", "next"]);
+
 export function getProjectActivity(state, projectId) {
   return getIndexedProjectActivity(buildReentryIndex(state, [projectId]), projectId);
 }
@@ -18,9 +22,12 @@ export function buildReentryCard(state, projectId, now = Date.now()) {
 export function buildReentryCards(state, projectIds, now = Date.now()) {
   const safeProjectIds = Array.isArray(projectIds) ? projectIds : [];
   const index = buildReentryIndex(state, safeProjectIds);
-  return safeProjectIds
-    .map((projectId) => buildIndexedReentryCard(index, projectId, now))
-    .filter(Boolean);
+  const cards = [];
+  for (const projectId of safeProjectIds) {
+    const card = buildIndexedReentryCard(index, projectId, now);
+    if (card) cards.push(card);
+  }
+  return cards;
 }
 
 function buildIndexedReentryCard(index, projectId, now) {
@@ -31,44 +38,55 @@ function buildIndexedReentryCard(index, projectId, now) {
   const checkpoints = index.checkpoints.get(projectId) ?? [];
   const sessions = index.sessions.get(projectId) ?? [];
   const checkpoint = checkpoints[0] ?? null;
-  const latestNextCrumb = projectCrumbs.find((item) => item.type === "next");
-  const latestSummaryCrumb = projectCrumbs.find((item) => ["note", "discovery", "decision"].includes(item.type));
-  const activeSession = sessions.find((item) => item.status === "active") ?? null;
-  const unresolvedSignals = projectCrumbs
-    .filter((item) => ["question", "blocker"].includes(item.type) && !item.resolvedAt)
-    .slice(0, 3);
+  const checkpointTime = timeOf(checkpoint?.createdAt);
+  let latestNextCrumb = null;
+  let latestSummaryCrumb = null;
+  const unresolvedSignals = [];
+  const decisions = [];
+  const pinnedCrumbs = [];
+  const changesSinceCheckpoint = [];
+  for (const item of projectCrumbs) {
+    if (!latestNextCrumb && item.type === "next") latestNextCrumb = item;
+    if (!latestSummaryCrumb && SUMMARY_CRUMB_TYPES.has(item.type)) latestSummaryCrumb = item;
+    if (unresolvedSignals.length < 3 && OPEN_SIGNAL_TYPES.has(item.type) && !item.resolvedAt) unresolvedSignals.push(item);
+    if (decisions.length < 2 && item.type === "decision") decisions.push(item);
+    if (pinnedCrumbs.length < 3 && item.pinned) pinnedCrumbs.push(item);
+    if (changesSinceCheckpoint.length < 3 && CHANGE_CRUMB_TYPES.has(item.type) && timeOf(item.createdAt) > checkpointTime) {
+      changesSinceCheckpoint.push(item);
+    }
+  }
   const historicalOpenLoops = unresolvedSignals.length || !checkpoint?.openLoops || checkpoint.openLoops === QUICK_DOCK_NOT_RECORDED.openLoops
     ? ""
     : checkpoint.openLoops;
-  const decisions = projectCrumbs.filter((item) => item.type === "decision").slice(0, 2);
-  const pinnedCrumbs = projectCrumbs.filter((item) => item.pinned).slice(0, 3);
-  const checkpointTime = timeOf(checkpoint?.createdAt);
-  const changesSinceCheckpoint = projectCrumbs
-    .filter((item) => ["note", "discovery", "decision", "next"].includes(item.type) && timeOf(item.createdAt) > checkpointTime)
-    .slice(0, 3);
-  const contextGapSessions = sessions.filter((item) => {
+  let activeSession = null;
+  const contextGapSessions = [];
+  for (const item of sessions) {
+    if (!activeSession && item.status === "active") activeSession = item;
     const evidenceTime = timeOf(item.endedAt ?? item.startedAt);
     const unclosed = item.status === "active";
     const interrupted = item.status === "abandoned" && item.closeReason === "interrupted";
-    return (unclosed || interrupted) && evidenceTime > checkpointTime && item.checkpointId !== checkpoint?.id;
-  });
+    if ((unclosed || interrupted) && evidenceTime > checkpointTime && item.checkpointId !== checkpoint?.id) contextGapSessions.push(item);
+  }
 
-  const summaryEvidence = newestEvidence([
-    checkpoint?.summary && evidence("checkpoint", "可靠检查点", checkpoint.summary, checkpoint.createdAt, checkpoint.id),
-    latestSummaryCrumb && evidence("crumb", CRUMB_SOURCE_LABELS[latestSummaryCrumb.type], latestSummaryCrumb.text, latestSummaryCrumb.createdAt, latestSummaryCrumb.id),
-    project.description && evidence("project", "项目说明", project.description, project.descriptionUpdatedAt ?? project.createdAt, project.id)
-  ]);
-  const nextActionEvidence = newestEvidence([
-    checkpoint?.nextAction && evidence("checkpoint", "可靠检查点", checkpoint.nextAction, checkpoint.createdAt, checkpoint.id),
-    latestNextCrumb && evidence("crumb", "下一步记录", latestNextCrumb.text, latestNextCrumb.createdAt, latestNextCrumb.id),
-    project.nextAction && evidence("project", "项目动作", project.nextAction, project.nextActionUpdatedAt ?? project.createdAt, project.id)
-  ]);
+  const summaryEvidence = newestEvidence(
+    checkpoint?.summary ? evidence("checkpoint", "可靠检查点", checkpoint.summary, checkpoint.createdAt, checkpoint.id) : null,
+    latestSummaryCrumb ? evidence("crumb", CRUMB_SOURCE_LABELS[latestSummaryCrumb.type], latestSummaryCrumb.text, latestSummaryCrumb.createdAt, latestSummaryCrumb.id) : null,
+    project.description ? evidence("project", "项目说明", project.description, project.descriptionUpdatedAt ?? project.createdAt, project.id) : null
+  );
+  const nextActionEvidence = newestEvidence(
+    checkpoint?.nextAction ? evidence("checkpoint", "可靠检查点", checkpoint.nextAction, checkpoint.createdAt, checkpoint.id) : null,
+    latestNextCrumb ? evidence("crumb", "下一步记录", latestNextCrumb.text, latestNextCrumb.createdAt, latestNextCrumb.id) : null,
+    project.nextAction ? evidence("project", "项目动作", project.nextAction, project.nextActionUpdatedAt ?? project.createdAt, project.id) : null
+  );
 
   const summary = summaryEvidence?.text || "还没有留下状态摘要。";
   const nextAction = nextActionEvidence?.text || "先写下一个足够具体的下一步。";
   const returnHint = checkpoint?.returnHint || "先看最近轨迹，再开始一次短会话。";
-  const completenessFields = [summaryEvidence, nextActionEvidence, checkpoint?.returnHint, checkpoint || projectCrumbs.length];
-  const rawCompleteness = Math.round((completenessFields.filter(Boolean).length / completenessFields.length) * 100);
+  const completenessCount = Number(Boolean(summaryEvidence))
+    + Number(Boolean(nextActionEvidence))
+    + Number(Boolean(checkpoint?.returnHint))
+    + Number(Boolean(checkpoint || projectCrumbs.length));
+  const rawCompleteness = Math.round((completenessCount / 4) * 100);
   const confidenceCap = checkpoint?.captureMode === "quick" ? 50 : 100;
   const completeness = Math.max(0, Math.min(rawCompleteness, confidenceCap) - Math.min(contextGapSessions.length * 20, 40));
   const readinessGaps = [];
@@ -89,7 +107,7 @@ function buildIndexedReentryCard(index, projectId, now) {
     summaryEvidence,
     nextAction,
     nextActionEvidence,
-    openLoops: checkpoint?.openLoops || unresolvedSignals.map((item) => item.text).join("；"),
+    openLoops: checkpoint?.openLoops || joinCrumbTexts(unresolvedSignals),
     historicalOpenLoops,
     returnHint,
     completeness,
@@ -125,7 +143,7 @@ function buildReentryIndex(state, projectIds = null) {
   for (const project of safeCollection(state?.projects)) {
     if (requested && !requested.has(project.id)) continue;
     projects.set(project.id, project);
-    lastActivity.set(project.id, newestDate([project.updatedAt, project.lastOpenedAt, project.createdAt]));
+    lastActivity.set(project.id, newestDate(project.updatedAt, project.lastOpenedAt, project.createdAt));
   }
   indexRecords(safeCollection(state?.sessions), sessions, projects, lastActivity, (item) => item.resolvedAt ?? item.endedAt ?? item.createdAt ?? item.startedAt);
   indexRecords(safeCollection(state?.crumbs), crumbs, projects, lastActivity, (item) => item.resolvedAt ?? item.endedAt ?? item.createdAt ?? item.startedAt);
@@ -138,11 +156,8 @@ function buildReentryIndex(state, projectIds = null) {
 }
 
 function sortIndexedRecords(index, dateOf) {
-  for (const [projectId, items] of index) {
-    index.set(projectId, items
-      .map((item, insertionIndex) => ({ item, insertionIndex }))
-      .sort((a, b) => timeOf(dateOf(b.item)) - timeOf(dateOf(a.item)) || b.insertionIndex - a.insertionIndex)
-      .map(({ item }) => item));
+  for (const items of index.values()) {
+    items.reverse().sort((left, right) => timeOf(dateOf(right)) - timeOf(dateOf(left)));
   }
 }
 
@@ -156,8 +171,12 @@ function indexRecords(records, target, projects, lastActivity, activityOf) {
   }
 }
 
-function newestDate(values) {
-  return values.filter(Boolean).reduce((newest, value) => timeOf(value) > timeOf(newest) ? value : newest, null);
+function newestDate(first, second, third) {
+  let newest = null;
+  if (first && timeOf(first) > timeOf(newest)) newest = first;
+  if (second && timeOf(second) > timeOf(newest)) newest = second;
+  if (third && timeOf(third) > timeOf(newest)) newest = third;
+  return newest;
 }
 
 function safeCollection(value) {
@@ -205,8 +224,17 @@ function evidence(kind, label, text, createdAt, id) {
   return { kind, label, text, createdAt, id };
 }
 
-function newestEvidence(candidates) {
-  return candidates.filter(Boolean).sort((a, b) => timeOf(b.createdAt) - timeOf(a.createdAt))[0] ?? null;
+function newestEvidence(first, second, third) {
+  let newest = first ?? null;
+  if (second && timeOf(second.createdAt) > timeOf(newest?.createdAt)) newest = second;
+  if (third && timeOf(third.createdAt) > timeOf(newest?.createdAt)) newest = third;
+  return newest;
+}
+
+function joinCrumbTexts(crumbs) {
+  let result = "";
+  for (const crumb of crumbs) result += `${result ? "；" : ""}${crumb.text}`;
+  return result;
 }
 
 function timeOf(value) {
