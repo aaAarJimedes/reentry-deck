@@ -528,7 +528,7 @@ h3 { font-size: 17px; }
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--forest) 18%, transparent);
   border-radius: var(--radius-lg);
-  background: var(--forest);
+  background: #173d3a;
   box-shadow: var(--shadow-lg);
   color: #f7f1e8;
 }

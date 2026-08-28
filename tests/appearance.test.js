@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import test from "node:test";
 
 import { IMPORT_FILE_NAME_LIMIT, importFileLabel, resolveThemeAppearance, userFacingErrorMessage } from "../src/ui/app.js";
+
+const styles = await readFile(resolve(import.meta.dirname, "../src/styles.css"), "utf8");
 
 test("resolveThemeAppearance follows the system only in system mode", () => {
   assert.deepEqual(resolveThemeAppearance("system", false), { dark: false, themeColor: "#f4efe6" });
@@ -28,4 +32,11 @@ test("importFileLabel bounds untrusted display names without splitting Unicode",
   assert.ok(label.length <= IMPORT_FILE_NAME_LIMIT);
   assert.match(label, /…$/u);
   assert.doesNotMatch(label, /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u);
+});
+
+test("the reentry hero keeps a dark local surface in both global themes", () => {
+  const block = styles.match(/\.reentry-hero\s*\{(?<body>[\s\S]*?)\n\}/u)?.groups?.body ?? "";
+  assert.match(block, /background:\s*#173d3a;/u);
+  assert.doesNotMatch(block, /background:\s*var\(--forest\)/u);
+  assert.match(block, /color:\s*#f7f1e8;/u);
 });
