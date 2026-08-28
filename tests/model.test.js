@@ -548,17 +548,18 @@ describe("validateImportCandidate", () => {
 
   test("rejects invisible controls in persisted text and identifiers while preserving ordinary layout whitespace", () => {
     const state = createEmptyState(NOW);
-    const project = createProject({ id: "project\u202Ehidden", title: "Safe 👩‍💻 title", description: "line one\nline two\tindented" }, NOW);
+    const project = createProject({ id: "project\u202Ehidden", title: "Broken \ud800 title", description: "Safe 👩‍💻 line one\nline two\tindented" }, NOW);
     project.nextAction = "open\u200Bfile";
     state.projects.push(project);
-    state.crumbs.push(createCrumb({ id: "crumb", projectId: project.id, text: "spoof\u2066value" }, NOW));
+    state.crumbs.push(createCrumb({ id: "crumb\udc00", projectId: project.id, text: "spoof\u2066value" }, NOW));
 
     const errors = validateImportCandidate(state).join("；");
     assert.match(errors, /项目 ID 过长或包含控制字符/u);
+    assert.match(errors, /面包屑 ID 过长或包含控制字符/u);
     assert.match(errors, /项目下一步包含不可见控制字符/u);
     assert.match(errors, /面包屑内容包含不可见控制字符/u);
+    assert.match(errors, /项目名称包含不可见控制字符/u);
     assert.doesNotMatch(errors, /项目说明包含不可见控制字符/u);
-    assert.doesNotMatch(errors, /项目名称包含不可见控制字符/u);
   });
 
   test("accepts only ordinary JSON objects for state containers and records", () => {

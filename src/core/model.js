@@ -92,11 +92,27 @@ export function compactText(value, maximum) {
 }
 
 export function containsUnsafeTextControl(value) {
-  return typeof value === "string" && UNSAFE_TEXT_CONTROL_PATTERN.test(value);
+  return typeof value === "string" && (UNSAFE_TEXT_CONTROL_PATTERN.test(value) || containsLoneSurrogate(value));
 }
 
 export function containsUnsafeIdControl(value) {
-  return typeof value === "string" && UNSAFE_ID_CONTROL_PATTERN.test(value);
+  return typeof value === "string" && (UNSAFE_ID_CONTROL_PATTERN.test(value) || containsLoneSurrogate(value));
+}
+
+function containsLoneSurrogate(value) {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        index += 1;
+        continue;
+      }
+      return true;
+    }
+    if (unit >= 0xdc00 && unit <= 0xdfff) return true;
+  }
+  return false;
 }
 
 export function createEmptyState(now = Date.now()) {
