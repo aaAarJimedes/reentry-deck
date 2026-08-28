@@ -182,15 +182,17 @@ export class ReentryApp {
     }
     const route = parseRoute(location.hash);
     const currentProject = route.name === "project" ? state.projects.find((item) => item.id === route.id) : null;
-    const activeSession = state.sessions.find((item) => item.status === "active") ?? null;
+    const workspaceCounts = buildWorkspaceCounts(state, now);
+    this.#workspaceCounts = workspaceCounts;
+    const activeSession = workspaceCounts.activeSessions === 1
+      ? state.sessions.find((item) => item.status === "active") ?? null
+      : null;
     const activeProject = activeSession ? state.projects.find((item) => item.id === activeSession.projectId) : null;
     const currentReentryCard = currentProject
       ? currentProject.status === "archived"
         ? buildReentryCard(state, currentProject.id, now)
         : buildReentryCardWithStats(state, currentProject.id, now)
       : null;
-    const workspaceCounts = buildWorkspaceCounts(state, now);
-    this.#workspaceCounts = workspaceCounts;
     const theme = state.settings.theme ?? "system";
     this.#sessionHealthSignature = sessionHealthSignature(
       activeSession,
@@ -210,6 +212,7 @@ export class ReentryApp {
         <div class="content-column">
           ${this.#renderTopbar(route, currentProject, activeSession, workspaceCounts)}
           <main class="main-content" id="main-content" tabindex="-1">
+            ${this.#renderSessionInvariantNotice(workspaceCounts, activeSession, activeProject)}
             ${this.#renderNotices()}
             ${this.#renderRoute(route, state, currentProject, activeSession, workspaceCounts, currentReentryCard, now)}
           </main>
@@ -821,6 +824,16 @@ export class ReentryApp {
     if (!this.#noticeQueue.length) return "";
     const notices = this.#noticeQueue.splice(0);
     return notices.map((notice) => `<div class="notice-banner">${icon("alert")}<span>${escapeHTML(notice)}</span></div>`).join("");
+  }
+
+  #renderSessionInvariantNotice(counts, activeSession, activeProject) {
+    if (counts.activeSessions > 1) {
+      return `<section class="notice-banner" role="alert">${icon("alert")} 检测到 ${counts.activeSessions} 个活动会话，已停止选择任意现场。请从数据保险箱恢复一份有效备份。</section>`;
+    }
+    if (activeSession && !activeProject) {
+      return `<section class="notice-banner" role="alert">${icon("alert")} 活动会话关联的项目不存在，已停止显示悬浮会话。请从数据保险箱恢复一份有效备份。</section>`;
+    }
+    return "";
   }
 
   #onClick(event) {

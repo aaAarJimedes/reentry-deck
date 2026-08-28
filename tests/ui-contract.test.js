@@ -111,6 +111,17 @@ test("command availability reuses workspace counts and disables ambiguous dockin
   assert.doesNotMatch(commands, /\.(?:projects|sessions)\.some/u);
 });
 
+test("rendering never selects an arbitrary session when the active invariant is broken", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
+
+  assert.ok(render.indexOf("buildWorkspaceCounts(state, now)") < render.indexOf("state.sessions.find"));
+  assert.match(render, /workspaceCounts\.activeSessions === 1[\s\S]*?state\.sessions\.find/u);
+  assert.match(render, /#renderSessionInvariantNotice\(workspaceCounts, activeSession, activeProject\)/u);
+  assert.match(source, /role="alert"[^`]*检测到 \$\{counts\.activeSessions\} 个活动会话/u);
+  assert.match(source, /活动会话关联的项目不存在/u);
+});
+
 test("backup reads ignore stale completions and are invalidated on app destruction", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 
