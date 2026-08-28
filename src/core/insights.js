@@ -1,4 +1,4 @@
-import { buildReentryCards, rankProjectsForReentry } from "./reentry.js";
+import { buildReentryCards, rankReentryCards } from "./reentry.js";
 import { inspectSession } from "./session.js";
 
 const DAY_MS = 86_400_000;
@@ -43,11 +43,14 @@ export function buildWeeklyReview(state, now = Date.now(), options = {}) {
 }
 
 export function buildWorkspaceOverview(state, now = Date.now(), options = {}) {
-  const rankedProjects = rankProjectsForReentry(state, now);
+  const projectIds = activeProjectIds(state.projects);
+  const cards = buildReentryCards(state, projectIds, now);
+  const rankedProjects = rankReentryCards(cards, options.rankedLimit ?? Number.POSITIVE_INFINITY);
   return {
     rankedProjects,
-    weeklyReview: buildWeeklyReviewWithCards(state, now, options.weeklyReview ?? {}, rankedProjects),
-    attentionDeck: buildAttentionDeckWithCards(state, now, options.attentionDeck ?? {}, rankedProjects)
+    rankedTotal: cards.length,
+    weeklyReview: buildWeeklyReviewWithCards(state, now, options.weeklyReview ?? {}, cards),
+    attentionDeck: buildAttentionDeckWithCards(state, now, options.attentionDeck ?? {}, cards)
   };
 }
 

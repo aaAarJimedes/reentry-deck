@@ -134,6 +134,9 @@ describe("buildCollectionWindow", () => {
     assert.deepEqual(middle, { items: items.slice(0, 24), total: 25, shown: 24, remaining: 1, nextLimit: 25 });
     assert.deepEqual(final, { items, total: 25, shown: 25, remaining: 0, nextLimit: 25 });
     assert.deepEqual(buildCollectionWindow(null, -1), { items: [], total: 0, shown: 0, remaining: 0, nextLimit: 0 });
+    assert.deepEqual(buildCollectionWindow(["first", "second"], 12, 50), {
+      items: ["first", "second"], total: 50, shown: 2, remaining: 48, nextLimit: 14
+    });
   });
 
   test("keeps a very large collection out of the initial DOM window", () => {

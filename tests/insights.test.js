@@ -231,12 +231,25 @@ test("buildWorkspaceOverview shares one reentry index across ranking, review, an
     }
   });
   const data = state({ projects, crumbs });
-
-  const overview = buildWorkspaceOverview(data, NOW);
+  const originalSort = Array.prototype.sort;
+  let largestSortedLength = 0;
+  Array.prototype.sort = function (...args) {
+    largestSortedLength = Math.max(largestSortedLength, this.length);
+    return originalSort.apply(this, args);
+  };
+  let overview;
+  try {
+    overview = buildWorkspaceOverview(data, NOW, { rankedLimit: 12 });
+  } finally {
+    Array.prototype.sort = originalSort;
+  }
 
   assert.equal(iteratorCalls, 1, "the shared overview must index evidence only once");
-  assert.equal(overview.rankedProjects.length, 1_000);
+  assert.equal(overview.rankedProjects.length, 12);
+  assert.equal(overview.rankedTotal, 1_000);
   assert.equal(overview.weeklyReview.records, 5_000);
+  assert.ok(overview.weeklyReview.recoverability > 0, "all cards must still contribute to the review");
   assert.equal(overview.attentionDeck.length, 4);
   assert.equal(overview.attentionDeck[0].project.status, "blocked");
+  assert.equal(largestSortedLength, 12, "only the requested ranking window should reach the largest final sort");
 });

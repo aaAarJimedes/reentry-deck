@@ -138,16 +138,76 @@ export function rankProjectsForReentry(state, now = Date.now()) {
   for (const project of safeCollection(state?.projects)) {
     if (project.status !== "archived") projectIds.push(project.id);
   }
-  const index = buildReentryIndex(state, projectIds);
-  const ranked = [];
-  for (const projectId of projectIds) {
-    const card = buildIndexedReentryCard(index, projectId, now);
-    if (!card) continue;
-    ranked.push({ ...card, recommendationScore: reentryScore(card), recommendationReason: reentryReason(card) });
+  return rankReentryCards(buildReentryCards(state, projectIds, now));
+}
+
+export function rankReentryCards(cards, limit = Number.POSITIVE_INFINITY) {
+  const safeCards = Array.isArray(cards) ? cards : [];
+  const safeLimit = limit === Number.POSITIVE_INFINITY
+    ? Number.POSITIVE_INFINITY
+    : Number.isSafeInteger(limit) && limit > 0 ? limit : 0;
+  if (!safeLimit) return [];
+  const selected = [];
+  for (const card of safeCards) {
+    if (!card?.project || card.project.status === "archived") continue;
+    const entry = { card, score: reentryScore(card) };
+    if (safeLimit === Number.POSITIVE_INFINITY) {
+      selected.push(entry);
+      continue;
+    }
+    if (selected.length < safeLimit) {
+      pushWorstReentry(selected, entry);
+      continue;
+    }
+    if (compareReentryEntry(entry, selected[0]) >= 0) continue;
+    selected[0] = entry;
+    sinkWorstReentry(selected, 0);
   }
-  return ranked.sort((left, right) => right.recommendationScore - left.recommendationScore
-    || timeOf(right.lastActivityAt) - timeOf(left.lastActivityAt)
-    || compareCodeUnits(left.project.id, right.project.id));
+  selected.sort(compareReentryEntry);
+  const ranked = [];
+  for (const entry of selected) {
+    ranked.push({
+      ...entry.card,
+      recommendationScore: entry.score,
+      recommendationReason: reentryReason(entry.card)
+    });
+  }
+  return ranked;
+}
+
+function pushWorstReentry(heap, entry) {
+  heap.push(entry);
+  let index = heap.length - 1;
+  while (index > 0) {
+    const parent = Math.floor((index - 1) / 2);
+    if (compareReentryEntry(heap[index], heap[parent]) <= 0) return;
+    const previous = heap[parent];
+    heap[parent] = heap[index];
+    heap[index] = previous;
+    index = parent;
+  }
+}
+
+function sinkWorstReentry(heap, start) {
+  let index = start;
+  while (true) {
+    const left = index * 2 + 1;
+    if (left >= heap.length) return;
+    const right = left + 1;
+    let worse = left;
+    if (right < heap.length && compareReentryEntry(heap[right], heap[left]) > 0) worse = right;
+    if (compareReentryEntry(heap[worse], heap[index]) <= 0) return;
+    const previous = heap[index];
+    heap[index] = heap[worse];
+    heap[worse] = previous;
+    index = worse;
+  }
+}
+
+function compareReentryEntry(left, right) {
+  return right.score - left.score
+    || timeOf(right.card.lastActivityAt) - timeOf(left.card.lastActivityAt)
+    || compareCodeUnits(left.card.project.id, right.card.project.id);
 }
 
 function buildReentryIndex(state, projectIds = null) {

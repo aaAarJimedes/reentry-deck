@@ -201,6 +201,14 @@ test("archive pagination streams projects and reuses workspace counts", async ()
   assert.doesNotMatch(source, /const projects = state\.projects\.filter\(\(item\) => item\.status === "archived"\)/u);
 });
 
+test("home recommendations rank only the requested visible window", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /const rankedLimit = this\.#collectionLimits\.get\("home"\) \?\? COLLECTION_PAGE_SIZE/u);
+  assert.match(source, /buildWorkspaceOverview\(state, now, \{ rankedLimit \}\)/u);
+  assert.match(source, /buildCollectionWindow\(ranked, rankedLimit, rankedTotal\)/u);
+});
+
 test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

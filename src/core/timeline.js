@@ -1,17 +1,18 @@
 export const TIMELINE_PAGE_SIZE = 30;
 export const COLLECTION_PAGE_SIZE = 12;
 
-export function buildCollectionWindow(items, limit = COLLECTION_PAGE_SIZE) {
+export function buildCollectionWindow(items, limit = COLLECTION_PAGE_SIZE, knownTotal = undefined) {
   const safeItems = Array.isArray(items) ? items : [];
   const safeLimit = Number.isSafeInteger(limit) && limit > 0 ? limit : COLLECTION_PAGE_SIZE;
   const shown = Math.min(safeLimit, safeItems.length);
+  const total = Number.isSafeInteger(knownTotal) && knownTotal >= shown ? knownTotal : safeItems.length;
 
   return {
     items: safeItems.slice(0, shown),
-    total: safeItems.length,
+    total,
     shown,
-    remaining: safeItems.length - shown,
-    nextLimit: Math.min(safeItems.length, shown + COLLECTION_PAGE_SIZE)
+    remaining: total - shown,
+    nextLimit: Math.min(total, shown + COLLECTION_PAGE_SIZE)
   };
 }
 

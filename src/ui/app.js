@@ -337,8 +337,9 @@ export class ReentryApp {
 
   #renderDashboard(state, activeSession, workspaceCounts, now) {
     if (!workspaceCounts.unarchivedProjects) return this.#renderEmptyDashboard();
-    const { rankedProjects: ranked, weeklyReview, attentionDeck } = buildWorkspaceOverview(state, now);
-    const projectWindow = buildCollectionWindow(ranked, this.#collectionLimits.get("home"));
+    const rankedLimit = this.#collectionLimits.get("home") ?? COLLECTION_PAGE_SIZE;
+    const { rankedProjects: ranked, rankedTotal, weeklyReview, attentionDeck } = buildWorkspaceOverview(state, now, { rankedLimit });
+    const projectWindow = buildCollectionWindow(ranked, rankedLimit, rankedTotal);
     const lead = ranked[0];
     const activeProjects = workspaceCounts.activeProjects;
     const blockedProjects = workspaceCounts.blockedProjects;
