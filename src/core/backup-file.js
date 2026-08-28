@@ -54,7 +54,11 @@ async function readBackupStream(file, signal) {
   let segment = "";
   let bytesRead = 0;
   let chunksRead = 0;
+  let completed = false;
+  let cancelStarted = false;
   const cancel = () => {
+    if (cancelStarted) return;
+    cancelStarted = true;
     try {
       Promise.resolve(reader.cancel()).catch(() => {});
     } catch {
@@ -91,9 +95,12 @@ async function readBackupStream(file, signal) {
     }
     segment += decoder.decode();
     if (segment) chunks.push(segment);
-    return chunks.join("");
+    const text = chunks.join("");
+    completed = true;
+    return text;
   } finally {
     signal?.removeEventListener?.("abort", cancel);
+    if (!completed) cancel();
     try {
       reader.releaseLock();
     } catch {
