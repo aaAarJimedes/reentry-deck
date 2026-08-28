@@ -115,7 +115,8 @@ function evidenceStatus(card) {
 function briefLine(value, maximum) {
   if (typeof value !== "string") return "";
   const overflow = value.length > SHARE_TEXT_SCAN_LIMIT;
-  const source = overflow ? value.slice(0, SHARE_TEXT_SCAN_LIMIT) : value;
+  let source = overflow ? value.slice(0, SHARE_TEXT_SCAN_LIMIT) : value;
+  if (overflow && /[\ud800-\udbff]$/u.test(source)) source = source.slice(0, -1);
   const normalized = source.replace(/\s+/gu, " ");
   return compactText(`${normalized}${overflow ? "…" : ""}`, maximum);
 }

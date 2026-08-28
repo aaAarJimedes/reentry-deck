@@ -139,6 +139,14 @@ describe("buildReentryBrief", () => {
     assert.ok(largestReplaceReceiver <= SHARE_TEXT_SCAN_LIMIT);
     assert.match(brief, /当前状态：state/u);
     assert.ok(brief.length < 3_000);
+
+    const unicodeBoundary = buildReentryBrief({
+      project: { title: "Unicode" },
+      summary: `${" ".repeat(SHARE_TEXT_SCAN_LIMIT - 1)}😀tail`,
+      nextAction: "next",
+      returnHint: "hint"
+    });
+    assert.doesNotMatch(unicodeBoundary, /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u);
   });
 });
 
