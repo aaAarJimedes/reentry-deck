@@ -3,6 +3,7 @@ import { compactText, containsUnsafeIdControl } from "./model.js";
 const RESULT_LIMIT = 40;
 const RESOURCE_LIMIT = 20;
 const MAX_RESOURCE_URL_LENGTH = 2_048;
+export const RESOURCE_LABEL_LIMIT = 180;
 const HTTP_SCHEME_PATTERN = /https?:\/\//iu;
 export const SEARCH_QUERY_LIMIT = 500;
 export const SEARCH_TOKEN_LIMIT = 24;
@@ -314,7 +315,7 @@ function compact(value) {
 
 function readableURL(url) {
   const path = decodeURIComponent(url.pathname).replace(/\/$/u, "");
-  return `${url.host}${path || ""}`;
+  return compactText(`${url.host}${path || ""}`, RESOURCE_LABEL_LIMIT);
 }
 
 function hasMixedUnicodeHostnameLabel(candidate) {

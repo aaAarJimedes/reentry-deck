@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  RESOURCE_LABEL_LIMIT,
   SEARCH_QUERY_LIMIT,
   SEARCH_TOKEN_LENGTH_LIMIT,
   SEARCH_TOKEN_LIMIT,
@@ -158,6 +159,15 @@ test("extractHttpLinks canonicalizes equivalent DNS trailing dots before dedupli
     { url: "https://example.com/guide", host: "example.com", label: "example.com/guide" }
   ]);
   assert.deepEqual(extractHttpLinks("https://./guide"), []);
+});
+
+test("extractHttpLinks retains a safe target while bounding its human-readable label", () => {
+  const path = "a".repeat(1_000);
+  const [link] = extractHttpLinks(`https://example.com/${path}`);
+
+  assert.equal(link.url, `https://example.com/${path}`);
+  assert.ok(link.label.length <= RESOURCE_LABEL_LIMIT);
+  assert.match(link.label, /^example\.com\/a+…$/u);
 });
 
 test("extractHttpLinks stops at CJK prose punctuation and rejects mixed-label host ambiguity", () => {
