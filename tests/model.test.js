@@ -562,6 +562,26 @@ describe("validateImportCandidate", () => {
     assert.doesNotMatch(errors, /项目说明包含不可见控制字符/u);
   });
 
+  test("does not rescan text that already exceeds its persisted field budget", (t) => {
+    const state = createEmptyState(NOW);
+    state.projects.push(createProject({
+      id: "oversized",
+      description: `${"x".repeat(IMPORT_LIMITS.projectDescription + 1)}\u202E`
+    }, NOW));
+    const nativeTest = RegExp.prototype.test;
+    t.mock.method(RegExp.prototype, "test", function (value) {
+      if (typeof value === "string" && value.length > IMPORT_LIMITS.projectDescription) {
+        throw new Error("oversized field reached a regex scan");
+      }
+      return nativeTest.call(this, value);
+    });
+
+    const errors = validateImportCandidate(state).join("；");
+
+    assert.match(errors, /项目说明超过 800 字符上限/u);
+    assert.doesNotMatch(errors, /项目说明包含不可见控制字符/u);
+  });
+
   test("accepts only ordinary JSON objects for state containers and records", () => {
     assert.deepEqual(validateImportCandidate(new Map()), ["备份根数据必须是普通对象"]);
 

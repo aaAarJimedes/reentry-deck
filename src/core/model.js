@@ -508,7 +508,7 @@ function validateText(errors, record, field, label, maximum) {
   if (typeof value !== "string") addImportError(errors, `${label}必须是文本${suffix}`);
   else {
     if (value.length > maximum) addImportError(errors, `${label}超过 ${maximum} 字符上限${suffix}`);
-    if (containsUnsafeTextControl(value)) addImportError(errors, `${label}包含不可见控制字符${suffix}`);
+    else if (containsUnsafeTextControl(value)) addImportError(errors, `${label}包含不可见控制字符${suffix}`);
   }
 }
 
