@@ -240,6 +240,16 @@ test("quick capture reuses its validated project position inside the transaction
   assert.doesNotMatch(handler, /next\.projects\.find/u);
 });
 
+test("quick checkpoint review reuses its validated project position inside the transaction", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const handler = source.match(/#reviewQuickCheckpoint\(data, form\) \{([\s\S]*?)\n  \}\n\n  #continueStaleSession/u)?.[1] ?? "";
+
+  assert.match(handler, /\{ checkpoint, projectIndex, projectTitle \}/u);
+  assert.match(handler, /const project = state\.projects\[projectIndex\]/u);
+  assert.match(handler, /project\.id !== checkpoint\.projectId \|\| project\.status === "archived"/u);
+  assert.doesNotMatch(handler, /state\.projects\.find/u);
+});
+
 test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

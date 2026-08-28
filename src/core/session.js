@@ -148,7 +148,15 @@ export function deriveQuickDockCheckpointInput(state, sessionId, now = Date.now(
 }
 
 export function prepareQuickCheckpointReview(state, input = {}, now = Date.now()) {
-  const project = findById(arrayOf(state?.projects), input.projectId);
+  const projects = arrayOf(state?.projects);
+  let project = null;
+  let projectIndex = -1;
+  for (let index = 0; index < projects.length; index += 1) {
+    if (projects[index]?.id !== input.projectId) continue;
+    project = projects[index];
+    projectIndex = index;
+    break;
+  }
   if (!project || project.status === "archived") throw new Error("项目不可用，无法复核快速检查点。");
   let latestCheckpoint = null;
   let latestTimestamp = Number.NaN;
@@ -186,7 +194,7 @@ export function prepareQuickCheckpointReview(state, input = {}, now = Date.now()
     returnHint: cleanText(input.returnHint),
     captureMode: "manual"
   }, isoAtOrAfter(now, project.updatedAt, latestCheckpoint.createdAt));
-  return { checkpoint, projectTitle: project.title, sourceCheckpointId: latestCheckpoint.id };
+  return { checkpoint, projectIndex, projectTitle: project.title, sourceCheckpointId: latestCheckpoint.id };
 }
 
 function retainNewestOpenLoop(heap, entry) {

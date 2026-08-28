@@ -1136,12 +1136,14 @@ export class ReentryApp {
   }
 
   #reviewQuickCheckpoint(data, form) {
-    const { checkpoint, projectTitle } = prepareQuickCheckpointReview(this.#store.getState(), data);
+    const { checkpoint, projectIndex, projectTitle } = prepareQuickCheckpointReview(this.#store.getState(), data);
     this.#focusSelector = "#reentry-card-heading";
     this.#store.update((state) => {
+      const project = state.projects[projectIndex];
+      if (!project || project.id !== checkpoint.projectId || project.status === "archived") {
+        throw new Error("项目在保存前已不可用。");
+      }
       state.checkpoints.push(checkpoint);
-      const project = state.projects.find((item) => item.id === checkpoint.projectId);
-      if (!project) throw new Error("项目在保存前已不可用。");
       project.nextAction = checkpoint.nextAction;
       project.nextActionUpdatedAt = checkpoint.createdAt;
       project.updatedAt = checkpoint.createdAt;

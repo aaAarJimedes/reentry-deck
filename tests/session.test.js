@@ -342,7 +342,36 @@ test("prepareQuickCheckpointReview creates a detached reliable project checkpoin
     captureMode: "manual",
     createdAt: iso(NOW)
   });
+  assert.equal(result.projectIndex, 0);
   assert.equal(state.checkpoints.length, 1);
+});
+
+test("prepareQuickCheckpointReview streams project lookup and returns its stable position", () => {
+  const projects = [
+    { id: "other", title: "Other", status: "active", updatedAt: iso(NOW - HOUR) },
+    { id: "project-current", title: "Focus", status: "active", updatedAt: iso(NOW - HOUR) }
+  ];
+  Object.defineProperty(projects, "find", { value() { throw new Error("project find must not be used"); } });
+  const state = stateWith({
+    projects,
+    sessions: [],
+    checkpoints: [{
+      id: "quick",
+      projectId: "project-current",
+      captureMode: "quick",
+      createdAt: iso(NOW - HOUR)
+    }]
+  });
+
+  const result = prepareQuickCheckpointReview(state, {
+    projectId: "project-current",
+    sourceCheckpointId: "quick",
+    summary: "verified",
+    nextAction: "continue"
+  }, NOW);
+
+  assert.equal(result.projectIndex, 1);
+  assert.equal(result.projectTitle, "Focus");
 });
 
 test("prepareQuickCheckpointReview rejects stale forms, placeholders, and unavailable targets", () => {
