@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { buildReentryBrief, copyPlainText } from "../src/core/share.js";
+import { WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../src/core/share.js";
 
 describe("buildReentryBrief", () => {
   test("builds a focused bounded plain-text handoff", () => {
@@ -88,6 +88,42 @@ describe("buildReentryBrief", () => {
     });
     assert.match(projectedClear, /未决事项：当前没有未解决的问题或阻塞。/u);
     assert.doesNotMatch(projectedClear, /曾记录/u);
+  });
+});
+
+describe("buildWorkspaceHandoff", () => {
+  test("builds a bounded multi-project handoff with attention and weekly context", () => {
+    const rankedProjects = Array.from({ length: 8 }, (_, index) => ({
+      project: { title: `Project ${index + 1}`, status: index === 1 ? "blocked" : "active" },
+      activeSession: index === 0 ? { intention: "Finish the critical path" } : null,
+      nextAction: `Action ${index + 1}`,
+      completeness: 90 - index
+    }));
+    const handoff = buildWorkspaceHandoff({
+      rankedProjects,
+      rankedTotal: 8,
+      weeklyReview: { focusedMinutes: 95, sessions: 3, records: 12, recoverability: 77 },
+      attentionDeck: [{ project: { title: "Project 2" }, reasons: ["有未解决阻塞", "已离开 9 天"] }]
+    }, Date.parse("2026-08-28T08:00:00.000Z"));
+
+    assert.match(handoff, /生成时间：2026-08-28T08:00:00\.000Z/u);
+    assert.match(handoff, /当前会话：Project 1｜Finish the critical path/u);
+    assert.match(handoff, /2\. Project 2｜受阻｜复航 89%/u);
+    assert.match(handoff, /Project 2：有未解决阻塞；已离开 9 天/u);
+    assert.match(handoff, /七日航迹：95 分钟 · 3 段会话 · 12 条轨迹 · 平均复航 77%/u);
+    assert.equal((handoff.match(/^\d+\. /gmu) ?? []).length, WORKSPACE_HANDOFF_PROJECT_LIMIT);
+    assert.doesNotMatch(handoff, /Project 6/u);
+  });
+
+  test("fails clearly for missing input and handles empty or malformed optional metrics", () => {
+    assert.throws(() => buildWorkspaceHandoff(null), /缺少可生成/u);
+    assert.throws(() => buildWorkspaceHandoff({ rankedProjects: [] }, "invalid"), /生成时间无效/u);
+    const handoff = buildWorkspaceHandoff({ rankedProjects: [], rankedTotal: -2 }, 0);
+    assert.match(handoff, /未归档项目：0/u);
+    assert.match(handoff, /当前会话：无/u);
+    assert.match(handoff, /当前没有可复航项目/u);
+    assert.match(handoff, /当前没有明显的现场缺口/u);
+    assert.match(handoff, /平均复航 0%/u);
   });
 });
 

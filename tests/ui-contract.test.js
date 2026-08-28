@@ -286,6 +286,16 @@ test("reentry brief copy is accessible and ignores stale asynchronous completion
   assert.match(source, /this\.#clipboardRequestGate\.invalidate\(\)/u);
 });
 
+test("dashboard exposes a bounded accessible workspace handoff copy action", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /data-action="copy-workspace-handoff" aria-label="复制工作区交接清单"/u);
+  assert.match(source, /if \(action === "copy-workspace-handoff"\) this\.#copyWorkspaceHandoff\(\)/u);
+  assert.match(source, /rankedLimit: WORKSPACE_HANDOFF_PROJECT_LIMIT/u);
+  assert.match(source, /copyPlainText\(buildWorkspaceHandoff\(overview, now\)\)/u);
+  assert.match(source, /const isCurrentRequest = this\.#clipboardRequestGate\.begin\(\)/u);
+});
+
 test("checkpoint-only open loops are labeled as historical instead of disappearing", async () => {
   const source = await readFile(new URL("../src/ui/app.js", import.meta.url), "utf8");
 

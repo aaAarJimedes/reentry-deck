@@ -13,7 +13,7 @@ import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js"
 import { triggerBlobDownload } from "../core/download.js";
 import { buildWorkspaceCounts, buildWorkspaceOverview } from "../core/insights.js";
 import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepareSessionStart } from "../core/reentry.js";
-import { buildReentryBrief, copyPlainText } from "../core/share.js";
+import { WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, inspectSession, locateActiveSessionContext, prepareQuickCheckpointReview, prepareQuickDock } from "../core/session.js";
 import {
@@ -351,6 +351,7 @@ export class ReentryApp {
           <h1>从清楚的地方，重新开始。</h1>
           <p class="lede">这里不催促你做更多，只帮你找回上次离开时已经想清楚的东西。</p>
         </div>
+        <button class="secondary-button" type="button" data-action="copy-workspace-handoff" aria-label="复制工作区交接清单">${icon("copy")} 复制交接清单</button>
       </section>
       ${lead ? this.#renderHero(lead, activeSession) : ""}
       <section class="metrics-grid" aria-label="工作区概览">
@@ -844,6 +845,7 @@ export class ReentryApp {
     if (action === "restore-project") this.#restoreProject(control.dataset.projectId);
     if (action === "load-sample") this.#loadSample();
     if (action === "export-data") this.#exportData();
+    if (action === "copy-workspace-handoff") this.#copyWorkspaceHandoff();
     if (action === "copy-reentry-brief") this.#copyReentryBrief(control.dataset.projectId);
     if (action === "choose-import") this.#root.querySelector("#import-file")?.click();
     if (action === "set-theme") this.#setTheme(control.dataset.theme);
@@ -1450,6 +1452,20 @@ export class ReentryApp {
       this.#toast("复航简报已复制到剪贴板。 ");
     } catch (error) {
       if (isCurrentRequest()) this.#toast(`无法复制简报：${error.message}`, "error");
+    }
+  }
+
+  async #copyWorkspaceHandoff() {
+    const isCurrentRequest = this.#clipboardRequestGate.begin();
+    try {
+      const now = Date.now();
+      const overview = buildWorkspaceOverview(this.#store.getState(), now, { rankedLimit: WORKSPACE_HANDOFF_PROJECT_LIMIT });
+      await copyPlainText(buildWorkspaceHandoff(overview, now));
+      if (!isCurrentRequest()) return;
+      this.#announce("工作区交接清单已复制");
+      this.#toast("工作区交接清单已复制到剪贴板。 ");
+    } catch (error) {
+      if (isCurrentRequest()) this.#toast(`无法复制交接清单：${error.message}`, "error");
     }
   }
 
