@@ -88,6 +88,12 @@ export function userFacingErrorMessage(error, fallback = "操作未完成，请�
   return typeof error?.message === "string" && error.message.trim() ? error.message : fallback;
 }
 
+export const IMPORT_FILE_NAME_LIMIT = 160;
+
+export function importFileLabel(file) {
+  return compactText(file?.name, IMPORT_FILE_NAME_LIMIT) || "未命名备份.json";
+}
+
 const ICONS = {
   home: '<path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10M9 20v-6h6v6"/>',
   archive: '<path d="M4 7h16v13H4zM3 3h18v4H3zM9 11h6"/>',
@@ -1657,7 +1663,7 @@ export class ReentryApp {
         preview,
         source: preview.source,
         baseState: this.#store.getState(),
-        fileName: file.name || "未命名备份.json",
+        fileName: importFileLabel(file),
         fileSize: file.size,
         refreshed: false
       };
