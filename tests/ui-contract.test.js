@@ -340,6 +340,25 @@ test("home recommendations rank only the requested visible window", async () => 
   assert.match(source, /buildCollectionWindow\(ranked, rankedLimit, rankedTotal\)/u);
 });
 
+test("pagination memory resets with workspace identity and stays bounded across project history", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const destroy = source.match(/destroy\(\) \{([\s\S]*?)\n  \}\n\n  render/u)?.[1] ?? "";
+  const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
+  const expand = source.match(/#showMoreTimeline\(projectId\) \{([\s\S]*?)\n  \}\n\n  #showMoreProjects/u)?.[1] ?? "";
+
+  assert.match(source, /const MAX_REMEMBERED_TIMELINES = 24/u);
+  assert.match(render, /this\.#workspaceCreatedAt !== state\.meta\.createdAt/u);
+  assert.match(render, /this\.#timelineLimits\.clear\(\)/u);
+  assert.match(render, /this\.#collectionLimits\.clear\(\)/u);
+  assert.match(expand, /this\.#timelineLimits\.delete\(projectId\)/u);
+  assert.match(expand, /this\.#timelineLimits\.size > MAX_REMEMBERED_TIMELINES/u);
+  assert.match(expand, /this\.#timelineLimits\.keys\(\)\.next\(\)\.value/u);
+  assert.match(destroy, /this\.#timelineLimits\.clear\(\)/u);
+  assert.match(destroy, /this\.#collectionLimits\.clear\(\)/u);
+  assert.match(destroy, /this\.#searchIndexState = null/u);
+  assert.match(destroy, /this\.#searchIndex = null/u);
+});
+
 test("crumb actions carry their committed result out of the transaction without a second scan", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const resolutionHandler = source.match(/#toggleCrumbResolution\(crumbId, context\) \{([\s\S]*?)\n  \}\n\n  #toggleCrumbPin/u)?.[1] ?? "";

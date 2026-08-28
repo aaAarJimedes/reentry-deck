@@ -52,6 +52,7 @@ const COLOR_LABELS = {
 
 const MAX_VISIBLE_TOASTS = 4;
 const MAX_TOAST_MESSAGE_LENGTH = 500;
+const MAX_REMEMBERED_TIMELINES = 24;
 
 export function resolveThemeAppearance(theme, prefersDark = false) {
   const dark = theme === "dark" || (theme === "system" && prefersDark);
@@ -104,6 +105,7 @@ export class ReentryApp {
   #clipboardRequestGate = createLatestRequestGate();
   #timelineLimits = new Map();
   #collectionLimits = new Map();
+  #workspaceCreatedAt = null;
   #searchIndexState = null;
   #searchIndex = null;
   #toasts = [];
@@ -170,6 +172,11 @@ export class ReentryApp {
     this.#pendingCheckpointSessionId = null;
     this.#activeSession = null;
     this.#acknowledgedStaleSessionId = null;
+    this.#timelineLimits.clear();
+    this.#collectionLimits.clear();
+    this.#workspaceCreatedAt = null;
+    this.#searchIndexState = null;
+    this.#searchIndex = null;
     this.#eventController.abort();
     this.#colorSchemeQuery?.removeEventListener?.("change", this.#colorSchemeListener);
     this.#colorSchemeQuery = null;
@@ -189,6 +196,11 @@ export class ReentryApp {
     const captureDraft = preserveDialog ? this.#captureInlineCaptureDraft() : null;
     this.#noticeQueue.push(...this.#store.drainNotices());
     const state = this.#store.getState();
+    if (this.#workspaceCreatedAt !== state.meta.createdAt) {
+      this.#workspaceCreatedAt = state.meta.createdAt;
+      this.#timelineLimits.clear();
+      this.#collectionLimits.clear();
+    }
     const now = Date.now();
     const reopenImportPreview = Boolean(this.#root.querySelector("#import-preview-dialog")?.open && this.#pendingImport);
     if (this.#pendingImport && this.#pendingImport.baseState !== state) {
@@ -1474,7 +1486,11 @@ export class ReentryApp {
     if (!current.remaining) return;
     const expanded = buildTimelineWindow(this.#store.getState().crumbs, projectId, current.nextLimit);
     const firstNewItem = expanded.items[current.shown];
+    this.#timelineLimits.delete(projectId);
     this.#timelineLimits.set(projectId, expanded.shown);
+    while (this.#timelineLimits.size > MAX_REMEMBERED_TIMELINES) {
+      this.#timelineLimits.delete(this.#timelineLimits.keys().next().value);
+    }
     if (firstNewItem) this.#focusSelector = `[data-crumb-id="${CSS.escape(firstNewItem.id)}"]`;
     this.render();
     this.#announce(`已显示 ${expanded.shown} 条轨迹，还剩 ${expanded.remaining} 条`);
