@@ -1,6 +1,7 @@
 import { IMPORT_LIMITS, compactText } from "./model.js";
 
 export const WORKSPACE_HANDOFF_PROJECT_LIMIT = 5;
+export const WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT = 20;
 export const REENTRY_BRIEF_SIGNAL_LIMIT = 3;
 export const REENTRY_BRIEF_GAP_LIMIT = 6;
 const WORKSPACE_HANDOFF_ATTENTION_LIMIT = 4;
@@ -28,7 +29,8 @@ export function buildWorkspaceHandoff(overview, now = Date.now()) {
   const review = overview.weeklyReview ?? {};
   const attention = Array.isArray(overview.attentionDeck) ? overview.attentionDeck : [];
   let activeCard = null;
-  for (const card of ranked) {
+  for (let index = 0; index < ranked.length && index < WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT; index += 1) {
+    const card = ranked[index];
     if (card?.project && card.activeSession) {
       activeCard = card;
       break;
@@ -43,7 +45,8 @@ export function buildWorkspaceHandoff(overview, now = Date.now()) {
     "优先复航："
   ];
   let projectCount = 0;
-  for (const card of ranked) {
+  for (let index = 0; index < ranked.length && index < WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT; index += 1) {
+    const card = ranked[index];
     if (projectCount >= WORKSPACE_HANDOFF_PROJECT_LIMIT) break;
     if (!card?.project) continue;
     projectCount += 1;
@@ -56,7 +59,8 @@ export function buildWorkspaceHandoff(overview, now = Date.now()) {
   if (!projectCount) lines.push("- 当前没有可复航项目");
   lines.push("", "值得核对：");
   let attentionCount = 0;
-  for (const item of attention) {
+  for (let index = 0; index < attention.length && index < WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT; index += 1) {
+    const item = attention[index];
     if (attentionCount >= WORKSPACE_HANDOFF_ATTENTION_LIMIT) break;
     if (!item?.project) continue;
     attentionCount += 1;

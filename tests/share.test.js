@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { REENTRY_BRIEF_GAP_LIMIT, REENTRY_BRIEF_SIGNAL_LIMIT, WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../src/core/share.js";
+import { REENTRY_BRIEF_GAP_LIMIT, REENTRY_BRIEF_SIGNAL_LIMIT, WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT, WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../src/core/share.js";
 
 describe("buildReentryBrief", () => {
   test("builds a focused bounded plain-text handoff", () => {
@@ -162,6 +162,31 @@ describe("buildWorkspaceHandoff", () => {
     assert.match(handoff, /1\. Valid｜暂泊｜复航 0%/u);
     assert.match(handoff, /Valid：one；two；three/u);
     assert.ok(handoff.length < 3_000);
+  });
+
+  test("bounds malformed ranked and attention input scans independently of output limits", () => {
+    const rankedProjects = new Array(WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT).fill(null);
+    rankedProjects[WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT - 1] = {
+      project: { title: "Last safe project", status: "active" },
+      activeSession: { intention: "Resume safely" },
+      nextAction: "Open the plan",
+      completeness: 80
+    };
+    Object.defineProperty(rankedProjects, WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT, { get() { throw new Error("ranked scan exceeded"); } });
+    rankedProjects.length = 50_000;
+    const attentionDeck = new Array(WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT).fill(null);
+    attentionDeck[WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT - 1] = {
+      project: { title: "Last safe project" },
+      reasons: ["Needs review"]
+    };
+    Object.defineProperty(attentionDeck, WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT, { get() { throw new Error("attention scan exceeded"); } });
+    attentionDeck.length = 50_000;
+
+    const handoff = buildWorkspaceHandoff({ rankedProjects, rankedTotal: 1, attentionDeck }, 0);
+
+    assert.match(handoff, /当前会话：Last safe project｜Resume safely/u);
+    assert.match(handoff, /1\. Last safe project｜推进中｜复航 80%/u);
+    assert.match(handoff, /Last safe project：Needs review/u);
   });
 });
 
