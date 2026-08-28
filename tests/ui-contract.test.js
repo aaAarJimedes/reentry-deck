@@ -166,6 +166,18 @@ test("emergency docking is discoverable, modal-safe, and project-contextual", as
   assert.match(source, /aria-label="快速停靠：\$\{attr\(controlContext\(project\.title\)\)\}" title="快速停靠（Ctrl\/⌘ Shift S）"/u);
 });
 
+test("quick capture project selection stays searchable and DOM-bounded", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /data-control="quick-project-filter"/u);
+  assert.match(source, /aria-describedby="quick-project-filter-status"/u);
+  assert.match(source, /data-quick-project-status aria-live="polite"/u);
+  assert.match(source, /buildQuickCaptureProjectWindow\(state,/u);
+  assert.match(source, /renderQuickCaptureProjectOptions\(captureWindow\.items/u);
+  assert.match(source, /select\.disabled = captureWindow\.items\.length === 0/u);
+  assert.doesNotMatch(source, /const captureProjects = state\.projects\.filter/u);
+});
+
 test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

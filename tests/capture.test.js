@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { prepareQuickCapture, projectNextActionFromCrumb } from "../src/core/capture.js";
+import {
+  QUICK_CAPTURE_PROJECT_LIMIT,
+  buildQuickCaptureProjectWindow,
+  prepareQuickCapture,
+  projectNextActionFromCrumb
+} from "../src/core/capture.js";
 import { IMPORT_LIMITS, createEmptyState, createProject, createSession } from "../src/core/model.js";
 
 const NOW = Date.parse("2026-08-28T04:00:00.000Z");
@@ -67,4 +72,63 @@ test("projectNextActionFromCrumb preserves full evidence while bounding the proj
   assert.equal(projection.length, IMPORT_LIMITS.nextAction);
   assert.ok(projection.endsWith("…"));
   assert.equal(projectNextActionFromCrumb({ type: "note", text: fullText }), null);
+});
+
+describe("buildQuickCaptureProjectWindow", () => {
+  test("prioritizes context, excludes archives, and otherwise orders by recent activity", () => {
+    const state = createEmptyState(NOW);
+    state.projects.push(
+      createProject({ id: "older", title: "Older", lastOpenedAt: "2026-08-20T00:00:00.000Z" }, NOW),
+      createProject({ id: "preferred", title: "Preferred", lastOpenedAt: "2026-08-19T00:00:00.000Z" }, NOW),
+      createProject({ id: "newer", title: "Newer", lastOpenedAt: "2026-08-28T00:00:00.000Z" }, NOW),
+      createProject({ id: "archived", title: "Archived", status: "archived", lastOpenedAt: "2026-08-29T00:00:00.000Z" }, NOW)
+    );
+
+    const window = buildQuickCaptureProjectWindow(state, { preferredIds: ["preferred"] });
+
+    assert.deepEqual(window.items.map((project) => project.id), ["preferred", "newer", "older"]);
+    assert.equal(window.total, 3);
+    assert.equal(window.matched, 3);
+  });
+
+  test("ranks exact, prefix, title, and contextual matches while keeping the result bounded", () => {
+    const state = createEmptyState(NOW);
+    state.projects.push(
+      createProject({ id: "context", title: "Other", description: "Launch alpha" }, NOW),
+      createProject({ id: "contains", title: "My Alpha Work" }, NOW),
+      createProject({ id: "prefix", title: "Alpha Notes" }, NOW),
+      createProject({ id: "exact", title: "Alpha" }, NOW)
+    );
+
+    const window = buildQuickCaptureProjectWindow(state, { query: " alpha ", limit: 3 });
+
+    assert.deepEqual(window.items.map((project) => project.id), ["exact", "prefix", "contains"]);
+    assert.equal(window.matched, 4);
+    assert.equal(window.items.length, 3);
+  });
+
+  test("finds a late project at the record boundary without source array helpers", () => {
+    const projects = Array.from({ length: 50_000 }, (_, index) => ({
+      id: `project-${String(index).padStart(5, "0")}`,
+      title: index === 49_999 ? "Needle project" : `Ordinary ${index}`,
+      description: "",
+      nextAction: "",
+      status: "active",
+      updatedAt: new Date(NOW - index).toISOString(),
+      lastOpenedAt: new Date(NOW - index).toISOString()
+    }));
+    for (const method of ["filter", "map", "sort", "some", "find"]) {
+      Object.defineProperty(projects, method, {
+        value: () => { throw new Error(`source array ${method} must not be used`); },
+        configurable: true
+      });
+    }
+
+    const window = buildQuickCaptureProjectWindow({ projects }, { query: "needle", limit: 50_000 });
+
+    assert.equal(window.total, 50_000);
+    assert.equal(window.matched, 1);
+    assert.equal(window.items[0].id, "project-49999");
+    assert.ok(window.items.length <= QUICK_CAPTURE_PROJECT_LIMIT);
+  });
 });

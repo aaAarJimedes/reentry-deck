@@ -907,6 +907,7 @@ h3 { font-size: 17px; }
 .field > span,
 .field-label { color: var(--ink-soft); font-size: 11px; font-weight: 700; }
 .field small { color: var(--ink-soft); }
+.field-hint { margin: -3px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.5; }
 .check-row { display: flex; align-items: start; gap: 10px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; }
 .check-row input { width: 17px; height: 17px; min-height: 0; flex: 0 0 auto; margin: 3px 0 0; padding: 0; accent-color: var(--forest-soft); }
 .check-row strong,

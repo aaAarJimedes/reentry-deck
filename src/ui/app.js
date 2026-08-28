@@ -8,7 +8,7 @@ import {
   createSession,
   isoAtOrAfter
 } from "../core/model.js";
-import { prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture.js";
+import { buildQuickCaptureProjectWindow, prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture.js";
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { triggerBlobDownload } from "../core/download.js";
 import { buildWorkspaceCounts, buildWorkspaceOverview } from "../core/insights.js";
@@ -674,16 +674,13 @@ export class ReentryApp {
   #renderDialogs(project, activeSession) {
     const colors = { fern: "#2f6b61", amber: "#d99752", clay: "#b9644d", sky: "#568695", plum: "#785e76", slate: "#65736f" };
     const state = this.#store.getState();
-    const captureProjects = state.projects.filter((item) => item.status !== "archived");
     const pendingArchiveProject = state.projects.find((item) => item.id === this.#pendingArchiveId);
     const reviewCheckpoint = project ? buildReentryCard(state, project.id)?.checkpoint : null;
-    const captureProjectId = captureProjects.some((item) => item.id === project?.id)
-      ? project.id
-      : captureProjects.some((item) => item.id === activeSession?.projectId)
-        ? activeSession.projectId
-        : captureProjects.some((item) => item.id === state.ui.selectedProjectId)
-          ? state.ui.selectedProjectId
-          : captureProjects[0]?.id;
+    const captureWindow = buildQuickCaptureProjectWindow(state, {
+      preferredIds: [project?.id, activeSession?.projectId, state.ui.selectedProjectId]
+    });
+    const captureProjectId = captureWindow.items[0]?.id;
+    const captureProjectOptions = renderQuickCaptureProjectOptions(captureWindow.items, captureProjectId, activeSession?.projectId);
     return `
       <dialog id="new-project-dialog" aria-labelledby="new-project-title">
         <div class="dialog-header"><div><h2 id="new-project-title">建立工作现场</h2><p>只需一个清楚的名字；其他信息以后再补也可以。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
@@ -698,7 +695,9 @@ export class ReentryApp {
       <dialog id="quick-capture-dialog" aria-labelledby="quick-capture-title">
         <div class="dialog-header"><div><h2 id="quick-capture-title">跨项目快捷记录</h2><p>不离开当前页面，把刚出现的证据放回正确现场。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <form class="dialog-body" data-form="quick-capture" autocomplete="off">
-          <label class="field"><span class="required">目标项目</span><select name="projectId" required>${captureProjects.map((item) => `<option value="${attr(item.id)}" ${item.id === captureProjectId ? "selected" : ""}>${escapeHTML(item.title)}${activeSession?.projectId === item.id ? " · 会话中" : ""}</option>`).join("")}</select></label>
+          <label class="field"><span>筛选目标项目</span><input type="search" data-control="quick-project-filter" maxlength="${IMPORT_LIMITS.projectTitle}" placeholder="输入项目名称、说明或下一步" aria-describedby="quick-project-filter-status" /></label>
+          <p class="field-hint" id="quick-project-filter-status" data-quick-project-status aria-live="polite">${escapeHTML(quickCaptureProjectStatus(captureWindow))}</p>
+          <label class="field"><span class="required">目标项目</span><select name="projectId" required ${captureWindow.items.length ? "" : "disabled"}>${captureProjectOptions}</select></label>
           <label class="field"><span class="required">证据类型</span><select name="type">${Object.entries(CRUMB_LABELS).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></label>
           <label class="field"><span class="required">刚刚发生了什么</span><textarea name="text" maxlength="${IMPORT_LIMITS.crumbText}" placeholder="一句话即可；它会保留真实记录时间。" required autofocus></textarea></label>
           <label class="check-row"><input type="checkbox" name="pinned" /><span><strong>同时设为置顶航标</strong><small>适合长期约束、关键决定或回来时必须先看的线索。</small></span></label>
@@ -872,9 +871,28 @@ export class ReentryApp {
   #onInput(event) {
     if (event.isComposing) return;
     const control = event.target;
-    if (!control.matches('[data-control="workspace-search"]')) return;
-    const output = this.#root.querySelector("[data-search-results]");
-    if (output) output.innerHTML = this.#renderSearchResults(control.value);
+    if (control.matches('[data-control="workspace-search"]')) {
+      const output = this.#root.querySelector("[data-search-results]");
+      if (output) output.innerHTML = this.#renderSearchResults(control.value);
+      return;
+    }
+    if (control.matches('[data-control="quick-project-filter"]')) this.#updateQuickCaptureProjects(control);
+  }
+
+  #updateQuickCaptureProjects(control) {
+    const form = control.closest('[data-form="quick-capture"]');
+    const select = form?.elements?.projectId;
+    const status = form?.querySelector("[data-quick-project-status]");
+    if (!select) return;
+    const state = this.#store.getState();
+    const activeSession = state.sessions.find((item) => item.status === "active") ?? null;
+    const captureWindow = buildQuickCaptureProjectWindow(state, {
+      query: control.value,
+      preferredIds: [select.value, activeSession?.projectId, state.ui.selectedProjectId]
+    });
+    select.innerHTML = renderQuickCaptureProjectOptions(captureWindow.items, captureWindow.items[0]?.id, activeSession?.projectId);
+    select.disabled = captureWindow.items.length === 0;
+    if (status) status.textContent = quickCaptureProjectStatus(captureWindow);
   }
 
   #runUserAction(action) {
@@ -1617,6 +1635,25 @@ function renderChangedProjectList(projects, total) {
   if (!total) return "";
   const hidden = total - projects.length;
   return `<section data-kind="changed"><h3>同 ID 更新 <span>${total}</span></h3><ul>${projects.map((project) => `<li><strong>${escapeHTML(project.beforeTitle === project.afterTitle ? project.afterTitle : `${project.beforeTitle} → ${project.afterTitle}`)}</strong><small>${escapeHTML(project.beforeStatus === project.afterStatus ? PROJECT_STATUS_LABELS[project.afterStatus] ?? project.afterStatus : `${PROJECT_STATUS_LABELS[project.beforeStatus] ?? project.beforeStatus} → ${PROJECT_STATUS_LABELS[project.afterStatus] ?? project.afterStatus}`)}</small></li>`).join("")}</ul>${hidden ? `<p>另有 ${hidden} 个项目未逐项展开</p>` : ""}</section>`;
+}
+
+function renderQuickCaptureProjectOptions(projects, selectedId, activeProjectId) {
+  let html = "";
+  for (const project of projects) {
+    html += `<option value="${attr(project.id)}" ${project.id === selectedId ? "selected" : ""}>${escapeHTML(project.title)}${project.id === activeProjectId ? " · 会话中" : ""}</option>`;
+  }
+  return html;
+}
+
+function quickCaptureProjectStatus(window) {
+  if (window.query) {
+    if (!window.matched) return `没有匹配“${window.query}”的未归档项目。`;
+    return `找到 ${window.matched} 个匹配项目，显示前 ${window.items.length} 个。`;
+  }
+  if (window.total > window.items.length) {
+    return `显示 ${window.items.length} / ${window.total} 个未归档项目；输入关键词可查找其余项目。`;
+  }
+  return `共 ${window.total} 个未归档项目。`;
 }
 
 function pulseMetric(value, label, detail) {
