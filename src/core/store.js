@@ -2,11 +2,12 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSerializedSnapshotData, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.137.0";
+export const APP_VERSION = "0.138.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
 const WRITE_LOCK_TTL_MS = 5_000;
+const STORAGE_ENTRY_SCAN_LIMIT = 10_000;
 
 export class AppStore {
   #storage;
@@ -481,19 +482,26 @@ export function inspectStorageUsage(storage, referenceBytes = STORAGE_REFERENCE_
     ratio: 0,
     status: "unavailable"
   });
-  if (!storage || !Number.isSafeInteger(storage.length) || typeof storage.key !== "function") return unavailable;
+  if (!storage || typeof storage.key !== "function" || typeof storage.getItem !== "function") return unavailable;
   if (!Number.isSafeInteger(referenceBytes) || referenceBytes <= 0) return unavailable;
   try {
+    const entryCount = storage.length;
+    if (!Number.isSafeInteger(entryCount) || entryCount < 0 || entryCount > STORAGE_ENTRY_SCAN_LIMIT) return unavailable;
     let appBytes = 0;
     let totalBytes = 0;
-    for (let index = 0; index < storage.length; index += 1) {
+    for (let index = 0; index < entryCount; index += 1) {
       const key = storage.key(index);
       if (typeof key !== "string") continue;
       const value = storage.getItem(key);
       if (value === null) continue;
+      if (typeof value !== "string") return unavailable;
       const bytes = (key.length + value.length) * 2;
+      if (!Number.isSafeInteger(bytes) || !Number.isSafeInteger(totalBytes + bytes)) return unavailable;
       totalBytes += bytes;
-      if (key.startsWith("reentry-deck/")) appBytes += bytes;
+      if (key.startsWith("reentry-deck/")) {
+        if (!Number.isSafeInteger(appBytes + bytes)) return unavailable;
+        appBytes += bytes;
+      }
     }
     const ratio = totalBytes / referenceBytes;
     return Object.freeze({

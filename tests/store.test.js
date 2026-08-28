@@ -91,6 +91,30 @@ describe("MemoryStorage", () => {
       assert.equal(Object.isFrozen(result), true);
     }
   });
+
+  test("storage inspection snapshots a bounded trustworthy entry count", () => {
+    let lengthReads = 0;
+    const growing = {
+      get length() {
+        lengthReads += 1;
+        return lengthReads === 1 ? 1 : Number.MAX_SAFE_INTEGER;
+      },
+      key(index) { return index === 0 ? "reentry-deck/state" : null; },
+      getItem() { return "ok"; }
+    };
+    const measured = inspectStorageUsage(growing, 1_000);
+
+    assert.equal(measured.available, true);
+    assert.equal(lengthReads, 1);
+    assert.equal(measured.appBytes, ("reentry-deck/state".length + 2) * 2);
+    for (const unsafe of [
+      { get length() { throw new Error("denied"); }, key() {}, getItem() {} },
+      { length: 10_001, key() {}, getItem() {} },
+      { length: 1, key() { return "reentry-deck/state"; }, getItem() { return 42; } }
+    ]) {
+      assert.equal(inspectStorageUsage(unsafe).available, false);
+    }
+  });
 });
 
 describe("AppStore loading and recovery", () => {
