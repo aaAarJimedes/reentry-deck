@@ -265,6 +265,44 @@ test("deriveQuickDockCheckpointInput bounds projections and omits resolved loops
   assert.doesNotMatch(checkpoint.openLoops, /已经解决/);
 });
 
+test("quick docking bounds open-loop selection at the 50,000-record workspace edge", () => {
+  const crumbs = Array.from({ length: 49_998 }, (_, index) => ({
+    id: `loop-${index}`,
+    projectId: "project-current",
+    sessionId: "session-current",
+    type: "question",
+    text: "问",
+    createdAt: iso(NOW - HOUR)
+  }));
+  const state = stateWith({ crumbs });
+  const originalMap = Array.prototype.map;
+  const originalFilter = Array.prototype.filter;
+  const originalSort = Array.prototype.sort;
+  let largestSortedLength = 0;
+  Array.prototype.map = function () {
+    throw new Error("quick docking must not map the full evidence history");
+  };
+  Array.prototype.filter = function () {
+    throw new Error("quick docking must not filter the full evidence history");
+  };
+  Array.prototype.sort = function (...args) {
+    largestSortedLength = Math.max(largestSortedLength, this.length);
+    return originalSort.apply(this, args);
+  };
+  let checkpoint;
+  try {
+    checkpoint = deriveQuickDockCheckpointInput(state, "session-current", NOW);
+  } finally {
+    Array.prototype.map = originalMap;
+    Array.prototype.filter = originalFilter;
+    Array.prototype.sort = originalSort;
+  }
+
+  assert.equal(checkpoint.openLoops.length, 800);
+  assert.ok(checkpoint.openLoops.endsWith("…"));
+  assert.equal(largestSortedLength, 401);
+});
+
 test("prepareQuickCheckpointReview creates a detached reliable project checkpoint", () => {
   const state = stateWith({
     projects: [{ id: "project-current", title: "Focus", status: "active", updatedAt: iso(NOW - HOUR) }],

@@ -12,6 +12,7 @@ export const QUICK_DOCK_RETURN_HINT = "这是快速停靠生成的低置信度�
 
 const SUBSTANTIVE_CRUMB_TYPES = new Set(["note", "discovery", "decision"]);
 const OPEN_LOOP_CRUMB_TYPES = new Set(["question", "blocker"]);
+const OPEN_LOOP_EVIDENCE_LIMIT = Math.floor(IMPORT_LIMITS.openLoops / 2) + 1;
 
 export function isActiveSession(session) {
   return session?.status === "active";
@@ -69,8 +70,13 @@ export function inspectActiveSessionInvariant(state, now = Date.now(), options =
     };
   }
 
-  const activeSessions = state.sessions.filter(isActiveSession);
-  const staleSessions = activeSessions.filter((session) => isSessionStale(session, now, options));
+  const activeSessions = [];
+  const staleSessions = [];
+  for (const session of state.sessions) {
+    if (!isActiveSession(session)) continue;
+    activeSessions.push(session);
+    if (isSessionStale(session, now, options)) staleSessions.push(session);
+  }
   const hasConflict = activeSessions.length > 1;
 
   return {
@@ -97,39 +103,66 @@ export function deriveQuickDockCheckpointInput(state, sessionId, now = Date.now(
     throw new Error("指定会话不是当前唯一活动会话。");
   }
 
-  const project = arrayOf(state.projects).find((item) => item?.id === activeSession.projectId);
+  const project = findById(arrayOf(state.projects), activeSession.projectId);
   if (!project) throw new Error("活动会话关联的项目不存在，无法生成快速停靠检查点。");
 
-  const currentSessionCrumbs = newestFirst(
-    arrayOf(state.crumbs).filter((crumb) => (
-      crumb?.sessionId === activeSession.id
-      && crumb?.projectId === project.id
-      && cleanText(crumb.text)
-    ))
-  );
-  const summaryCrumb = currentSessionCrumbs.find((crumb) => SUBSTANTIVE_CRUMB_TYPES.has(crumb.type));
-  const nextCrumb = currentSessionCrumbs.find((crumb) => crumb.type === "next");
-  const openLoopTexts = currentSessionCrumbs
-    .filter((crumb) => OPEN_LOOP_CRUMB_TYPES.has(crumb.type) && !crumb.resolvedAt)
-    .map((crumb) => cleanText(crumb.text));
+  let summaryCrumb = null;
+  let summaryTimestamp = Number.NaN;
+  let summaryIndex = -1;
+  let nextCrumb = null;
+  let nextTimestamp = Number.NaN;
+  let nextIndex = -1;
+  const openLoops = [];
+  const crumbs = arrayOf(state.crumbs);
+  for (let index = 0; index < crumbs.length; index += 1) {
+    const crumb = crumbs[index];
+    if (crumb?.sessionId !== activeSession.id || crumb?.projectId !== project.id) continue;
+    const text = cleanText(crumb.text);
+    if (!text) continue;
+    const timestamp = toTimestamp(crumb.createdAt);
+    if (SUBSTANTIVE_CRUMB_TYPES.has(crumb.type)
+      && compareEvidencePosition(timestamp, index, summaryTimestamp, summaryIndex) < 0) {
+      summaryCrumb = crumb;
+      summaryTimestamp = timestamp;
+      summaryIndex = index;
+    }
+    if (crumb.type === "next" && compareEvidencePosition(timestamp, index, nextTimestamp, nextIndex) < 0) {
+      nextCrumb = crumb;
+      nextTimestamp = timestamp;
+      nextIndex = index;
+    }
+    if (OPEN_LOOP_CRUMB_TYPES.has(crumb.type) && !crumb.resolvedAt) {
+      retainNewestOpenLoop(openLoops, { text, timestamp, index });
+    }
+  }
 
   return {
     projectId: project.id,
     sessionId: activeSession.id,
     summary: compactText(summaryCrumb?.text, IMPORT_LIMITS.checkpointSummary) || QUICK_DOCK_NOT_RECORDED.summary,
     nextAction: compactText(nextCrumb?.text, IMPORT_LIMITS.nextAction) || compactText(project.nextAction, IMPORT_LIMITS.nextAction) || QUICK_DOCK_NOT_RECORDED.nextAction,
-    openLoops: compactText(openLoopTexts.join("；"), IMPORT_LIMITS.openLoops) || QUICK_DOCK_NOT_RECORDED.openLoops,
+    openLoops: compactText(joinNewestOpenLoops(openLoops), IMPORT_LIMITS.openLoops) || QUICK_DOCK_NOT_RECORDED.openLoops,
     returnHint: QUICK_DOCK_RETURN_HINT,
     captureMode: "quick"
   };
 }
 
 export function prepareQuickCheckpointReview(state, input = {}, now = Date.now()) {
-  const project = arrayOf(state?.projects).find((item) => item?.id === input.projectId);
+  const project = findById(arrayOf(state?.projects), input.projectId);
   if (!project || project.status === "archived") throw new Error("项目不可用，无法复核快速检查点。");
-  const latestCheckpoint = newestFirst(
-    arrayOf(state?.checkpoints).filter((item) => item?.projectId === project.id)
-  )[0];
+  let latestCheckpoint = null;
+  let latestTimestamp = Number.NaN;
+  let latestIndex = -1;
+  const checkpoints = arrayOf(state?.checkpoints);
+  for (let index = 0; index < checkpoints.length; index += 1) {
+    const item = checkpoints[index];
+    if (item?.projectId !== project.id) continue;
+    const timestamp = toTimestamp(item.createdAt);
+    if (compareEvidencePosition(timestamp, index, latestTimestamp, latestIndex) >= 0) continue;
+    latestCheckpoint = item;
+    latestTimestamp = timestamp;
+    latestIndex = index;
+  }
   if (!latestCheckpoint || latestCheckpoint.captureMode !== "quick") {
     throw new Error("最新检查点已不是待复核的快速停靠记录。");
   }
@@ -156,15 +189,70 @@ export function prepareQuickCheckpointReview(state, input = {}, now = Date.now()
   return { checkpoint, projectTitle: project.title, sourceCheckpointId: latestCheckpoint.id };
 }
 
-function newestFirst(items) {
-  return items
-    .map((item, index) => ({ item, index, timestamp: toTimestamp(item.createdAt) }))
-    .sort((a, b) => {
-      const aTimestamp = Number.isFinite(a.timestamp) ? a.timestamp : Number.NEGATIVE_INFINITY;
-      const bTimestamp = Number.isFinite(b.timestamp) ? b.timestamp : Number.NEGATIVE_INFINITY;
-      return bTimestamp - aTimestamp || b.index - a.index;
-    })
-    .map(({ item }) => item);
+function retainNewestOpenLoop(heap, entry) {
+  if (heap.length < OPEN_LOOP_EVIDENCE_LIMIT) {
+    heap.push(entry);
+    bubbleWorstOpenLoop(heap, heap.length - 1);
+    return;
+  }
+  if (compareDatedEntries(entry, heap[0]) >= 0) return;
+  heap[0] = entry;
+  sinkWorstOpenLoop(heap, 0);
+}
+
+function bubbleWorstOpenLoop(heap, start) {
+  let index = start;
+  while (index > 0) {
+    const parent = Math.floor((index - 1) / 2);
+    if (compareDatedEntries(heap[index], heap[parent]) <= 0) return;
+    const previous = heap[parent];
+    heap[parent] = heap[index];
+    heap[index] = previous;
+    index = parent;
+  }
+}
+
+function sinkWorstOpenLoop(heap, start) {
+  let index = start;
+  while (true) {
+    const left = index * 2 + 1;
+    if (left >= heap.length) return;
+    const right = left + 1;
+    let worse = left;
+    if (right < heap.length && compareDatedEntries(heap[right], heap[left]) > 0) worse = right;
+    if (compareDatedEntries(heap[worse], heap[index]) <= 0) return;
+    const previous = heap[index];
+    heap[index] = heap[worse];
+    heap[worse] = previous;
+    index = worse;
+  }
+}
+
+function joinNewestOpenLoops(entries) {
+  entries.sort(compareDatedEntries);
+  let result = "";
+  for (const entry of entries) {
+    result += `${result ? "；" : ""}${entry.text}`;
+    if (result.length > IMPORT_LIMITS.openLoops) break;
+  }
+  return result;
+}
+
+function compareDatedEntries(left, right) {
+  return compareEvidencePosition(left.timestamp, left.index, right.timestamp, right.index);
+}
+
+function compareEvidencePosition(leftTimestamp, leftIndex, rightTimestamp, rightIndex) {
+  const left = Number.isFinite(leftTimestamp) ? leftTimestamp : Number.NEGATIVE_INFINITY;
+  const right = Number.isFinite(rightTimestamp) ? rightTimestamp : Number.NEGATIVE_INFINITY;
+  return right - left || rightIndex - leftIndex;
+}
+
+function findById(items, id) {
+  for (const item of items) {
+    if (item?.id === id) return item;
+  }
+  return null;
 }
 
 function isSameLocalCalendarDay(leftTimestamp, rightTimestamp) {
