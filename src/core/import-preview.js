@@ -80,12 +80,13 @@ export function buildImportPreview(value, currentState, now = Date.now()) {
   const projectChanges = projectDiff.details;
   const settingsChanged = !sameValue(currentState.settings, incomingState.settings);
   const selectionChanged = !sameValue(currentState.ui, incomingState.ui);
-  const orderChangedCollections = Object.entries(collections)
-    .filter(([, change]) => change.orderChanged)
-    .map(([name]) => name);
-  const hasContentChanges = settingsChanged
-    || selectionChanged
-    || Object.values(collections).some((change) => change.added || change.removed || change.changed || change.orderChanged);
+  const orderChangedCollections = [];
+  let hasContentChanges = settingsChanged || selectionChanged;
+  for (const name of COLLECTION_NAMES) {
+    const change = collections[name];
+    if (change.orderChanged) orderChangedCollections.push(name);
+    if (change.added || change.removed || change.changed || change.orderChanged) hasContentChanges = true;
+  }
 
   return {
     normalizedSnapshot: incomingState,
@@ -122,8 +123,7 @@ function diffCollection(current = [], incoming = []) {
     if (!incomingById.has(id)) removed += 1;
   }
 
-  const orderChanged = added === 0 && removed === 0 && current.length === incoming.length
-    && current.some((item, index) => item.id !== incoming[index]?.id);
+  const orderChanged = added === 0 && removed === 0 && hasOrderDifference(current, incoming);
   return { current: current.length, incoming: incoming.length, added, removed, changed, unchanged, orderChanged };
 }
 
@@ -164,8 +164,7 @@ function diffProjects(current, incoming) {
     if (removed.length < DETAIL_LIMIT) removed.push(projectSummary(project));
   }
 
-  const orderChanged = addedTotal === 0 && removedTotal === 0 && current.length === incoming.length
-    && current.some((project, index) => project.id !== incoming[index]?.id);
+  const orderChanged = addedTotal === 0 && removedTotal === 0 && hasOrderDifference(current, incoming);
   return {
     collection: {
       current: current.length,
@@ -193,9 +192,19 @@ function projectSummary(project) {
 }
 
 function describeActiveSession(state) {
-  const session = state.sessions.find((item) => item.status === "active");
+  let session = null;
+  for (const item of state.sessions) {
+    if (item.status !== "active") continue;
+    session = item;
+    break;
+  }
   if (!session) return null;
-  const project = state.projects.find((item) => item.id === session.projectId);
+  let project = null;
+  for (const item of state.projects) {
+    if (item.id !== session.projectId) continue;
+    project = item;
+    break;
+  }
   return {
     sessionId: session.id,
     projectId: session.projectId,
@@ -203,6 +212,14 @@ function describeActiveSession(state) {
     intention: session.intention,
     startedAt: session.startedAt
   };
+}
+
+function hasOrderDifference(current, incoming) {
+  if (current.length !== incoming.length) return false;
+  for (let index = 0; index < current.length; index += 1) {
+    if (current[index]?.id !== incoming[index]?.id) return true;
+  }
+  return false;
 }
 
 function cleanMetadata(value) {

@@ -217,6 +217,36 @@ describe("import difference preview", () => {
     assert.equal(preview.hasContentChanges, true);
   });
 
+  test("streams order, change, and active-session summaries without source array helpers", () => {
+    const first = createProject({ id: "first", title: "First" }, T0);
+    const second = createProject({ id: "second", title: "Second" }, T0);
+    const current = workspace([first, second]);
+    current.sessions.push(createSession({ id: "active", projectId: "second", intention: "Keep focus" }, T0));
+    current.crumbs.push(createCrumb({ id: "crumb", projectId: "second", text: "Evidence" }, T0));
+    current.checkpoints.push(createCheckpoint({ id: "checkpoint", projectId: "second", summary: "Resume here" }, T0));
+    const incoming = structuredClone(current);
+
+    for (const collection of [current.projects, current.sessions, current.crumbs, current.checkpoints]) {
+      Object.defineProperty(collection, "some", {
+        value: () => { throw new Error("source array some must not be used"); },
+        configurable: true
+      });
+    }
+    for (const collection of [current.projects, current.sessions]) {
+      Object.defineProperty(collection, "find", {
+        value: () => { throw new Error("source array find must not be used"); },
+        configurable: true
+      });
+    }
+
+    const preview = buildImportPreview(incoming, current, T1);
+
+    assert.equal(preview.hasContentChanges, false);
+    assert.deepEqual(preview.orderChangedCollections, []);
+    assert.equal(preview.currentActiveSession.projectTitle, "Second");
+    assert.equal(preview.currentActiveSession.intention, "Keep focus");
+  });
+
   test("limits project-name detail without losing total counts", () => {
     const current = workspace([
       ...Array.from({ length: 10 }, (_, index) => createProject({ id: `remove-${index}`, title: `Remove ${index}` }, T0)),
