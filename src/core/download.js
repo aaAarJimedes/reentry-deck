@@ -24,10 +24,26 @@ export function triggerBlobDownload(blob, filename, dependencies = {}) {
     documentRef.body.append(link);
     attached = true;
     link.click();
-    schedule(() => urlApi.revokeObjectURL(url), DOWNLOAD_REVOKE_DELAY_MS);
+    schedule(() => safelyRevoke(urlApi, url), DOWNLOAD_REVOKE_DELAY_MS);
     revokeScheduled = true;
   } finally {
-    if (attached) link?.remove();
-    if (!revokeScheduled) urlApi.revokeObjectURL(url);
+    if (attached) safelyRemove(link);
+    if (!revokeScheduled) safelyRevoke(urlApi, url);
+  }
+}
+
+function safelyRemove(link) {
+  try {
+    link?.remove();
+  } catch {
+    // The browser owns a detached download control; cleanup must not mask the download result.
+  }
+}
+
+function safelyRevoke(urlApi, url) {
+  try {
+    urlApi.revokeObjectURL(url);
+  } catch {
+    // Object URL cleanup is best-effort and must not replace the initiating failure.
   }
 }

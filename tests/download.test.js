@@ -114,6 +114,33 @@ describe("triggerBlobDownload", () => {
     assert.deepEqual(events, ["create", "revoke:blob:backup"]);
   });
 
+  test("cleanup failures neither mask the download result nor block later revocation", () => {
+    const success = harness();
+    success.link.remove = () => {
+      throw new Error("remove denied");
+    };
+    success.dependencies.urlApi.revokeObjectURL = () => {
+      success.events.push("revoke-attempt");
+      throw new Error("revoke denied");
+    };
+
+    assert.doesNotThrow(() => triggerBlobDownload("backup", "reentry.json", success.dependencies));
+    assert.doesNotThrow(() => success.runScheduled());
+    assert.equal(success.events.at(-1), "revoke-attempt");
+
+    const failed = harness({ clickError: new Error("original click failure") });
+    failed.link.remove = () => {
+      throw new Error("remove denied");
+    };
+    failed.dependencies.urlApi.revokeObjectURL = () => {
+      throw new Error("revoke denied");
+    };
+    assert.throws(
+      () => triggerBlobDownload("backup", "reentry.json", failed.dependencies),
+      /original click failure/u
+    );
+  });
+
   test("fails clearly before allocating when browser download primitives are absent", () => {
     assert.throws(() => triggerBlobDownload("backup", "reentry.json", { document: null }), /无法建立下载链接/u);
     assert.throws(() => triggerBlobDownload("backup", "reentry.json", { document: { body: {}, createElement() {} }, urlApi: {} }), /不支持本地文件下载/u);
