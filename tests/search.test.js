@@ -91,14 +91,14 @@ test("search snippets collapse whitespace and never split a Unicode code point",
   assert.equal(result.snippet.includes("\n"), false);
 });
 
-test("a 50,000-record index only materializes matching results", () => {
+test("a 50,000-record index only materializes and sorts the bounded result window", () => {
   const large = {
     projects: [{ ...state.projects[0] }],
     crumbs: Array.from({ length: 49_999 }, (_, index) => ({
-      id: `large-${index}`,
+      id: `large-${String(49_998 - index).padStart(5, "0")}`,
       projectId: "p1",
       type: "note",
-      text: index % 5_000 === 0 ? `needle ${index}` : `ordinary evidence ${index}`,
+      text: index % 5_000 === 0 ? `needle common ${index}` : `common evidence ${index}`,
       createdAt: "2026-01-01T00:00:00.000Z"
     })),
     checkpoints: []
@@ -109,6 +109,22 @@ test("a 50,000-record index only materializes matching results", () => {
   assert.equal(index.candidates.length, 50_000);
   assert.equal(results.length, 10);
   assert.ok(results.every((item) => item.title.startsWith("needle")));
+
+  const originalSort = Array.prototype.sort;
+  let largestSortedLength = 0;
+  Array.prototype.sort = function (...args) {
+    largestSortedLength = Math.max(largestSortedLength, this.length);
+    return originalSort.apply(this, args);
+  };
+  try {
+    const broadResults = searchWorkspaceIndex(index, "common");
+    assert.equal(broadResults.length, 40);
+    assert.equal(broadResults[0].id, "large-00000");
+    assert.equal(broadResults.at(-1).id, "large-00039");
+  } finally {
+    Array.prototype.sort = originalSort;
+  }
+  assert.equal(largestSortedLength, 40);
 });
 
 test("extractHttpLinks accepts only clean HTTP resources and removes prose punctuation and fragments", () => {

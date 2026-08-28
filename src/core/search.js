@@ -65,9 +65,57 @@ export function searchWorkspaceIndex(index, query, options = {}) {
   const matches = [];
   for (const candidate of index.candidates) {
     const score = scoreCandidate(candidate, tokens);
-    if (score > 0) matches.push({ ...candidate.result, score });
+    if (score <= 0) continue;
+    if (matches.length < limit) {
+      pushWorstSearchMatch(matches, { result: candidate.result, score });
+      continue;
+    }
+    if (compareSearchPosition(score, candidate.result, matches[0].score, matches[0].result) >= 0) continue;
+    matches[0] = { result: candidate.result, score };
+    sinkWorstSearchMatch(matches, 0);
   }
-  return matches.sort((a, b) => b.score - a.score || timeOf(b.createdAt) - timeOf(a.createdAt) || compareCodeUnits(a.id, b.id)).slice(0, limit);
+  return matches
+    .sort((left, right) => compareSearchPosition(left.score, left.result, right.score, right.result))
+    .map(({ result, score }) => ({ ...result, score }));
+}
+
+function pushWorstSearchMatch(heap, entry) {
+  heap.push(entry);
+  let index = heap.length - 1;
+  while (index > 0) {
+    const parent = Math.floor((index - 1) / 2);
+    if (compareSearchEntries(heap[index], heap[parent]) <= 0) break;
+    const previous = heap[parent];
+    heap[parent] = heap[index];
+    heap[index] = previous;
+    index = parent;
+  }
+}
+
+function sinkWorstSearchMatch(heap, start) {
+  let index = start;
+  while (true) {
+    const left = index * 2 + 1;
+    if (left >= heap.length) return;
+    const right = left + 1;
+    let worse = left;
+    if (right < heap.length && compareSearchEntries(heap[right], heap[left]) > 0) worse = right;
+    if (compareSearchEntries(heap[worse], heap[index]) <= 0) return;
+    const previous = heap[index];
+    heap[index] = heap[worse];
+    heap[worse] = previous;
+    index = worse;
+  }
+}
+
+function compareSearchEntries(left, right) {
+  return compareSearchPosition(left.score, left.result, right.score, right.result);
+}
+
+function compareSearchPosition(leftScore, leftResult, rightScore, rightResult) {
+  return rightScore - leftScore
+    || timeOf(rightResult.createdAt) - timeOf(leftResult.createdAt)
+    || compareCodeUnits(leftResult.id, rightResult.id);
 }
 
 export function extractHttpLinks(text, limit = RESOURCE_LIMIT) {
