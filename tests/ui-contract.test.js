@@ -154,6 +154,18 @@ test("global keyboard shortcuts do not escape an open modal boundary", async () 
   assert.ok(handler.indexOf('querySelector("dialog[open]")') < handler.indexOf("#restorePrevious") || handler.indexOf('querySelector("dialog[open]")') < handler.indexOf("this.#restorePrevious"));
 });
 
+test("emergency docking is discoverable, modal-safe, and project-contextual", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const handler = source.match(/#onKeydown\(event\) \{([\s\S]*?)\n  \}\n\n  #runCommand/u)?.[1] ?? "";
+
+  assert.match(handler, /event\.shiftKey && event\.key\.toLowerCase\(\) === "s"/u);
+  assert.match(handler, /this\.#quickDock\(activeSession\.id, false\)/u);
+  assert.ok(handler.indexOf('querySelector("dialog[open]")') < handler.indexOf('key.toLowerCase() === "s"'));
+  assert.match(source, /\["quick-dock", "archive", "应急停靠", "立即收拢活动会话 · Ctrl\/⌘ Shift S", false\]/u);
+  assert.match(source, /if \(command === "quick-dock"\) this\.#quickDockActiveSession\(\)/u);
+  assert.match(source, /aria-label="快速停靠：\$\{attr\(controlContext\(project\.title\)\)\}" title="快速停靠（Ctrl\/⌘ Shift S）"/u);
+});
+
 test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

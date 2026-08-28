@@ -442,7 +442,7 @@ export class ReentryApp {
         </div>
         <div class="project-header-actions">
           <button class="secondary-button" type="button" data-action="edit-project">${icon("edit")} 编辑</button>
-          ${isRunning ? `<button class="secondary-button" type="button" data-action="quick-dock" data-session-id="${attr(activeSession.id)}">${icon("archive")} 快速停靠</button><button class="primary-button" type="button" data-action="open-checkpoint">${icon("stop")} 留下检查点</button>` : anotherRunning ? `<a class="secondary-button" href="#/project/${encodeURIComponent(activeSession.projectId)}">先处理活动会话</a>` : `<button class="primary-button" type="button" data-action="start-session" data-project-id="${attr(project.id)}">${icon("play")} 开始会话</button>`}
+          ${isRunning ? `<button class="secondary-button" type="button" data-action="quick-dock" data-session-id="${attr(activeSession.id)}" aria-label="快速停靠：${attr(controlContext(project.title))}" title="快速停靠（Ctrl/⌘ Shift S）">${icon("archive")} 快速停靠</button><button class="primary-button" type="button" data-action="open-checkpoint">${icon("stop")} 留下检查点</button>` : anotherRunning ? `<a class="secondary-button" href="#/project/${encodeURIComponent(activeSession.projectId)}">先处理活动会话</a>` : `<button class="primary-button" type="button" data-action="start-session" data-project-id="${attr(project.id)}">${icon("play")} 开始会话</button>`}
         </div>
       </section>
       <div class="workspace-grid">
@@ -491,7 +491,7 @@ export class ReentryApp {
       <section class="panel focus-panel" aria-labelledby="focus-heading">
         <div class="panel-header inline-between"><div><h2 id="focus-heading">工作现场已展开</h2><p>计时以开始时间为准，关闭页面也不会失真。</p></div><span class="status-pill" data-status="active">会话中</span></div>
         <div class="panel-body">
-          ${showStaleWarning ? this.#renderStaleSessionWarning(session, health) : ""}
+          ${showStaleWarning ? this.#renderStaleSessionWarning(project, session, health) : ""}
           <div class="session-timer js-session-timer" role="timer" aria-label="本次会话用时" data-started-at="${attr(session.startedAt)}">${formatDuration(elapsedSeconds(session.startedAt))}</div>
           <p class="session-intention"><span class="muted">本次意图：</span> <strong>${escapeHTML(session.intention || project.nextAction || "先推进一个清楚的下一步")}</strong></p>
           <form class="capture-form" data-form="capture-crumb" autocomplete="off">
@@ -506,7 +506,7 @@ export class ReentryApp {
       </section>`;
   }
 
-  #renderStaleSessionWarning(session, health) {
+  #renderStaleSessionWarning(project, session, health) {
     const reason = health.staleReasons.includes("calendar-day")
       ? "它跨过了自然日"
       : health.staleReasons.includes("invalid-started-at")
@@ -517,10 +517,10 @@ export class ReentryApp {
         <div class="stale-session-icon">${icon("alert")}</div>
         <div><strong>上次会话可能没有收拢</strong><p>${reason}。复航台不会擅自停止计时，请选择最符合实际情况的处理方式。</p>
           <div class="button-row">
-            <button class="ghost-button" type="button" data-action="continue-session" data-session-id="${attr(session.id)}">继续原会话</button>
-            <button class="secondary-button" type="button" data-action="open-checkpoint">补完整检查点</button>
-            <button class="secondary-button" type="button" data-action="quick-dock" data-session-id="${attr(session.id)}">快速停靠</button>
-            <button class="primary-button" type="button" data-action="interrupt-and-continue" data-session-id="${attr(session.id)}">中断并接续</button>
+            <button class="ghost-button" type="button" data-action="continue-session" data-session-id="${attr(session.id)}" aria-label="继续原会话：${attr(controlContext(project.title))}">继续原会话</button>
+            <button class="secondary-button" type="button" data-action="open-checkpoint" aria-label="补完整检查点：${attr(controlContext(project.title))}">补完整检查点</button>
+            <button class="secondary-button" type="button" data-action="quick-dock" data-session-id="${attr(session.id)}" aria-label="快速停靠：${attr(controlContext(project.title))}" title="快速停靠（Ctrl/⌘ Shift S）">快速停靠</button>
+            <button class="primary-button" type="button" data-action="interrupt-and-continue" data-session-id="${attr(session.id)}" aria-label="中断并接续：${attr(controlContext(project.title))}">中断并接续</button>
           </div>
         </div>
       </div>`;
@@ -669,7 +669,7 @@ export class ReentryApp {
 
   #renderSessionDock(session, project) {
     const stale = inspectSession(session).stale;
-    return `<div class="active-session-dock" data-stale="${stale}"><a class="dock-main" href="#/project/${encodeURIComponent(project.id)}" aria-label="返回活动会话：${attr(project.title)}"><span class="dock-pulse"></span><span class="dock-copy"><small>${stale ? "可能未收拢" : "活动会话"}</small><strong>${escapeHTML(project.title)}</strong></span><span class="dock-time js-session-timer" data-started-at="${attr(session.startedAt)}">${formatDuration(elapsedSeconds(session.startedAt))}</span>${icon("arrow")}</a><button class="dock-quick" type="button" data-action="quick-dock" data-session-id="${attr(session.id)}">快速停靠</button></div>`;
+    return `<div class="active-session-dock" data-stale="${stale}"><a class="dock-main" href="#/project/${encodeURIComponent(project.id)}" aria-label="返回活动会话：${attr(project.title)}"><span class="dock-pulse"></span><span class="dock-copy"><small>${stale ? "可能未收拢" : "活动会话"}</small><strong>${escapeHTML(project.title)}</strong></span><span class="dock-time js-session-timer" data-started-at="${attr(session.startedAt)}">${formatDuration(elapsedSeconds(session.startedAt))}</span>${icon("arrow")}</a><button class="dock-quick" type="button" data-action="quick-dock" data-session-id="${attr(session.id)}" aria-label="快速停靠：${attr(controlContext(project.title))}" title="快速停靠（Ctrl/⌘ Shift S）">快速停靠</button></div>`;
   }
 
   #renderDialogs(project, activeSession) {
@@ -908,8 +908,10 @@ export class ReentryApp {
 
   #renderQuickCommands() {
     const hasProjects = this.#store.getState().projects.some((item) => item.status !== "archived");
+    const hasActiveSession = this.#store.getState().sessions.some((item) => item.status === "active");
     const canUndo = this.#store.hasPreviousSnapshot();
     const commands = [
+      ...(hasActiveSession ? [["quick-dock", "archive", "应急停靠", "立即收拢活动会话 · Ctrl/⌘ Shift S", false]] : []),
       ["quick-capture", "trail", "快捷记录", "选择项目并保存一条证据", !hasProjects],
       ["new-project", "plus", "建立项目", "创建一个新的工作现场", false],
       ["undo", "undo", "撤销上次保存", "可再次操作切回", !canUndo],
@@ -924,6 +926,14 @@ export class ReentryApp {
   #onKeydown(event) {
     if (event.defaultPrevented) return;
     if (this.#root.querySelector("dialog[open]")) return;
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "s") {
+      const activeSession = this.#store.getState().sessions.find((item) => item.status === "active");
+      if (activeSession) {
+        event.preventDefault();
+        this.#quickDock(activeSession.id, false);
+      }
+      return;
+    }
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
       this.#openDialog("search-dialog");
@@ -962,6 +972,7 @@ export class ReentryApp {
     dialog?.close();
     requestAnimationFrame(() => this.#runUserAction(() => {
       if (command === "quick-capture") this.#openDialog("quick-capture-dialog");
+      if (command === "quick-dock") this.#quickDockActiveSession();
       if (command === "new-project") this.#openDialog("new-project-dialog");
       if (command === "undo") this.#restorePrevious("topbar");
       if (command === "export") this.#exportData();
@@ -1161,6 +1172,12 @@ export class ReentryApp {
     } catch (error) {
       this.#toast(error.message, "error");
     }
+  }
+
+  #quickDockActiveSession() {
+    const activeSession = this.#store.getState().sessions.find((item) => item.status === "active");
+    if (!activeSession) throw new Error("当前没有需要停靠的活动会话。 ");
+    this.#quickDock(activeSession.id, false);
   }
 
   #editProject(data, form) {
