@@ -6,6 +6,10 @@ const NEARBY_SWITCH_MS = 4 * 3_600_000;
 const MAX_COUNTED_SESSION_MS = 12 * 3_600_000;
 
 export function buildWorkspaceCounts(state, now = Date.now()) {
+  return buildWorkspaceFrame(state, null, now).counts;
+}
+
+export function buildWorkspaceFrame(state, currentProjectId = null, now = Date.now()) {
   const counts = {
     unarchivedProjects: 0,
     activeProjects: 0,
@@ -16,7 +20,18 @@ export function buildWorkspaceCounts(state, now = Date.now()) {
     crumbsToday: 0,
     checkpoints: Array.isArray(state?.checkpoints) ? state.checkpoints.length : 0
   };
+  let activeSession = null;
+  for (const session of Array.isArray(state?.sessions) ? state.sessions : []) {
+    if (session?.status !== "active") continue;
+    counts.activeSessions += 1;
+    if (counts.activeSessions === 1) activeSession = session;
+    else activeSession = null;
+  }
+  let currentProject = null;
+  let activeProject = null;
   for (const project of Array.isArray(state?.projects) ? state.projects : []) {
+    if (currentProjectId !== null && project.id === currentProjectId) currentProject = project;
+    if (activeSession && project.id === activeSession.projectId) activeProject = project;
     if (project.status === "archived") {
       counts.archivedProjects += 1;
       continue;
@@ -26,19 +41,17 @@ export function buildWorkspaceCounts(state, now = Date.now()) {
     else if (project.status === "paused") counts.pausedProjects += 1;
     else if (project.status === "blocked") counts.blockedProjects += 1;
   }
-  for (const session of Array.isArray(state?.sessions) ? state.sessions : []) {
-    if (session?.status === "active") counts.activeSessions += 1;
-  }
   const reference = new Date(now);
   const referenceTimestamp = reference.getTime();
-  if (!Number.isFinite(referenceTimestamp)) return counts;
-  const dayStart = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate()).getTime();
-  const dayEnd = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate() + 1).getTime();
-  for (const crumb of Array.isArray(state?.crumbs) ? state.crumbs : []) {
-    const timestamp = timeOf(crumb.createdAt);
-    if (timestamp >= dayStart && timestamp < dayEnd) counts.crumbsToday += 1;
+  if (Number.isFinite(referenceTimestamp)) {
+    const dayStart = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate()).getTime();
+    const dayEnd = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate() + 1).getTime();
+    for (const crumb of Array.isArray(state?.crumbs) ? state.crumbs : []) {
+      const timestamp = timeOf(crumb.createdAt);
+      if (timestamp >= dayStart && timestamp < dayEnd) counts.crumbsToday += 1;
+    }
   }
-  return counts;
+  return { counts, currentProject, activeSession, activeProject };
 }
 
 export function buildWeeklyReview(state, now = Date.now(), options = {}) {

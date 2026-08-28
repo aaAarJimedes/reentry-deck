@@ -115,8 +115,9 @@ test("rendering never selects an arbitrary session when the active invariant is 
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
 
-  assert.ok(render.indexOf("buildWorkspaceCounts(state, now)") < render.indexOf("state.sessions.find"));
-  assert.match(render, /workspaceCounts\.activeSessions === 1[\s\S]*?state\.sessions\.find/u);
+  assert.match(render, /buildWorkspaceFrame\(state, route\.name === "project" \? route\.id : null, now\)/u);
+  assert.match(render, /counts: workspaceCounts, currentProject, activeSession, activeProject/u);
+  assert.doesNotMatch(render, /state\.(?:projects|sessions)\.find/u);
   assert.match(render, /#renderSessionInvariantNotice\(workspaceCounts, activeSession, activeProject\)/u);
   assert.match(source, /role="alert"[^`]*检测到 \$\{counts\.activeSessions\} 个活动会话/u);
   assert.match(source, /活动会话关联的项目不存在/u);

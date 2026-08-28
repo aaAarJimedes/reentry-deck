@@ -11,7 +11,7 @@ import {
 import { buildQuickCaptureProjectWindow, prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture.js";
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { triggerBlobDownload } from "../core/download.js";
-import { buildWorkspaceCounts, buildWorkspaceOverview } from "../core/insights.js";
+import { buildWorkspaceCounts, buildWorkspaceFrame, buildWorkspaceOverview } from "../core/insights.js";
 import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepareSessionDialog, prepareSessionStart } from "../core/reentry.js";
 import { WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
@@ -181,13 +181,9 @@ export class ReentryApp {
       this.#pendingImport.refreshed = true;
     }
     const route = parseRoute(location.hash);
-    const currentProject = route.name === "project" ? state.projects.find((item) => item.id === route.id) : null;
-    const workspaceCounts = buildWorkspaceCounts(state, now);
+    const frame = buildWorkspaceFrame(state, route.name === "project" ? route.id : null, now);
+    const { counts: workspaceCounts, currentProject, activeSession, activeProject } = frame;
     this.#workspaceCounts = workspaceCounts;
-    const activeSession = workspaceCounts.activeSessions === 1
-      ? state.sessions.find((item) => item.status === "active") ?? null
-      : null;
-    const activeProject = activeSession ? state.projects.find((item) => item.id === activeSession.projectId) : null;
     const currentReentryCard = currentProject
       ? currentProject.status === "archived"
         ? buildReentryCard(state, currentProject.id, now)

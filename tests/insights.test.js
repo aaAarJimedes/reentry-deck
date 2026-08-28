@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildAttentionDeck, buildWeeklyReview, buildWorkspaceCounts, buildWorkspaceOverview } from "../src/core/insights.js";
+import { buildAttentionDeck, buildWeeklyReview, buildWorkspaceCounts, buildWorkspaceFrame, buildWorkspaceOverview } from "../src/core/insights.js";
 
 const NOW = Date.parse("2026-08-28T12:00:00.000Z");
 const HOUR = 3_600_000;
@@ -64,6 +64,24 @@ test("buildWorkspaceCounts shares one local-day snapshot across streaming status
     checkpoints: 2
   });
   assert.equal(buildWorkspaceCounts(data, "invalid").crumbsToday, 0);
+});
+
+test("buildWorkspaceFrame resolves route and unique active context during the count passes", () => {
+  const projects = [project("active"), project("target")];
+  const sessions = [{ id: "done", projectId: "target", status: "completed" }, { id: "live", projectId: "active", status: "active" }];
+  for (const collection of [projects, sessions]) {
+    Object.defineProperty(collection, "find", { value() { throw new Error("find must not be used"); } });
+  }
+  const frame = buildWorkspaceFrame(state({ projects, sessions }), "target", NOW);
+
+  assert.equal(frame.currentProject, projects[1]);
+  assert.equal(frame.activeSession, sessions[1]);
+  assert.equal(frame.activeProject, projects[0]);
+  assert.equal(frame.counts.activeSessions, 1);
+  const conflict = buildWorkspaceFrame(state({ projects, sessions: [...sessions, { id: "other", projectId: "target", status: "active" }] }), "target", NOW);
+  assert.equal(conflict.counts.activeSessions, 2);
+  assert.equal(conflict.activeSession, null);
+  assert.equal(conflict.activeProject, null);
 });
 
 test("buildWeeklyReview calculates bounded local evidence and nearby project switches", () => {
