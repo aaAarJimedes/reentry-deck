@@ -3,7 +3,7 @@ import { CRUMB_TYPES, IMPORT_LIMITS, compactText, createCrumb, isoAtOrAfter } fr
 export const QUICK_CAPTURE_PROJECT_LIMIT = 40;
 
 export function buildQuickCaptureProjectWindow(state, options = {}) {
-  const query = String(options.query ?? "").trim().toLowerCase();
+  const query = normalizeQuickCaptureText(options.query);
   const requestedLimit = Number(options.limit ?? QUICK_CAPTURE_PROJECT_LIMIT);
   const limit = Number.isSafeInteger(requestedLimit) && requestedLimit > 0
     ? Math.min(requestedLimit, QUICK_CAPTURE_PROJECT_LIMIT)
@@ -69,21 +69,25 @@ export function prepareQuickCapture(state, input, now = Date.now()) {
 
 function quickCaptureMatchRank(project, query) {
   if (!query) return 0;
-  const title = String(project.title ?? "").toLowerCase();
+  const title = normalizeQuickCaptureText(project.title);
   if (title === query) return 0;
   if (title.startsWith(query)) return 1;
   if (title.includes(query)) return 2;
-  if (String(project.description ?? "").toLowerCase().includes(query)
-    || String(project.nextAction ?? "").toLowerCase().includes(query)) return 3;
+  if (normalizeQuickCaptureText(project.description).includes(query)
+    || normalizeQuickCaptureText(project.nextAction).includes(query)) return 3;
   return null;
 }
 
 function compareQuickCaptureCandidate(left, right) {
-  if (left.preferredRank !== right.preferredRank) return left.preferredRank - right.preferredRank;
   if (left.matchRank !== right.matchRank) return left.matchRank - right.matchRank;
+  if (left.preferredRank !== right.preferredRank) return left.preferredRank - right.preferredRank;
   if (left.activityAt !== right.activityAt) return right.activityAt - left.activityAt;
   const titleOrder = compareCodeUnits(left.project.title, right.project.title);
   return titleOrder || compareCodeUnits(left.project.id, right.project.id);
+}
+
+function normalizeQuickCaptureText(value) {
+  return String(value ?? "").normalize("NFKC").toLocaleLowerCase("zh-CN").trim();
 }
 
 function finiteDate(value) {

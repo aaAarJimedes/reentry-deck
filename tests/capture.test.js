@@ -100,11 +100,12 @@ describe("buildQuickCaptureProjectWindow", () => {
       createProject({ id: "exact", title: "Alpha" }, NOW)
     );
 
-    const window = buildQuickCaptureProjectWindow(state, { query: " alpha ", limit: 3 });
+    const window = buildQuickCaptureProjectWindow(state, { query: " ＡＬＰＨＡ ", preferredIds: ["context"], limit: 4 });
 
-    assert.deepEqual(window.items.map((project) => project.id), ["exact", "prefix", "contains"]);
+    assert.deepEqual(window.items.map((project) => project.id), ["exact", "prefix", "contains", "context"]);
     assert.equal(window.matched, 4);
-    assert.equal(window.items.length, 3);
+    assert.equal(window.items.length, 4);
+    assert.equal(window.query, "alpha");
   });
 
   test("finds a late project at the record boundary without source array helpers", () => {
