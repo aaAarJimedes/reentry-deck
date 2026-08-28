@@ -56,17 +56,26 @@ export function makeId(prefix = "item") {
 }
 
 export function isoNow(now = Date.now()) {
-  return new Date(now).toISOString();
+  const timestamp = modelTimestamp(now);
+  if (!Number.isFinite(timestamp)) throw new RangeError("无法生成有效时间。 ");
+  return new Date(timestamp).toISOString();
 }
 
 export function isoAtOrAfter(now = Date.now(), ...anchors) {
-  let timestamp = new Date(now).getTime();
+  let timestamp = modelTimestamp(now);
   if (!Number.isFinite(timestamp)) throw new RangeError("无法生成有效时间。 ");
   for (const anchor of anchors) {
     const parsed = Date.parse(anchor ?? "");
     if (Number.isFinite(parsed)) timestamp = Math.max(timestamp, parsed);
   }
   return new Date(timestamp).toISOString();
+}
+
+function modelTimestamp(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : Number.NaN;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "string" && value.trim()) return new Date(value).getTime();
+  return Number.NaN;
 }
 
 export function compactText(value, maximum) {

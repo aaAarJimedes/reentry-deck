@@ -42,6 +42,8 @@ describe("model constants and helpers", () => {
 
   test("isoNow accepts a timestamp and makeId applies its prefix", () => {
     assert.equal(isoNow(NOW), NOW_ISO);
+    assert.equal(isoNow(new Date(NOW)), NOW_ISO);
+    assert.equal(isoNow(NOW_ISO), NOW_ISO);
 
     const first = makeId("project");
     const second = makeId("project");
@@ -68,7 +70,10 @@ describe("model constants and helpers", () => {
 
     assert.equal(isoAtOrAfter(earlier, NOW_ISO, "invalid", later), later);
     assert.equal(isoAtOrAfter(NOW), NOW_ISO);
-    assert.throws(() => isoAtOrAfter("not-a-date"), /无法生成有效时间/);
+    for (const invalidTime of ["not-a-date", " ", null, true, [], {}, new Date(Number.NaN), Number.POSITIVE_INFINITY]) {
+      assert.throws(() => isoNow(invalidTime), /无法生成有效时间/);
+      assert.throws(() => isoAtOrAfter(invalidTime), /无法生成有效时间/);
+    }
   });
 
   test("compactText trims short text and marks bounded projections without overrunning", () => {
