@@ -126,6 +126,13 @@ describe("import snapshot inspection", () => {
       const serialized = JSON.stringify(value);
       assert.equal(checksumSerializedSnapshotData(serialized), reference(value));
     }
+    const malformedSerialized = "raw \ud800 and \udc00";
+    let malformedHash = 0x811c9dc5;
+    for (const byte of new TextEncoder().encode(malformedSerialized)) malformedHash = Math.imul(malformedHash ^ byte, 0x01000193);
+    assert.equal(
+      checksumSerializedSnapshotData(malformedSerialized),
+      `fnv1a32:${(malformedHash >>> 0).toString(16).padStart(8, "0")}`
+    );
     assert.throws(() => checksumSerializedSnapshotData({}), /必须是字符串/u);
 
     const NativeTextEncoder = globalThis.TextEncoder;

@@ -21,8 +21,9 @@ export function checksumSerializedSnapshotData(serialized) {
       if (low >= 0xdc00 && low <= 0xdfff) {
         codePoint = 0x10000 + ((codePoint - 0xd800) << 10) + (low - 0xdc00);
         index += 1;
-      }
+      } else codePoint = 0xfffd;
     }
+    else if (codePoint >= 0xd800 && codePoint <= 0xdfff) codePoint = 0xfffd;
     if (codePoint <= 0x7f) hash = hashByte(hash, codePoint);
     else if (codePoint <= 0x7ff) {
       hash = hashByte(hash, 0xc0 | (codePoint >> 6));
