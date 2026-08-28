@@ -50,6 +50,9 @@ const COLOR_LABELS = {
   slate: "岩灰"
 };
 
+const MAX_VISIBLE_TOASTS = 4;
+const MAX_TOAST_MESSAGE_LENGTH = 500;
+
 export function resolveThemeAppearance(theme, prefersDark = false) {
   const dark = theme === "dark" || (theme === "system" && prefersDark);
   return Object.freeze({ dark, themeColor: dark ? "#111a19" : "#f4efe6" });
@@ -1655,13 +1658,21 @@ export class ReentryApp {
   }
 
   #toast(message, kind = "success") {
+    if (this.#destroyed) return;
     const toast = {
       id: `toast-${++this.#toastSequence}`,
-      message: String(message),
+      message: compactText(message, MAX_TOAST_MESSAGE_LENGTH),
       kind,
       expiresAt: Date.now() + 3_600
     };
     this.#toasts.push(toast);
+    while (this.#toasts.length > MAX_VISIBLE_TOASTS) {
+      const removed = this.#toasts.shift();
+      const timerId = this.#toastTimers.get(removed.id);
+      if (timerId !== undefined) window.clearTimeout(timerId);
+      this.#toastTimers.delete(removed.id);
+      this.#root.querySelector(`[data-toast-id="${CSS.escape(removed.id)}"]`)?.remove();
+    }
     const region = this.#root.querySelector("#toast-region");
     if (region) region.insertAdjacentHTML("beforeend", this.#renderToast(toast));
     const timerId = window.setTimeout(() => {
@@ -1673,7 +1684,7 @@ export class ReentryApp {
 
   #renderToasts() {
     const now = Date.now();
-    this.#toasts = this.#toasts.filter((toast) => toast.expiresAt > now);
+    this.#toasts = this.#toasts.filter((toast) => toast.expiresAt > now).slice(-MAX_VISIBLE_TOASTS);
     return this.#toasts.map((toast) => this.#renderToast(toast)).join("");
   }
 
@@ -1682,6 +1693,7 @@ export class ReentryApp {
   }
 
   #dismissToast(id) {
+    if (this.#destroyed) return;
     this.#toasts = this.#toasts.filter((toast) => toast.id !== id);
     this.#root.querySelector(`[data-toast-id="${CSS.escape(id)}"]`)?.remove();
   }

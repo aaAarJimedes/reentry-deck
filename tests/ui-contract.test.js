@@ -84,6 +84,21 @@ test("deferred UI callbacks cannot outlive their render or app instance", async 
   assert.match(announce, /!this\.#destroyed && region\.isConnected/u);
 });
 
+test("toast output is text-bounded, count-bounded, and timer-bounded", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const toast = source.match(/#toast\(message, kind = "success"\) \{([\s\S]*?)\n  \}\n\n  #renderToasts/u)?.[1] ?? "";
+  const render = source.match(/#renderToasts\(\) \{([\s\S]*?)\n  \}\n\n  #renderToast/u)?.[1] ?? "";
+
+  assert.match(source, /const MAX_VISIBLE_TOASTS = 4/u);
+  assert.match(source, /const MAX_TOAST_MESSAGE_LENGTH = 500/u);
+  assert.match(toast, /if \(this\.#destroyed\) return/u);
+  assert.match(toast, /compactText\(message, MAX_TOAST_MESSAGE_LENGTH\)/u);
+  assert.match(toast, /while \(this\.#toasts\.length > MAX_VISIBLE_TOASTS\)/u);
+  assert.match(toast, /window\.clearTimeout\(timerId\)/u);
+  assert.match(toast, /this\.#toastTimers\.delete\(removed\.id\)/u);
+  assert.match(render, /slice\(-MAX_VISIBLE_TOASTS\)/u);
+});
+
 test("quick-dock continuation advances workspace time through the follow-up session", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 
