@@ -1245,29 +1245,31 @@ export class ReentryApp {
 
   #toggleCrumbResolution(crumbId, context) {
     this.#focusSelector = `[data-action="toggle-crumb-resolution"][data-resolution-context="${CSS.escape(context || "timeline")}"][data-crumb-id="${CSS.escape(crumbId)}"]`;
+    let resolved = false;
     this.#store.update((state) => {
       const crumb = state.crumbs.find((item) => item.id === crumbId);
       if (!crumb || !["question", "blocker"].includes(crumb.type)) throw new Error("找不到可处理的问题或阻塞。 ");
       const changedAt = isoAtOrAfter(Date.now(), crumb.createdAt, crumb.resolvedAt);
       crumb.resolvedAt = crumb.resolvedAt ? null : changedAt;
+      resolved = Boolean(crumb.resolvedAt);
       const project = state.projects.find((item) => item.id === crumb.projectId);
       if (project) project.updatedAt = isoAtOrAfter(changedAt, project.updatedAt);
     });
-    const resolved = Boolean(this.#store.getState().crumbs.find((item) => item.id === crumbId)?.resolvedAt);
     this.#announce(resolved ? "事项已标记为解决" : "事项已重新打开");
     this.#toast(resolved ? "已从待解决清单移除。" : "已重新加入待解决清单。");
   }
 
   #toggleCrumbPin(crumbId) {
     this.#focusSelector = `[data-action="toggle-crumb-pin"][data-crumb-id="${CSS.escape(crumbId)}"]`;
+    let pinned = false;
     this.#store.update((state) => {
       const crumb = state.crumbs.find((item) => item.id === crumbId);
       if (!crumb) throw new Error("找不到要置顶的轨迹。 ");
       crumb.pinned = !crumb.pinned;
+      pinned = crumb.pinned;
       const project = state.projects.find((item) => item.id === crumb.projectId);
       if (project) project.updatedAt = isoAtOrAfter(Date.now(), project.updatedAt, crumb.createdAt);
     });
-    const pinned = Boolean(this.#store.getState().crumbs.find((item) => item.id === crumbId)?.pinned);
     this.#announce(pinned ? "轨迹已设为置顶航标" : "轨迹已取消置顶");
     this.#toast(pinned ? "已加入复航卡的置顶航标。" : "已从置顶航标移除。 ");
   }

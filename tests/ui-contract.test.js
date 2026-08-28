@@ -209,6 +209,18 @@ test("home recommendations rank only the requested visible window", async () => 
   assert.match(source, /buildCollectionWindow\(ranked, rankedLimit, rankedTotal\)/u);
 });
 
+test("crumb actions carry their committed result out of the transaction without a second scan", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const resolutionHandler = source.match(/#toggleCrumbResolution\(crumbId, context\) \{([\s\S]*?)\n  \}\n\n  #toggleCrumbPin/u)?.[1] ?? "";
+  const pinHandler = source.match(/#toggleCrumbPin\(crumbId\) \{([\s\S]*?)\n  \}\n\n  #prepareArchive/u)?.[1] ?? "";
+
+  assert.equal(resolutionHandler.match(/state\.crumbs\.find/gu)?.length, 1);
+  assert.equal(pinHandler.match(/state\.crumbs\.find/gu)?.length, 1);
+  assert.match(resolutionHandler, /resolved = Boolean\(crumb\.resolvedAt\)/u);
+  assert.match(pinHandler, /pinned = crumb\.pinned/u);
+  assert.doesNotMatch(`${resolutionHandler}\n${pinHandler}`, /#store\.getState\(\)\.crumbs\.find/u);
+});
+
 test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 
