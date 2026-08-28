@@ -2,7 +2,7 @@ import { createEmptyState, isoAtOrAfter, normalizeState, validateImportCandidate
 import { buildImportPreview, checksumSnapshotData, readImportSnapshot } from "./import-preview.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.121.0";
+export const APP_VERSION = "0.122.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
@@ -252,7 +252,7 @@ export class AppStore {
     const serialized = JSON.stringify(next);
     let releasedPrevious = false;
     try {
-      this.#assertWriteLock();
+      this.#assertWritePreconditions(current);
       this.#storage.setItem(STORAGE_KEY, serialized);
     } catch (error) {
       let previous = null;
@@ -265,7 +265,7 @@ export class AppStore {
         throw new Error(`本地保存失败，原数据仍然保留：${error.message}`);
       }
       try {
-        this.#assertWriteLock();
+        this.#assertWritePreconditions(current);
         this.#storage.removeItem(PREVIOUS_KEY);
         this.#storage.setItem(STORAGE_KEY, serialized);
         releasedPrevious = true;
@@ -327,6 +327,19 @@ export class AppStore {
       || !isActiveWriteLock(persistedLock, Date.now())) {
       throw new Error("另一个标签页同时取得了保存权，请立即重试。 ");
     }
+  }
+
+  #assertWritePreconditions(expectedCurrent) {
+    this.#assertWriteLock();
+    let latest;
+    try {
+      latest = this.#storage.getItem(STORAGE_KEY);
+    } catch (error) {
+      throw new Error(`本地保存失败，提交前无法复核现有数据：${errorMessage(error)}`);
+    }
+    if (latest === expectedCurrent) return;
+    this.refreshFromStorage();
+    throw new Error("检测到另一个标签页在本次保存期间更新了数据；已阻止覆盖，请重试刚才的操作。 ");
   }
 
   #emit(source = "local") {

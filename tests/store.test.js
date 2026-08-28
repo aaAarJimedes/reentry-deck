@@ -645,6 +645,37 @@ describe("AppStore updates and persistence", () => {
     assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
   });
 
+  test("rechecks primary data after serialization to catch legacy tabs that ignore the lease", () => {
+    class LegacyInterleavingStorage extends MemoryStorage {
+      lockReads = 0;
+      externalRaw = null;
+
+      getItem(key) {
+        const value = super.getItem(key);
+        if (key === WRITE_LOCK_KEY) {
+          this.lockReads += 1;
+          if (this.lockReads === 3 && this.externalRaw !== null) super.setItem(STORAGE_KEY, this.externalRaw);
+        }
+        return value;
+      }
+    }
+    const storage = new LegacyInterleavingStorage();
+    const store = new AppStore(storage, T0, null);
+    const external = stateWithProject("legacy-winner", "Legacy winner");
+    external.meta.revision = 1;
+    external.meta.updatedAt = new Date(T1).toISOString();
+    storage.externalRaw = JSON.stringify(external);
+
+    assert.throws(
+      () => store.update((draft) => draft.projects.push(createProject({ id: "must-not-overwrite" }, T1)), T1),
+      /在本次保存期间更新了数据/u
+    );
+
+    assert.deepEqual(store.getState().projects.map((project) => project.id), ["legacy-winner"]);
+    assert.deepEqual(persisted(storage).projects.map((project) => project.id), ["legacy-winner"]);
+    assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
+  });
+
   test("an active foreign write lease fails before recipes can overwrite storage", () => {
     const storage = new MemoryStorage();
     const store = new AppStore(storage, T0, null);
@@ -810,6 +841,54 @@ describe("AppStore updates and persistence", () => {
     assert.equal(persisted(storage).projects[0].title, "Saved after reclaim");
     assert.equal(storage.getItem(PREVIOUS_KEY), null);
     assert.match(store.notices.at(-1), /释放.*滚动撤销快照/);
+  });
+
+  test("a quota retry rechecks primary data before releasing the rolling snapshot", () => {
+    class QuotaInterleavingStorage extends MemoryStorage {
+      quotaMode = false;
+      quotaObserved = false;
+      externalRaw = null;
+      injected = false;
+
+      getItem(key) {
+        const value = super.getItem(key);
+        if (key === WRITE_LOCK_KEY && this.quotaObserved && !this.injected) {
+          this.injected = true;
+          super.setItem(STORAGE_KEY, this.externalRaw);
+        }
+        return value;
+      }
+
+      setItem(key, value) {
+        if (this.quotaMode && key === STORAGE_KEY && !this.quotaObserved) {
+          this.quotaObserved = true;
+          const error = new Error("storage full");
+          error.name = "QuotaExceededError";
+          throw error;
+        }
+        super.setItem(key, value);
+      }
+    }
+    const storage = new QuotaInterleavingStorage();
+    const store = new AppStore(storage, T0, null);
+    store.update((draft) => draft.projects.push(createProject({ id: "p1", title: "First" }, T0)), T0);
+    store.update((draft) => { draft.projects[0].title = "Second"; }, T1);
+    const beforePrevious = storage.getItem(PREVIOUS_KEY);
+    const external = stateWithProject("quota-winner", "Quota winner");
+    external.meta.revision = 3;
+    external.meta.updatedAt = new Date(T2).toISOString();
+    storage.externalRaw = JSON.stringify(external);
+    storage.quotaMode = true;
+
+    assert.throws(
+      () => store.update((draft) => { draft.projects[0].title = "Must not overwrite"; }, T2 + 1),
+      /在本次保存期间更新了数据/u
+    );
+
+    assert.deepEqual(store.getState().projects.map((project) => project.id), ["quota-winner"]);
+    assert.deepEqual(persisted(storage).projects.map((project) => project.id), ["quota-winner"]);
+    assert.equal(storage.getItem(PREVIOUS_KEY), beforePrevious);
+    assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
   });
 
   test("a failed quota retry restores the rolling snapshot and leaves the primary state unchanged", () => {
