@@ -69,12 +69,27 @@ describe("buildTimelineWindow", () => {
   });
 
   test("caps DOM-facing output even for very large histories", () => {
-    const crumbs = Array.from({ length: 10_000 }, (_, index) => crumb(`c${index}`, "large", String(index)));
-    const result = buildTimelineWindow(crumbs, "large");
+    const start = Date.parse("2026-08-01T00:00:00.000Z");
+    const crumbs = Array.from({ length: 50_000 }, (_, index) => crumb(`c${index}`, "large", new Date(start + index).toISOString()));
+    const nativeSort = Array.prototype.sort;
+    let largestSortedArray = 0;
+    Array.prototype.sort = function (...args) {
+      largestSortedArray = Math.max(largestSortedArray, this.length);
+      return nativeSort.apply(this, args);
+    };
+    let result;
+    try {
+      result = buildTimelineWindow(crumbs, "large");
+    } finally {
+      Array.prototype.sort = nativeSort;
+    }
 
-    assert.equal(result.total, 10_000);
+    assert.equal(result.total, 50_000);
     assert.equal(result.items.length, 30);
-    assert.equal(result.remaining, 9_970);
+    assert.equal(result.remaining, 49_970);
+    assert.equal(result.items[0].id, "c49999");
+    assert.equal(result.items.at(-1).id, "c49970");
+    assert.equal(largestSortedArray, 30, "only the visible window should reach Array.sort");
   });
 
   test("filters the target project before allocating sortable entries", () => {
