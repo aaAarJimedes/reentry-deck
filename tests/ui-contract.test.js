@@ -119,6 +119,9 @@ test("settings expose an accessible persistent-storage result and a race-safe re
   assert.match(request, /await requestPersistentStorage\(navigator\.storage\)/u);
   assert.match(request, /if \(!isCurrentRequest\(\)\) return/u);
   assert.match(request, /result === STORAGE_DURABILITY_STATUS\.GRANTED/u);
+  assert.match(source, /this\.render\(\);\n      this\.#inspectPersistentStorage\(\);/u);
+  assert.match(source, /await inspectPersistentStorage\(navigator\.storage\)/u);
+  assert.match(source, /if \(location\.hash !== "#\/settings"\) return/u);
 });
 
 test("toast output is text-bounded, count-bounded, and timer-bounded", async () => {

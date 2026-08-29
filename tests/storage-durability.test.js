@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { STORAGE_DURABILITY_STATUS, requestPersistentStorage } from "../src/core/storage-durability.js";
+import { STORAGE_DURABILITY_STATUS, inspectPersistentStorage, requestPersistentStorage } from "../src/core/storage-durability.js";
 
 test("persistent storage reports unsupported without a callable capability", async () => {
   assert.equal(await requestPersistentStorage(undefined), STORAGE_DURABILITY_STATUS.UNSUPPORTED);
@@ -43,4 +43,29 @@ test("persistent storage reads the capability only once", async () => {
 
   assert.equal(await requestPersistentStorage(manager), STORAGE_DURABILITY_STATUS.GRANTED);
   assert.equal(reads, 1);
+});
+
+test("persistent storage inspection is read-only and preserves its receiver", async () => {
+  const manager = {
+    persisted() {
+      assert.equal(this, manager);
+      return true;
+    },
+    persist() {
+      throw new Error("inspection must not request permission");
+    }
+  };
+
+  assert.equal(await inspectPersistentStorage(manager), STORAGE_DURABILITY_STATUS.GRANTED);
+  assert.equal(await inspectPersistentStorage({ persisted: async () => false }), STORAGE_DURABILITY_STATUS.DENIED);
+  assert.equal(await inspectPersistentStorage({ persisted: async () => "true" }), STORAGE_DURABILITY_STATUS.DENIED);
+});
+
+test("persistent storage inspection distinguishes unsupported and failed capabilities", async () => {
+  const hostile = {};
+  Object.defineProperty(hostile, "persisted", { get() { throw new Error("denied"); } });
+
+  assert.equal(await inspectPersistentStorage({}), STORAGE_DURABILITY_STATUS.UNSUPPORTED);
+  assert.equal(await inspectPersistentStorage(hostile), STORAGE_DURABILITY_STATUS.ERROR);
+  assert.equal(await inspectPersistentStorage({ persisted: async () => Promise.reject(new Error("denied")) }), STORAGE_DURABILITY_STATUS.ERROR);
 });

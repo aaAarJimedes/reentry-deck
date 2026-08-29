@@ -5,16 +5,24 @@ export const STORAGE_DURABILITY_STATUS = Object.freeze({
   ERROR: "error"
 });
 
-export async function requestPersistentStorage(storageManager) {
+async function callStorageBoolean(storageManager, methodName) {
   try {
     if (storageManager === null || storageManager === undefined) {
       return STORAGE_DURABILITY_STATUS.UNSUPPORTED;
     }
-    const persist = storageManager.persist;
-    if (typeof persist !== "function") return STORAGE_DURABILITY_STATUS.UNSUPPORTED;
-    const granted = await Reflect.apply(persist, storageManager, []);
+    const method = storageManager[methodName];
+    if (typeof method !== "function") return STORAGE_DURABILITY_STATUS.UNSUPPORTED;
+    const granted = await Reflect.apply(method, storageManager, []);
     return granted === true ? STORAGE_DURABILITY_STATUS.GRANTED : STORAGE_DURABILITY_STATUS.DENIED;
   } catch {
     return STORAGE_DURABILITY_STATUS.ERROR;
   }
+}
+
+export function requestPersistentStorage(storageManager) {
+  return callStorageBoolean(storageManager, "persist");
+}
+
+export function inspectPersistentStorage(storageManager) {
+  return callStorageBoolean(storageManager, "persisted");
 }

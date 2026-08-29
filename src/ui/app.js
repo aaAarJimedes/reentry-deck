@@ -17,7 +17,7 @@ import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepare
 import { WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, inspectSession, locateActiveSessionContext, prepareQuickCheckpointReview, prepareQuickDock } from "../core/session.js";
-import { STORAGE_DURABILITY_STATUS, requestPersistentStorage } from "../core/storage-durability.js";
+import { STORAGE_DURABILITY_STATUS, inspectPersistentStorage, requestPersistentStorage } from "../core/storage-durability.js";
 import { STORE_NOTICE_LIMIT } from "../core/store.js";
 import {
   COLLECTION_PAGE_SIZE,
@@ -55,7 +55,7 @@ const COLOR_LABELS = {
 
 const MAX_VISIBLE_TOASTS = 4;
 const STORAGE_DURABILITY_DETAILS = Object.freeze({
-  unchecked: Object.freeze({ message: "尚未检查浏览器保护状态；重要工作区仍应定期导出备份。", action: "检查并请求保护" }),
+  checking: Object.freeze({ message: "正在检查浏览器是否已保护当前来源；不会弹出权限请求。", action: "正在检查" }),
   [STORAGE_DURABILITY_STATUS.GRANTED]: Object.freeze({ message: "浏览器已确认对当前来源使用持久存储保护。", action: "已受保护" }),
   [STORAGE_DURABILITY_STATUS.DENIED]: Object.freeze({ message: "浏览器尚未授予持久保护；请定期导出 JSON 备份。", action: "重新请求保护" }),
   [STORAGE_DURABILITY_STATUS.UNSUPPORTED]: Object.freeze({ message: "当前浏览器不支持持久存储请求；请依靠 JSON 备份恢复。", action: "浏览器不支持" }),
@@ -158,7 +158,7 @@ export class ReentryApp {
   #pendingArchiveId = null;
   #backupSizeState = null;
   #backupSizeLabel = "0 B";
-  #storageDurabilityStatus = "unchecked";
+  #storageDurabilityStatus = "checking";
   #eventController = new AbortController();
   #unsubscribeStore = null;
   #toastTimers = new Map();
@@ -203,6 +203,7 @@ export class ReentryApp {
 
       this.#timerId = window.setInterval(() => this.#refreshTimers(), 1000);
       this.render();
+      this.#inspectPersistentStorage();
     } catch (error) {
       try {
         this.destroy();
@@ -834,9 +835,10 @@ export class ReentryApp {
     const storageSummary = storageUsage.available
       ? `本应用约 ${formatBytes(storageUsage.appBytes)} · 此来源合计约 ${formatBytes(storageUsage.totalBytes)}`
       : "浏览器未开放可用的本地占用信息";
-    const durability = STORAGE_DURABILITY_DETAILS[this.#storageDurabilityStatus] ?? STORAGE_DURABILITY_DETAILS.unchecked;
+    const durability = STORAGE_DURABILITY_DETAILS[this.#storageDurabilityStatus] ?? STORAGE_DURABILITY_DETAILS.checking;
     const durabilityUnavailable = this.#storageDurabilityStatus === STORAGE_DURABILITY_STATUS.GRANTED
-      || this.#storageDurabilityStatus === STORAGE_DURABILITY_STATUS.UNSUPPORTED;
+      || this.#storageDurabilityStatus === STORAGE_DURABILITY_STATUS.UNSUPPORTED
+      || this.#storageDurabilityStatus === "checking";
     return `
       <section class="page-heading"><div><p class="eyebrow">数据保险箱</p><h1>你的工作轨迹，只属于你。</h1><p class="lede">复航台没有账户和云端数据库。请主动导出备份，尤其是在清理浏览器数据之前。</p></div></section>
       <div class="settings-grid">
@@ -1856,6 +1858,24 @@ export class ReentryApp {
       if (!isCurrentRequest() || !report) return;
       this.#storageDurabilityStatus = STORAGE_DURABILITY_STATUS.ERROR;
       this.#toast(`无法检查本机数据保护：${userFacingErrorMessage(error)}`, "error");
+    }
+  }
+
+  async #inspectPersistentStorage() {
+    const isCurrentRequest = this.#storageDurabilityRequestGate.begin();
+    let result = STORAGE_DURABILITY_STATUS.ERROR;
+    try {
+      result = await inspectPersistentStorage(navigator.storage);
+    } catch {
+      // Access to navigator.storage itself can be denied before the core capability boundary runs.
+    }
+    if (!isCurrentRequest()) return;
+    this.#storageDurabilityStatus = result;
+    if (location.hash !== "#/settings") return;
+    try {
+      this.render();
+    } catch (error) {
+      if (isCurrentRequest()) this.#toast(`无法显示本机数据保护状态：${userFacingErrorMessage(error)}`, "error");
     }
   }
 }
