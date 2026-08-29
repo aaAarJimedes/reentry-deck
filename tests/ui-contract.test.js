@@ -163,6 +163,8 @@ test("quick-dock continuation advances workspace time through the follow-up sess
 test("session lifecycle warnings refresh after time boundaries without erasing active input", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const visibilityRefresh = source.match(/document\.addEventListener\("visibilitychange", \(\) => \{([\s\S]*?)\n      \}, listenerOptions\)/u)?.[1] ?? "";
+  const pageRestore = source.match(/window\.addEventListener\("pageshow", \(event\) => \{([\s\S]*?)\n      \}, listenerOptions\)/u)?.[1] ?? "";
+  const resume = source.match(/#refreshAfterResume\(\) \{([\s\S]*?)\n  \}\n\n  #refreshTimers/u)?.[1] ?? "";
 
   assert.match(source, /#sessionHealthSignature = "none"/u);
   assert.match(source, /#calendarDaySignature = "invalid"/u);
@@ -173,7 +175,9 @@ test("session lifecycle warnings refresh after time boundaries without erasing a
   assert.match(source, /health\.staleReasons\.join\(","\)/u);
   assert.match(source, /document\.visibilityState === "hidden"/u);
   assert.match(visibilityRefresh, /document\.visibilityState !== "visible"\) return/u);
-  assert.ok(visibilityRefresh.indexOf("this.#store.refreshFromStorage()") < visibilityRefresh.indexOf("this.#refreshTimers()"));
+  assert.match(visibilityRefresh, /this\.#refreshAfterResume\(\)/u);
+  assert.match(pageRestore, /if \(event\.persisted\) this\.#refreshAfterResume\(\)/u);
+  assert.ok(resume.indexOf("this.#store.refreshFromStorage()") < resume.indexOf("this.#refreshTimers()"));
   assert.match(source, /this\.#store\.subscribe\(\(_state, event\) => this\.render\(\{ preserveDialog: event\?\.source === "external" \}\)\)/u);
 });
 

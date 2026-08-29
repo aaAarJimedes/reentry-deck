@@ -194,8 +194,10 @@ export class ReentryApp {
       window.addEventListener("keydown", (event) => this.#runUserAction(() => this.#onKeydown(event)), listenerOptions);
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState !== "visible") return;
-        this.#store.refreshFromStorage();
-        this.#refreshTimers();
+        this.#refreshAfterResume();
+      }, listenerOptions);
+      window.addEventListener("pageshow", (event) => {
+        if (event.persisted) this.#refreshAfterResume();
       }, listenerOptions);
       this.#colorSchemeQuery = window.matchMedia?.("(prefers-color-scheme: dark)") ?? null;
       this.#colorSchemeListener = () => {
@@ -1769,6 +1771,11 @@ export class ReentryApp {
       ?? dialog.querySelector("input:not([type=hidden]), textarea, select")
       ?? dialog.querySelector("button");
     preferred?.focus();
+  }
+
+  #refreshAfterResume() {
+    this.#store.refreshFromStorage();
+    this.#refreshTimers();
   }
 
   #refreshTimers() {
