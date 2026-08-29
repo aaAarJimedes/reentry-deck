@@ -1260,9 +1260,10 @@ export class ReentryApp {
   }
 
   #runCommand(command, dialog) {
+    const renderSequence = this.#renderSequence;
     dialog?.close();
     requestAnimationFrame(() => {
-      if (this.#destroyed) return;
+      if (this.#destroyed || renderSequence !== this.#renderSequence) return;
       this.#runUserAction(() => {
         if (command === "quick-capture") this.#openDialog("quick-capture-dialog");
         if (command === "quick-dock") this.#quickDock(undefined, false);

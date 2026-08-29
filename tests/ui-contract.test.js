@@ -118,7 +118,9 @@ test("deferred UI callbacks cannot outlive their render or app instance", async 
 
   assert.match(render, /const renderSequence = \+\+this\.#renderSequence/u);
   assert.ok((render.match(/renderSequence !== this\.#renderSequence/gu)?.length ?? 0) >= 3);
-  assert.match(command, /if \(this\.#destroyed\) return/u);
+  assert.match(command, /const renderSequence = this\.#renderSequence/u);
+  assert.match(command, /if \(this\.#destroyed \|\| renderSequence !== this\.#renderSequence\) return/u);
+  assert.ok(command.indexOf("const renderSequence") < command.indexOf("dialog?.close()"));
   assert.match(open, /!this\.#destroyed && dialog\.isConnected && dialog\.open/u);
   assert.match(announce, /this\.#destroyed[^\n]*!region\.isConnected\) return/u);
 });
