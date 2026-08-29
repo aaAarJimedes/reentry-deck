@@ -936,8 +936,8 @@ export class ReentryApp {
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">建立项目</button></div>
         </form>
       </dialog>
-      <dialog id="quick-capture-dialog" aria-labelledby="quick-capture-title">
-        <div class="dialog-header"><div><h2 id="quick-capture-title">跨项目快捷记录</h2><p>不离开当前页面，把刚出现的证据放回正确现场。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
+      <dialog id="quick-capture-dialog" aria-labelledby="quick-capture-title" aria-describedby="quick-capture-description">
+        <div class="dialog-header"><div><h2 id="quick-capture-title">跨项目快捷记录</h2><p id="quick-capture-description">不离开当前页面，把刚出现的证据放回正确现场。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <form class="dialog-body" data-form="quick-capture" autocomplete="off">
           <label class="field"><span>筛选目标项目</span><input type="search" data-control="quick-project-filter" maxlength="${QUICK_CAPTURE_QUERY_LIMIT}" placeholder="输入项目名称、说明或下一步" aria-describedby="quick-project-filter-status" /></label>
           <p class="field-hint" id="quick-project-filter-status" data-quick-project-status aria-live="polite">${escapeHTML(quickCaptureProjectStatus(captureWindow))}</p>
@@ -948,16 +948,16 @@ export class ReentryApp {
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">${icon("plus")} 保存轨迹</button></div>
         </form>
       </dialog>
-      <dialog id="start-session-dialog" aria-labelledby="start-session-title">
-        <div class="dialog-header"><div><h2 id="start-session-title">开始一次有意图的会话</h2><p>意图不是结果承诺，只是这段时间的方向。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
+      <dialog id="start-session-dialog" aria-labelledby="start-session-title" aria-describedby="start-session-description">
+        <div class="dialog-header"><div><h2 id="start-session-title">开始一次有意图的会话</h2><p id="start-session-description">意图不是结果承诺，只是这段时间的方向。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <form class="dialog-body" data-form="start-session">
           <input type="hidden" name="projectId" value="${attr(project?.id ?? "")}" />
           <label class="field"><span class="required">这次准备推进什么</span><textarea name="intention" maxlength="${IMPORT_LIMITS.sessionIntention}" placeholder="例如：先验证图例排序是否与正文一致" required>${escapeHTML(project?.nextAction ?? "")}</textarea></label>
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">${icon("play")} 开始计时</button></div>
         </form>
       </dialog>
-      <dialog id="checkpoint-dialog" data-context-id="${attr(activeSession?.id ?? "")}" aria-labelledby="checkpoint-title">
-        <div class="dialog-header"><div><h2 id="checkpoint-title">留下可靠检查点</h2><p>给下次回来的自己一条短而清楚的路。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
+      <dialog id="checkpoint-dialog" data-context-id="${attr(activeSession?.id ?? "")}" aria-labelledby="checkpoint-title" aria-describedby="checkpoint-description">
+        <div class="dialog-header"><div><h2 id="checkpoint-title">留下可靠检查点</h2><p id="checkpoint-description">给下次回来的自己一条短而清楚的路。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <form class="dialog-body" data-form="checkpoint">
           <label class="field"><span class="required">现在停在哪里</span><textarea name="summary" maxlength="${IMPORT_LIMITS.checkpointSummary}" placeholder="已经完成什么、当前看到什么结果？" required></textarea></label>
           <label class="field"><span class="required">回来后的第一物理动作</span><textarea name="nextAction" maxlength="${IMPORT_LIMITS.nextAction}" placeholder="避免‘继续做’，写成能直接动手的动作。" required>${escapeHTML(project?.nextAction ?? "")}</textarea></label>
@@ -979,8 +979,8 @@ export class ReentryApp {
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">稍后再说</button><button class="primary-button" type="submit">${icon("check")} 保存可靠检查点</button></div>
         </form>
       </dialog>` : ""}
-      <dialog id="edit-project-dialog" aria-labelledby="edit-project-title">
-        <div class="dialog-header"><div><h2 id="edit-project-title">编辑项目现场</h2><p>项目目的应帮助未来的自己快速判断方向。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
+      <dialog id="edit-project-dialog" aria-labelledby="edit-project-title" aria-describedby="edit-project-description">
+        <div class="dialog-header"><div><h2 id="edit-project-title">编辑项目现场</h2><p id="edit-project-description">项目目的应帮助未来的自己快速判断方向。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <form class="dialog-body" data-form="edit-project">
           <input type="hidden" name="projectId" value="${attr(project?.id ?? "")}" />
           <label class="field"><span class="required">项目名称</span><input name="title" maxlength="${IMPORT_LIMITS.projectTitle}" value="${attr(project?.title ?? "")}" required /></label>
@@ -989,8 +989,8 @@ export class ReentryApp {
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">保存修改</button></div>
         </form>
       </dialog>
-      <dialog id="search-dialog" class="search-dialog" aria-labelledby="search-title">
-        <div class="dialog-header"><div><h2 id="search-title">找回工作现场</h2><p>搜索项目、轨迹与检查点，或直接执行常用动作；数据不会离开浏览器。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
+      <dialog id="search-dialog" class="search-dialog" aria-labelledby="search-title" aria-describedby="search-description">
+        <div class="dialog-header"><div><h2 id="search-title">找回工作现场</h2><p id="search-description">搜索项目、轨迹与检查点，或直接执行常用动作；数据不会离开浏览器。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <div class="dialog-body">
           <label class="search-field">${icon("search")}<span class="sr-only">搜索所有工作现场或筛选动作</span><input type="search" data-control="workspace-search" maxlength="${SEARCH_QUERY_LIMIT}" placeholder="输入项目、决定、问题或下一步…" autocomplete="off" autofocus /></label>
           <div class="search-results" data-search-results aria-live="polite">${this.#renderSearchResults("")}</div>

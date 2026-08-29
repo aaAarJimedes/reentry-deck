@@ -31,6 +31,18 @@ test("project archival uses an accessible in-app confirmation instead of window.
   assert.doesNotMatch(confirm, /(?:projects\.find|sessions\.some)/u);
 });
 
+test("workflow dialogs bind their visible instructions as accessible descriptions", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  for (const stem of ["quick-capture", "start-session", "checkpoint", "edit-project", "search"]) {
+    assert.match(
+      source,
+      new RegExp(`<dialog id="${stem}-dialog"[^>]*aria-labelledby="${stem}-title"[^>]*aria-describedby="${stem}-description"`)
+    );
+    assert.match(source, new RegExp(`<p id="${stem}-description">`));
+  }
+});
+
 test("project mutations enforce lifecycle-specific core plans", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const edit = source.match(/#editProject\(data, form\) \{([\s\S]*?)\n  \}\n\n  #prepareProjectEditDialog/u)?.[1] ?? "";
