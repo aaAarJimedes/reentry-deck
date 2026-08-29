@@ -104,6 +104,23 @@ test("every user-established workspace requests persistent storage only after co
   assert.match(importBackup, /catch \(error\) \{[\s\S]*?this\.#pendingImport = pending/u);
 });
 
+test("settings expose an accessible persistent-storage result and a race-safe request", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const settings = source.match(/#renderSettings\(state\) \{([\s\S]*?)\n  \}\n\n  #getBackupSize/u)?.[1] ?? "";
+  const request = source.match(/async #requestPersistentStorage\(report = false\) \{([\s\S]*?)\n  \}\n\}/u)?.[1] ?? "";
+
+  assert.notEqual(settings, "");
+  assert.notEqual(request, "");
+  assert.match(source, /data-action="request-persistent-storage" aria-describedby="storage-durability-status"/u);
+  assert.match(source, /id="storage-durability-status" role="status"/u);
+  assert.match(source, /if \(action === "request-persistent-storage"\) this\.#requestPersistentStorage\(true\)/u);
+  assert.match(request, /this\.#storageDurabilityRequestGate\.begin\(\)/u);
+  assert.match(source, /this\.#storageDurabilityRequestGate\.invalidate\(\)/u);
+  assert.match(request, /await requestPersistentStorage\(navigator\.storage\)/u);
+  assert.match(request, /if \(!isCurrentRequest\(\)\) return/u);
+  assert.match(request, /result === STORAGE_DURABILITY_STATUS\.GRANTED/u);
+});
+
 test("toast output is text-bounded, count-bounded, and timer-bounded", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const toast = source.match(/#toast\(message, kind = "success"\) \{([\s\S]*?)\n  \}\n\n  #renderToasts/u)?.[1] ?? "";
