@@ -174,9 +174,31 @@ function runCli() {
     process.exitCode = 1;
   });
   server.listen(port, host, () => {
-    console.log(`复航台已启动：http://${host}:${port}`);
+    const url = formatServerUrl(server.address(), host, port);
+    console.log(url ? `复航台已启动：${url}` : "复航台已启动。");
     console.log("按 Ctrl+C 停止。");
   });
+}
+
+export function formatServerUrl(address, fallbackHost = "127.0.0.1", fallbackPort = 4173) {
+  const host = address && typeof address === "object" && typeof address.address === "string"
+    ? address.address
+    : fallbackHost;
+  const port = address && typeof address === "object" && Number.isInteger(address.port)
+    ? address.port
+    : fallbackPort;
+  if (typeof host !== "string" || !host || /[\u0000-\u0020\u007f-\u009f]/u.test(host)) return null;
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) return null;
+  const bareHost = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+  if (!bareHost) return null;
+  const candidate = `http://${bareHost.includes(":") ? `[${bareHost}]` : bareHost}:${port}`;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) return null;
+    return candidate;
+  } catch {
+    return null;
+  }
 }
 
 export function parseServerPort(value) {

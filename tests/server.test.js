@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, before, describe, test } from "node:test";
 
-import { MAX_REQUEST_TARGET_LENGTH, createAppServer, parseServerPort, resolvePublicFile } from "../tools/server.mjs";
+import { MAX_REQUEST_TARGET_LENGTH, createAppServer, formatServerUrl, parseServerPort, resolvePublicFile } from "../tools/server.mjs";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 let server;
@@ -28,6 +28,17 @@ describe("server configuration", () => {
     for (const value of ["", "4173abc", "1.5", "-1", "+80", "65536", null, undefined]) {
       assert.equal(parseServerPort(value), null, String(value));
     }
+  });
+
+  test("reports the actual bound port and formats IPv6 URLs", () => {
+    assert.equal(formatServerUrl({ address: "127.0.0.1", port: 53124 }, "127.0.0.1", 0), "http://127.0.0.1:53124");
+    assert.equal(formatServerUrl({ address: "::1", port: 53125 }, "localhost", 0), "http://[::1]:53125");
+    assert.equal(formatServerUrl({ address: "[::1]", port: 53126 }, "localhost", 0), "http://[::1]:53126");
+    assert.equal(formatServerUrl(null, "localhost", 4173), "http://localhost:4173");
+    assert.equal(formatServerUrl(null, "bad host", 4173), null);
+    assert.equal(formatServerUrl(null, "user@example.test", 4173), null);
+    assert.equal(formatServerUrl(null, "bad:host", 4173), null);
+    assert.equal(formatServerUrl({ address: "127.0.0.1", port: 65_536 }), null);
   });
 });
 
