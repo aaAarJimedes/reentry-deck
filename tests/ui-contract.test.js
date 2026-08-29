@@ -619,6 +619,15 @@ test("context-gap warnings consume the exact total instead of the bounded sessio
   assert.doesNotMatch(source, /检查点之后还有 \$\{card\.contextGapSessions\.length\} 段未收拢或中断的会话/u);
 });
 
+test("project cards expose an accessible bounded Markdown brief download", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /data-action="download-reentry-brief"[^>]*aria-label="下载 Markdown 复航简报：/u);
+  assert.match(source, /new Blob\(\[markdown\], \{ type: "text\/markdown;charset=utf-8" \}\)/u);
+  assert.match(source, /triggerBlobDownload\(blob, `reentry-\$\{card\.project\.title\}-\$\{new Date\(\)\.toISOString\(\)\.slice\(0, 10\)\}\.md`\)/u);
+  assert.match(source, /buildReentryMarkdown\(card\)/u);
+});
+
 test("archive cards batch reentry projection and record counting", async () => {
   const source = await readFile(new URL("../src/ui/app.js", import.meta.url), "utf8");
 

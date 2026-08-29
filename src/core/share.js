@@ -11,15 +11,46 @@ const WORKSPACE_HANDOFF_ATTENTION_LIMIT = 4;
 const WORKSPACE_HANDOFF_REASON_LIMIT = 3;
 
 export function buildReentryBrief(card) {
-  if (!card?.project) throw new TypeError("缺少可生成简报的项目现场。 ");
+  const fields = reentryBriefFields(card);
   return [
-    `【${briefLine(card.project.title, IMPORT_LIMITS.projectTitle)}｜复航简报】`,
-    `当前状态：${briefLine(card.summary, IMPORT_LIMITS.checkpointSummary)}`,
-    `第一动作：${briefLine(card.nextAction, IMPORT_LIMITS.nextAction)}`,
-    `未决事项：${currentOpenLoops(card)}`,
-    `复航提示：${briefLine(card.returnHint, IMPORT_LIMITS.returnHint)}`,
-    `证据状态：${evidenceStatus(card)}`
+    `【${fields.title}｜复航简报】`,
+    `当前状态：${fields.summary}`,
+    `第一动作：${fields.nextAction}`,
+    `未决事项：${fields.openLoops}`,
+    `复航提示：${fields.returnHint}`,
+    `证据状态：${fields.evidence}`
   ].join("\n");
+}
+
+export function buildReentryMarkdown(card) {
+  const fields = reentryBriefFields(card);
+  return [
+    `# ${escapeMarkdownInline(fields.title)} · 复航简报`,
+    "",
+    `- **当前状态：** ${escapeMarkdownInline(fields.summary)}`,
+    `- **第一动作：** ${escapeMarkdownInline(fields.nextAction)}`,
+    `- **未决事项：** ${escapeMarkdownInline(fields.openLoops)}`,
+    `- **复航提示：** ${escapeMarkdownInline(fields.returnHint)}`,
+    `- **证据状态：** ${escapeMarkdownInline(fields.evidence)}`,
+    "",
+    "> 由复航台根据本机已记录证据生成；请在继续工作前核对现场。"
+  ].join("\n");
+}
+
+function reentryBriefFields(card) {
+  if (!card?.project) throw new TypeError("缺少可生成简报的项目现场。 ");
+  return {
+    title: briefLine(card.project.title, IMPORT_LIMITS.projectTitle),
+    summary: briefLine(card.summary, IMPORT_LIMITS.checkpointSummary),
+    nextAction: briefLine(card.nextAction, IMPORT_LIMITS.nextAction),
+    openLoops: currentOpenLoops(card),
+    returnHint: briefLine(card.returnHint, IMPORT_LIMITS.returnHint),
+    evidence: evidenceStatus(card)
+  };
+}
+
+function escapeMarkdownInline(value) {
+  return value.replace(/[\\`*_[\]{}()<>#+\-.!|]/gu, "\\$&");
 }
 
 export function buildWorkspaceHandoff(overview, now = Date.now()) {

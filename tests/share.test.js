@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { COPY_TEXT_LIMIT, REENTRY_BRIEF_GAP_LIMIT, REENTRY_BRIEF_SIGNAL_LIMIT, SHARE_TEXT_SCAN_LIMIT, WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT, WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../src/core/share.js";
+import { COPY_TEXT_LIMIT, REENTRY_BRIEF_GAP_LIMIT, REENTRY_BRIEF_SIGNAL_LIMIT, SHARE_TEXT_SCAN_LIMIT, WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT, WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildReentryMarkdown, buildWorkspaceHandoff, copyPlainText } from "../src/core/share.js";
 
 describe("buildReentryBrief", () => {
   test("builds a focused bounded plain-text handoff", () => {
@@ -169,6 +169,37 @@ describe("buildReentryBrief", () => {
       returnHint: "hint"
     });
     assert.doesNotMatch(unicodeBoundary, /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u);
+  });
+});
+
+describe("buildReentryMarkdown", () => {
+  test("builds an escaped bounded Markdown handoff from the same live evidence", () => {
+    const markdown = buildReentryMarkdown({
+      project: { title: "[门户](https://example.com) #1" },
+      summary: "已定位 *邀请* 失效。",
+      nextAction: "打开 <sample.json>。",
+      checkpoint: { id: "cp" },
+      openLoops: "过期检查点事项",
+      unresolvedSignals: [{ text: "确认 _旧邀请_ 是否可重发" }],
+      unresolvedSummary: { total: 3 },
+      returnHint: "从 `403` 响应继续。",
+      completeness: 75,
+      readinessGaps: ["补充 [材料入口]"]
+    });
+
+    assert.equal(markdown, [
+      "# \\[门户\\]\\(https://example\\.com\\) \\#1 · 复航简报",
+      "",
+      "- **当前状态：** 已定位 \\*邀请\\* 失效。",
+      "- **第一动作：** 打开 \\<sample\\.json\\>。",
+      "- **未决事项：** 确认 \\_旧邀请\\_ 是否可重发（另有 2 条未显示，请查看完整轨迹）",
+      "- **复航提示：** 从 \\`403\\` 响应继续。",
+      "- **证据状态：** 75% · 需补：补充 \\[材料入口\\]",
+      "",
+      "> 由复航台根据本机已记录证据生成；请在继续工作前核对现场。"
+    ].join("\n"));
+    assert.ok(markdown.length < 3_000);
+    assert.throws(() => buildReentryMarkdown(null), /缺少可生成简报/u);
   });
 });
 
