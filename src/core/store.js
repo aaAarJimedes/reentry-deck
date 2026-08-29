@@ -3,7 +3,7 @@ import { buildImportPreview, checksumSerializedSnapshotData, readImportSnapshot 
 import { safeDiagnosticMessage } from "./diagnostic.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.222.0";
+export const APP_VERSION = "0.223.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
@@ -170,11 +170,15 @@ export class AppStore {
     this.#emit();
   }
 
+  getSnapshotExportTimestamp(now = Date.now()) {
+    return Date.parse(isoAtOrAfter(now, this.#state.meta.updatedAt));
+  }
+
   exportSnapshot(now = Date.now()) {
     const data = JSON.parse(this.#serializedState);
     return {
       format: "reentry-deck-backup",
-      exportedAt: isoAtOrAfter(now, this.#state.meta.updatedAt),
+      exportedAt: new Date(this.getSnapshotExportTimestamp(now)).toISOString(),
       appVersion: APP_VERSION,
       checksum: checksumSerializedSnapshotData(this.#serializedState),
       data
@@ -185,7 +189,7 @@ export class AppStore {
     const serializedData = this.#serializedState;
     const metadata = JSON.stringify({
       format: "reentry-deck-backup",
-      exportedAt: isoAtOrAfter(now, this.#state.meta.updatedAt),
+      exportedAt: new Date(this.getSnapshotExportTimestamp(now)).toISOString(),
       appVersion: APP_VERSION,
       checksum: checksumSerializedSnapshotData(serializedData)
     });

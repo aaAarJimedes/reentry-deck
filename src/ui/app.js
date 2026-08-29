@@ -1738,9 +1738,9 @@ export class ReentryApp {
   }
 
   #exportData() {
-    const now = Date.now();
-    const blob = new Blob([this.#store.exportSnapshotText(now)], { type: "application/json" });
-    triggerBlobDownload(blob, `reentry-backup-${formatLocalDownloadDate(now)}.json`);
+    const exportTime = this.#store.getSnapshotExportTimestamp(Date.now());
+    const blob = new Blob([this.#store.exportSnapshotText(exportTime)], { type: "application/json" });
+    triggerBlobDownload(blob, `reentry-backup-${formatLocalDownloadDate(exportTime)}.json`);
     this.#toast("完整备份已生成。 ");
   }
 

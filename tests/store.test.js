@@ -1346,6 +1346,17 @@ describe("AppStore replacement, snapshots, and reset", () => {
     assert.equal(store.getState().projects[0].title, "Original");
   });
 
+  test("snapshot exports share the monotonic workspace time when the clock moves backward", () => {
+    const store = new AppStore(new MemoryStorage(), T0);
+    store.update((draft) => draft.projects.push(createProject({ id: "p1", title: "Clock anchor" }, T0)), T2);
+
+    const exportTime = store.getSnapshotExportTimestamp(T1);
+
+    assert.equal(exportTime, T2);
+    assert.equal(store.exportSnapshot(exportTime).exportedAt, new Date(T2).toISOString());
+    assert.equal(JSON.parse(store.exportSnapshotText(exportTime)).exportedAt, new Date(T2).toISOString());
+  });
+
   test("exportSnapshotText reuses one canonical data serialization without cloning the workspace", () => {
     const store = new AppStore(new MemoryStorage(), T0);
     store.update((draft) => draft.projects.push(createProject({ id: "p1", title: "Compact export" }, T0)), T0);
