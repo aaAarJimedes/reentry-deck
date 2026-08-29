@@ -1874,7 +1874,7 @@ export class ReentryApp {
     this.#storageDurabilityStatus = result;
     if (location.hash !== "#/settings") return;
     try {
-      this.render();
+      this.render({ preserveDialog: true });
     } catch (error) {
       if (isCurrentRequest()) this.#toast(`无法显示本机数据保护状态：${userFacingErrorMessage(error)}`, "error");
     }

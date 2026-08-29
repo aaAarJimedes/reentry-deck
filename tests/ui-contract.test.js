@@ -123,6 +123,7 @@ test("settings expose an accessible persistent-storage result and a race-safe re
   assert.match(source, /this\.render\(\);\n      this\.#inspectPersistentStorage\(\);/u);
   assert.match(source, /await inspectPersistentStorage\(navigator\.storage\)/u);
   assert.match(source, /if \(location\.hash !== "#\/settings"\) return/u);
+  assert.match(source, /this\.render\(\{ preserveDialog: true \}\)/u);
 });
 
 test("toast output is text-bounded, count-bounded, and timer-bounded", async () => {
