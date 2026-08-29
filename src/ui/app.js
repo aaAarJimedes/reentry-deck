@@ -531,7 +531,7 @@ export class ReentryApp {
   #renderDashboard(state, activeSession, workspaceCounts, now) {
     if (!workspaceCounts.unarchivedProjects) return this.#renderEmptyDashboard();
     const rankedLimit = this.#collectionLimits.get("home") ?? COLLECTION_PAGE_SIZE;
-    const { rankedProjects: ranked, rankedTotal, weeklyReview, attentionDeck } = buildWorkspaceOverview(state, now, { rankedLimit });
+    const { rankedProjects: ranked, rankedTotal, weeklyReview, attentionDeck, attentionTotal } = buildWorkspaceOverview(state, now, { rankedLimit });
     const projectWindow = buildCollectionWindow(ranked, rankedLimit, rankedTotal);
     const lead = ranked[0];
     const activeProjects = workspaceCounts.activeProjects;
@@ -553,7 +553,7 @@ export class ReentryApp {
         ${metric("可靠检查点", workspaceCounts.checkpoints, "次可恢复现场")}
         ${metric("受阻项目", blockedProjects, blockedProjects ? "需要一次澄清" : "目前航路通畅")}
       </section>
-      ${this.#renderWorkspacePulse(weeklyReview, attentionDeck)}
+      ${this.#renderWorkspacePulse(weeklyReview, attentionDeck, attentionTotal)}
       <section>
         <div class="section-heading"><div><h2>项目舰桥</h2><p>按当前最值得复航的顺序排列</p></div><button class="secondary-button" type="button" data-action="open-new-project">${icon("plus")} 建立项目</button></div>
         <div class="project-grid" id="project-window-home" data-project-window="home">${projectWindow.items.map((card, index) => this.#renderProjectCard(card, index)).join("")}</div>
@@ -561,8 +561,12 @@ export class ReentryApp {
       </section>`;
   }
 
-  #renderWorkspacePulse(review, attentionDeck) {
+  #renderWorkspacePulse(review, attentionDeck, attentionTotal) {
     const dockCount = review.quickDocks + review.interruptions;
+    const completeAttentionTotal = Number.isSafeInteger(attentionTotal)
+      ? Math.max(attentionDeck.length, attentionTotal)
+      : attentionDeck.length;
+    const attentionRemaining = completeAttentionTotal - attentionDeck.length;
     return `
       <section class="panel workspace-pulse" aria-labelledby="pulse-heading">
         <div class="panel-header inline-between"><div><h2 id="pulse-heading">七日航迹</h2><p>只根据本机已有时间戳整理；单次异常长会话最多计 12 小时。</p></div><span class="soft-pill">${icon("trail")} 最近 ${review.windowDays} 天</span></div>
@@ -578,7 +582,7 @@ export class ReentryApp {
           </div>
           <div class="attention-deck">
             <div class="attention-heading"><strong>值得核对</strong><span>按现场缺口排序，不评价产出</span></div>
-            ${attentionDeck.length ? `<ul>${attentionDeck.map((item) => `<li><a href="#/project/${encodeURIComponent(item.project.id)}"><span class="attention-level" data-level="${attr(item.level)}" aria-hidden="true"></span><span><strong>${escapeHTML(item.project.title)}</strong><small>${escapeHTML(item.reasons.join(" · "))}</small></span>${icon("arrow")}</a></li>`).join("")}</ul>` : '<p class="attention-empty">当前没有明显的现场缺口。</p>'}
+            ${attentionDeck.length ? `<ul>${attentionDeck.map((item) => `<li><a href="#/project/${encodeURIComponent(item.project.id)}"><span class="attention-level" data-level="${attr(item.level)}" aria-hidden="true"></span><span><strong>${escapeHTML(item.project.title)}</strong><small>${escapeHTML(item.reasons.join(" · "))}</small></span>${icon("arrow")}</a></li>`).join("")}</ul>${attentionRemaining ? `<p class="attention-overflow">另有 ${attentionRemaining} 个项目未列出，请在项目舰桥中核对。</p>` : ""}` : '<p class="attention-empty">当前没有明显的现场缺口。</p>'}
           </div>
         </div>
       </section>`;

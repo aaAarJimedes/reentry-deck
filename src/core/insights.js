@@ -65,11 +65,13 @@ export function buildWorkspaceOverview(state, now = Date.now(), options = {}) {
   const projectIds = activeProjectIds(state.projects);
   const cards = buildReentryCards(state, projectIds, referenceTimestamp);
   const rankedProjects = rankReentryCards(cards, options.rankedLimit ?? Number.POSITIVE_INFINITY);
+  const attention = buildAttentionWindowWithCards(state, referenceTimestamp, options.attentionDeck ?? {}, cards);
   return {
     rankedProjects,
     rankedTotal: cards.length,
     weeklyReview: buildWeeklyReviewWithCards(state, referenceTimestamp, options.weeklyReview ?? {}, cards),
-    attentionDeck: buildAttentionDeckWithCards(state, referenceTimestamp, options.attentionDeck ?? {}, cards)
+    attentionDeck: attention.items,
+    attentionTotal: attention.total
   };
 }
 
@@ -187,17 +189,23 @@ function activeProjectIds(projects) {
 }
 
 function buildAttentionDeckWithCards(state, now, options, reentryCards) {
+  return buildAttentionWindowWithCards(state, now, options, reentryCards).items;
+}
+
+function buildAttentionWindowWithCards(state, now, options, reentryCards) {
   const staleAfterDays = Number.isFinite(options.staleAfterDays)
     ? Math.max(1, options.staleAfterDays)
     : Math.max(1, Number(state.settings?.staleAfterDays) || 7);
   const limit = normalizeLimit(options.limit, 4);
-  if (!limit) return [];
   const attention = [];
+  let total = 0;
   for (const card of reentryCards) {
     const project = card.project;
     if (project.status === "archived") continue;
     const item = attentionForProject(project, card, now, staleAfterDays);
     if (item.score <= 0) continue;
+    total += 1;
+    if (!limit) continue;
     if (attention.length < limit) {
       pushWorstAttention(attention, item);
       continue;
@@ -206,7 +214,7 @@ function buildAttentionDeckWithCards(state, now, options, reentryCards) {
     attention[0] = item;
     sinkWorstAttention(attention, 0);
   }
-  return attention.sort(compareAttention);
+  return { items: attention.sort(compareAttention), total };
 }
 
 function pushWorstAttention(heap, item) {

@@ -321,6 +321,7 @@ test("buildWorkspaceOverview shares one reentry index across ranking, review, an
   assert.equal(overview.weeklyReview.records, 5_000);
   assert.ok(overview.weeklyReview.recoverability > 0, "all cards must still contribute to the review");
   assert.equal(overview.attentionDeck.length, 4);
+  assert.equal(overview.attentionTotal, 1_000);
   assert.equal(overview.attentionDeck[0].project.status, "blocked");
   assert.equal(largestSortedLength, 12, "only the requested ranking window should reach the largest final sort");
 });

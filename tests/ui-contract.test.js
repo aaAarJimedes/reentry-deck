@@ -438,6 +438,8 @@ test("home recommendations rank only the requested visible window", async () => 
   assert.match(source, /const rankedLimit = this\.#collectionLimits\.get\("home"\) \?\? COLLECTION_PAGE_SIZE/u);
   assert.match(source, /buildWorkspaceOverview\(state, now, \{ rankedLimit \}\)/u);
   assert.match(source, /buildCollectionWindow\(ranked, rankedLimit, rankedTotal\)/u);
+  assert.match(source, /attentionTotal/u);
+  assert.match(source, /另有 \$\{attentionRemaining\} 个项目未列出，请在项目舰桥中核对。/u);
 });
 
 test("pagination memory resets with workspace identity and stays bounded across project history", async () => {

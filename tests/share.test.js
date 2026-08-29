@@ -184,13 +184,15 @@ describe("buildWorkspaceHandoff", () => {
       rankedProjects,
       rankedTotal: 8,
       weeklyReview: { focusedMinutes: 95, sessions: 3, records: 12, recoverability: 77 },
-      attentionDeck: [{ project: { title: "Project 2" }, reasons: ["有未解决阻塞", "已离开 9 天"] }]
+      attentionDeck: [{ project: { title: "Project 2" }, reasons: ["有未解决阻塞", "已离开 9 天"] }],
+      attentionTotal: 3
     }, Date.parse("2026-08-28T08:00:00.000Z"));
 
     assert.match(handoff, /生成时间：2026-08-28T08:00:00\.000Z/u);
     assert.match(handoff, /当前会话：Project 1｜Finish the critical path/u);
     assert.match(handoff, /2\. Project 2｜受阻｜复航 89%/u);
     assert.match(handoff, /Project 2：有未解决阻塞；已离开 9 天/u);
+    assert.match(handoff, /另有 2 个项目未列出，请回到项目舰桥核对/u);
     assert.match(handoff, /七日航迹：95 分钟 · 3 段会话 · 12 条轨迹 · 平均复航 77%/u);
     assert.equal((handoff.match(/^\d+\. /gmu) ?? []).length, WORKSPACE_HANDOFF_PROJECT_LIMIT);
     assert.doesNotMatch(handoff, /Project 6/u);
@@ -211,6 +213,10 @@ describe("buildWorkspaceHandoff", () => {
     assert.match(handoff, /当前没有可复航项目/u);
     assert.match(handoff, /当前没有明显的现场缺口/u);
     assert.match(handoff, /平均复航 0%/u);
+    assert.match(
+      buildWorkspaceHandoff({ rankedProjects: [], attentionTotal: 3 }, 0),
+      /有 3 个项目需要核对，请回到项目舰桥查看/u
+    );
   });
 
   test("bounds attention reason reads and skips malformed cards without truncating valid output", () => {

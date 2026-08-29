@@ -70,7 +70,18 @@ export function buildWorkspaceHandoff(overview, now = Date.now()) {
     const reasons = boundedReasonList(item.reasons) || "需要人工核对现场";
     lines.push(`- ${briefLine(item.project.title, IMPORT_LIMITS.projectTitle)}：${reasons}`);
   }
-  if (!attentionCount) lines.push("- 当前没有明显的现场缺口");
+  const declaredAttentionTotal = Number.isSafeInteger(overview.attentionTotal) && overview.attentionTotal >= 0
+    ? overview.attentionTotal
+    : attentionCount;
+  const attentionTotal = Math.max(attentionCount, declaredAttentionTotal);
+  const attentionRemaining = attentionTotal - attentionCount;
+  if (!attentionCount) {
+    lines.push(attentionTotal
+      ? `- 有 ${attentionTotal} 个项目需要核对，请回到项目舰桥查看`
+      : "- 当前没有明显的现场缺口");
+  } else if (attentionRemaining) {
+    lines.push(`- 另有 ${attentionRemaining} 个项目未列出，请回到项目舰桥核对`);
+  }
   lines.push(
     "",
     `七日航迹：${nonNegativeInteger(review.focusedMinutes)} 分钟 · ${nonNegativeInteger(review.sessions)} 段会话 · ${nonNegativeInteger(review.records)} 条轨迹 · 平均复航 ${boundedPercent(review.recoverability)}`,

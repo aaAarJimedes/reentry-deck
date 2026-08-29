@@ -628,6 +628,7 @@ h3 { font-size: 17px; }
 .attention-level { width: 7px; height: 7px; border-radius: 50%; background: var(--sky); }
 .attention-level[data-level="medium"] { background: var(--amber); }
 .attention-level[data-level="high"] { background: var(--clay); }
+.attention-overflow { margin: 8px 8px 0; color: var(--ink-soft); font-size: 9px; }
 .attention-empty { margin: 0; padding: 20px 8px; color: var(--ink-soft); font-size: 11px; text-align: center; }
 
 .project-grid {
