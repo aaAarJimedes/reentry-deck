@@ -513,6 +513,7 @@ test("buildReentryCard exposes at most three pinned crumbs in evidence order", (
   const card = buildReentryCard(state, "p1", NOW);
 
   assert.deepEqual(card.pinnedCrumbs.map((item) => item.id), ["newest", "new", "mid"]);
+  assert.equal(card.pinnedTotal, 4);
 });
 
 test("buildReentryCard reports activity age and returns null for an unknown project", () => {
@@ -640,6 +641,7 @@ test("a boundary-sized reentry card derives bounded evidence without map or filt
   assert.equal(card.summaryEvidence.id, "large-49998");
   assert.deepEqual(card.decisions.map((item) => item.id), ["large-49998", "large-49997"]);
   assert.deepEqual(card.pinnedCrumbs.map((item) => item.id), ["large-49998", "large-49997", "large-49996"]);
+  assert.equal(card.pinnedTotal, 49_999);
   assert.deepEqual(card.changesSinceCheckpoint.map((item) => item.id), ["large-49998", "large-49997", "large-49996"]);
   assert.deepEqual(card.recentTrail.map((item) => item.id), ["large-49998", "large-49997", "large-49996", "large-49995", "large-49994"]);
 });

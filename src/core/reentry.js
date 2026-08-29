@@ -165,6 +165,7 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
   };
   const decisions = [];
   const pinnedCrumbs = [];
+  let pinnedTotal = 0;
   const changesSinceCheckpoint = [];
   for (const item of projectCrumbs) {
     if (stats && item.type === "decision") stats.decisions += 1;
@@ -182,7 +183,10 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
       if (unresolvedSignals.length < 3) unresolvedSignals.push(item);
     }
     if (decisions.length < 2 && item.type === "decision") decisions.push(item);
-    if (pinnedCrumbs.length < 3 && item.pinned) pinnedCrumbs.push(item);
+    if (item.pinned) {
+      pinnedTotal += 1;
+      if (pinnedCrumbs.length < 3) pinnedCrumbs.push(item);
+    }
     if (changesSinceCheckpoint.length < 3 && CHANGE_CRUMB_TYPES.has(item.type) && timeOf(item.createdAt) > checkpointTime) {
       changesSinceCheckpoint.push(item);
     }
@@ -247,6 +251,7 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
     readinessGaps,
     decisions,
     pinnedCrumbs,
+    pinnedTotal,
     unresolvedSignals,
     unresolvedSummary,
     changesSinceCheckpoint,
