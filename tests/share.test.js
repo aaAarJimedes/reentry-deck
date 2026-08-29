@@ -6,7 +6,7 @@ import { COPY_TEXT_LIMIT, REENTRY_BRIEF_GAP_LIMIT, REENTRY_BRIEF_SIGNAL_LIMIT, S
 describe("buildReentryBrief", () => {
   test("builds a focused bounded plain-text handoff", () => {
     const brief = buildReentryBrief({
-      project: { title: "客户门户" },
+      project: { title: "客户门户", status: "blocked" },
       summary: "已定位邀请失效\n返回。",
       nextAction: "补画失效分支。",
       openLoops: "确认旧邀请是否可重发。",
@@ -16,6 +16,7 @@ describe("buildReentryBrief", () => {
     });
     assert.equal(brief, [
       "【客户门户｜复航简报】",
+      "项目状态：受阻",
       "当前状态：已定位邀请失效 返回。",
       "第一动作：补画失效分支。",
       "未决事项：确认旧邀请是否可重发。",
@@ -31,10 +32,11 @@ describe("buildReentryBrief", () => {
       returnHint: "return",
       completeness: 100,
       readinessGaps: []
-    }).split("\n")[3].slice("未决事项：".length);
+    }).split("\n").find((line) => line.startsWith("未决事项："))?.slice("未决事项：".length) ?? "";
     assert.ok(bounded.length <= 800);
     assert.match(bounded, /😀…$/u);
     assert.equal(buildReentryBrief({ project: { title: " A\tB " }, summary: "s", nextAction: "n", openLoops: "", returnHint: "r" }).split("\n")[0], "【A B｜复航简报】");
+    assert.match(buildReentryBrief({ project: { title: "Unknown", status: "mystery" }, summary: "s", nextAction: "n", returnHint: "r" }), /项目状态：状态未知/u);
     assert.throws(() => buildReentryBrief(null), /缺少可生成简报/u);
   });
 
@@ -71,7 +73,7 @@ describe("buildReentryBrief", () => {
       checkpoint: { id: "cp" },
       openLoops: "😀".repeat(400),
       unresolvedSignals: []
-    }).split("\n")[3].slice("未决事项：".length);
+    }).split("\n").find((line) => line.startsWith("未决事项："))?.slice("未决事项：".length) ?? "";
     assert.ok(boundedHistorical.length <= 800);
     assert.match(boundedHistorical, /^检查点曾记录（待确认）：/u);
     assert.doesNotMatch(boundedHistorical, /[\uD800-\uDBFF]$/u);
@@ -128,7 +130,7 @@ describe("buildReentryBrief", () => {
       ],
       unresolvedSummary: { total: 9 },
       readinessGaps: []
-    }).split("\n")[3].slice("未决事项：".length);
+    }).split("\n").find((line) => line.startsWith("未决事项："))?.slice("未决事项：".length) ?? "";
 
     assert.ok(openLoops.length <= 800);
     assert.match(openLoops, /甲+…；😀+…；丙+…（另有 6 条未显示，请查看完整轨迹）$/u);
@@ -175,7 +177,7 @@ describe("buildReentryBrief", () => {
 describe("buildReentryMarkdown", () => {
   test("builds an escaped bounded Markdown handoff from the same live evidence", () => {
     const markdown = buildReentryMarkdown({
-      project: { title: "[门户](https://example.com) #1" },
+      project: { title: "[门户](https://example.com) #1", status: "archived" },
       summary: "已定位 *邀请* 失效。",
       nextAction: "打开 <sample.json>。",
       checkpoint: { id: "cp" },
@@ -190,6 +192,7 @@ describe("buildReentryMarkdown", () => {
     assert.equal(markdown, [
       "# \\[门户\\]\\(https://example\\.com\\) \\#1 · 复航简报",
       "",
+      "- **项目状态：** 已归档",
       "- **当前状态：** 已定位 \\*邀请\\* 失效。",
       "- **第一动作：** 打开 \\<sample\\.json\\>。",
       "- **未决事项：** 确认 \\_旧邀请\\_ 是否可重发（另有 2 条未显示，请查看完整轨迹）",

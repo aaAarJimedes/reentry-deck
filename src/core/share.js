@@ -14,6 +14,7 @@ export function buildReentryBrief(card) {
   const fields = reentryBriefFields(card);
   return [
     `【${fields.title}｜复航简报】`,
+    `项目状态：${fields.status}`,
     `当前状态：${fields.summary}`,
     `第一动作：${fields.nextAction}`,
     `未决事项：${fields.openLoops}`,
@@ -27,6 +28,7 @@ export function buildReentryMarkdown(card) {
   return [
     `# ${escapeMarkdownInline(fields.title)} · 复航简报`,
     "",
+    `- **项目状态：** ${escapeMarkdownInline(fields.status)}`,
     `- **当前状态：** ${escapeMarkdownInline(fields.summary)}`,
     `- **第一动作：** ${escapeMarkdownInline(fields.nextAction)}`,
     `- **未决事项：** ${escapeMarkdownInline(fields.openLoops)}`,
@@ -41,6 +43,7 @@ function reentryBriefFields(card) {
   if (!card?.project) throw new TypeError("缺少可生成简报的项目现场。 ");
   return {
     title: briefLine(card.project.title, IMPORT_LIMITS.projectTitle),
+    status: workspaceStatus(card.project.status),
     summary: briefLine(card.summary, IMPORT_LIMITS.checkpointSummary),
     nextAction: briefLine(card.nextAction, IMPORT_LIMITS.nextAction),
     openLoops: currentOpenLoops(card),
@@ -248,7 +251,7 @@ function boundedPercent(value) {
 }
 
 function workspaceStatus(value) {
-  return { active: "推进中", paused: "暂泊", blocked: "受阻" }[value] ?? "状态未知";
+  return { active: "推进中", paused: "暂泊", blocked: "受阻", archived: "已归档" }[value] ?? "状态未知";
 }
 
 function boundedReasonList(values, declaredTotal) {
