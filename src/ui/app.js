@@ -682,6 +682,10 @@ export class ReentryApp {
       ? Math.max(card.changesSinceCheckpoint.length, card.changesSinceCheckpointTotal)
       : card.changesSinceCheckpoint.length;
     const changeRemaining = changeTotal - card.changesSinceCheckpoint.length;
+    const decisionTotal = Number.isSafeInteger(card.decisionTotal)
+      ? Math.max(card.decisions.length, card.decisionTotal)
+      : card.decisions.length;
+    const decisionRemaining = decisionTotal - card.decisions.length;
     return `
       <section class="panel reentry-card" aria-labelledby="reentry-card-heading">
         <div class="panel-header inline-between"><div><h2 id="reentry-card-heading">60 秒复航卡</h2><p>${card.checkpoint ? (card.checkpoint.captureMode === "quick" ? `快速停靠 · ${formatDateTime(card.checkpoint.createdAt)} · 请先复核` : `来自 ${formatDateTime(card.checkpoint.createdAt)} 的可靠检查点`) : "信息不足时，从三问校准开始"}</p></div><div class="reentry-card-tools"><button class="ghost-button" type="button" data-action="copy-reentry-brief" data-project-id="${attr(card.project.id)}" aria-label="复制复航简报：${attr(controlContext(card.project.title))}">${icon("copy")} 复制简报</button><span class="soft-pill">${icon("compass")} ${card.completeness}%</span></div></div>
@@ -691,7 +695,7 @@ export class ReentryApp {
           <div class="reentry-section"><span class="reentry-label">${icon("trail")} 01 · 可靠检查点</span><p class="reentry-value">${textBlock(card.checkpoint?.summary || "还没有可靠检查点；以下内容来自零散证据。")}</p><p class="evidence-source">${escapeHTML(checkpointLabel)}</p></div>
           ${card.pinnedCrumbs.length ? `<div class="reentry-section pinned-evidence"><span class="reentry-label">${icon("pin")} 置顶航标</span>${this.#renderEvidenceList(card.pinnedCrumbs, "")}${pinnedRemaining ? `<p class="reentry-value muted">另有 ${pinnedRemaining} 个置顶航标，请在完整轨迹中核对。</p>` : ""}</div>` : ""}
           <div class="reentry-section"><span class="reentry-label">${icon("spark")} 02 · 检查点后发生了什么</span>${this.#renderEvidenceList(card.changesSinceCheckpoint, "检查点之后没有新的状态、决定或下一步记录。")}${changeRemaining ? `<p class="reentry-value muted">另有 ${changeRemaining} 条检查点后变化，请在完整轨迹中核对。</p>` : ""}</div>
-          <div class="reentry-section"><span class="reentry-label">${icon("check")} 03 · 最近决定</span>${this.#renderEvidenceList(card.decisions, "还没有记录明确决定。")}</div>
+          <div class="reentry-section"><span class="reentry-label">${icon("check")} 03 · 最近决定</span>${this.#renderEvidenceList(card.decisions, "还没有记录明确决定。")}${decisionRemaining ? `<p class="reentry-value muted">另有 ${decisionRemaining} 条较早决定，请在完整轨迹中核对。</p>` : ""}</div>
           <div class="reentry-section"><span class="reentry-label">${icon("alert")} 04 · 仍未解决</span>${this.#renderOpenLoops(card)}</div>
           <div class="reentry-section"><span class="reentry-label">${icon("arrow")} 05 · 第一物理动作</span><p class="reentry-value next-action">${textBlock(card.nextAction)}</p><p class="evidence-source">来源：${escapeHTML(card.nextActionEvidence?.label || "引导建议")} ${card.nextActionEvidence?.createdAt ? `· ${formatDateTime(card.nextActionEvidence.createdAt)}` : ""}</p></div>
           <div class="reentry-section"><span class="reentry-label">${icon("compass")} 复航提示</span><p class="reentry-value">${textBlock(card.returnHint)}</p></div>

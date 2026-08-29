@@ -457,6 +457,7 @@ test("buildReentryCard sorts and limits active sessions, signals, decisions, and
   });
   assert.equal(rankProjectsForReentry({ ...state, sessions: [] }, NOW)[0].recommendationReason, "有 4 条待解阻证据");
   assert.deepEqual(card.decisions.map((item) => item.id), ["decision-newest", "decision-new"]);
+  assert.equal(card.decisionTotal, 4);
   assert.deepEqual(card.changesSinceCheckpoint.map((item) => item.id), ["note-new", "decision-newest", "decision-new"]);
   assert.equal(card.changesSinceCheckpointTotal, 6);
   assert.deepEqual(card.recentTrail.map((item) => item.id), ["note-new", "blocker-new", "decision-newest", "question-mid", "decision-new"]);
@@ -641,6 +642,7 @@ test("a boundary-sized reentry card derives bounded evidence without map or filt
 
   assert.equal(card.summaryEvidence.id, "large-49998");
   assert.deepEqual(card.decisions.map((item) => item.id), ["large-49998", "large-49997"]);
+  assert.equal(card.decisionTotal, 49_999);
   assert.deepEqual(card.pinnedCrumbs.map((item) => item.id), ["large-49998", "large-49997", "large-49996"]);
   assert.equal(card.pinnedTotal, 49_999);
   assert.deepEqual(card.changesSinceCheckpoint.map((item) => item.id), ["large-49998", "large-49997", "large-49996"]);

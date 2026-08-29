@@ -604,6 +604,13 @@ test("post-checkpoint changes keep a bounded body and disclose the complete tota
   assert.match(source, /另有 \$\{changeRemaining\} 条检查点后变化，请在完整轨迹中核对。/u);
 });
 
+test("recent decisions keep a bounded body and disclose the complete total", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /card\.decisionTotal/u);
+  assert.match(source, /另有 \$\{decisionRemaining\} 条较早决定，请在完整轨迹中核对。/u);
+});
+
 test("archive cards batch reentry projection and record counting", async () => {
   const source = await readFile(new URL("../src/ui/app.js", import.meta.url), "utf8");
 

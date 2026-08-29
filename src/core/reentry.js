@@ -164,12 +164,12 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
     oldestQuestionAt: null
   };
   const decisions = [];
+  let decisionTotal = 0;
   const pinnedCrumbs = [];
   let pinnedTotal = 0;
   const changesSinceCheckpoint = [];
   let changesSinceCheckpointTotal = 0;
   for (const item of projectCrumbs) {
-    if (stats && item.type === "decision") stats.decisions += 1;
     if (stats && item.type === "blocker") stats.blockers += 1;
     if (!latestNextCrumb && item.type === "next") latestNextCrumb = item;
     if (!latestSummaryCrumb && SUMMARY_CRUMB_TYPES.has(item.type)) latestSummaryCrumb = item;
@@ -183,7 +183,10 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
       }
       if (unresolvedSignals.length < 3) unresolvedSignals.push(item);
     }
-    if (decisions.length < 2 && item.type === "decision") decisions.push(item);
+    if (item.type === "decision") {
+      decisionTotal += 1;
+      if (decisions.length < 2) decisions.push(item);
+    }
     if (item.pinned) {
       pinnedTotal += 1;
       if (pinnedCrumbs.length < 3) pinnedCrumbs.push(item);
@@ -193,6 +196,7 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
       if (changesSinceCheckpoint.length < 3) changesSinceCheckpoint.push(item);
     }
   }
+  if (stats) stats.decisions = decisionTotal;
   const historicalOpenLoops = unresolvedSignals.length || !checkpoint?.openLoops || checkpoint.openLoops === QUICK_DOCK_NOT_RECORDED.openLoops
     ? ""
     : checkpoint.openLoops;
@@ -252,6 +256,7 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
     completeness,
     readinessGaps,
     decisions,
+    decisionTotal,
     pinnedCrumbs,
     pinnedTotal,
     unresolvedSignals,
