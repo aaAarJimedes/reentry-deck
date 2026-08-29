@@ -86,6 +86,24 @@ test("deferred UI callbacks cannot outlive their render or app instance", async 
   assert.match(announce, /!this\.#destroyed && region\.isConnected/u);
 });
 
+test("every user-established workspace requests persistent storage only after commit", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const create = source.match(/#createProject\(data, form\) \{([\s\S]*?)\n  \}\n\n  #prepareSessionDialog/u)?.[1] ?? "";
+  const restore = source.match(/#restorePrevious\(context = "topbar"\) \{([\s\S]*?)\n  \}\n\n  #showMoreTimeline/u)?.[1] ?? "";
+  const sample = source.match(/#loadSample\(\) \{([\s\S]*?)\n  \}\n\n  #exportData/u)?.[1] ?? "";
+  const importBackup = source.match(/#confirmImport\(\) \{([\s\S]*?)\n  \}\n\n+  #announce/u)?.[1] ?? "";
+
+  assert.equal(source.match(/this\.#requestPersistentStorage\(\);/gu)?.length, 4);
+  for (const handler of [create, restore, sample, importBackup]) assert.notEqual(handler, "");
+  assert.ok(create.indexOf("this.#store.update") < create.indexOf("this.#requestPersistentStorage"));
+  assert.ok(restore.indexOf("this.#store.restorePrevious") < restore.indexOf("this.#requestPersistentStorage"));
+  assert.ok(restore.indexOf("this.#requestPersistentStorage") < restore.indexOf("} catch (error)"));
+  assert.ok(sample.indexOf("this.#store.update") < sample.indexOf("this.#requestPersistentStorage"));
+  assert.ok(importBackup.indexOf("this.#store.importSnapshot") < importBackup.indexOf("this.#requestPersistentStorage"));
+  assert.ok(importBackup.indexOf("this.#requestPersistentStorage") < importBackup.indexOf("} catch (error)"));
+  assert.match(importBackup, /catch \(error\) \{[\s\S]*?this\.#pendingImport = pending/u);
+});
+
 test("toast output is text-bounded, count-bounded, and timer-bounded", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const toast = source.match(/#toast\(message, kind = "success"\) \{([\s\S]*?)\n  \}\n\n  #renderToasts/u)?.[1] ?? "";

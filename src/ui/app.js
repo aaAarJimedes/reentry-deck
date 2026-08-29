@@ -1563,6 +1563,7 @@ export class ReentryApp {
       if (!this.#store.hasPreviousSnapshot()) throw new Error("没有可恢复的上一次保存。 ");
       this.#focusSelector = `[data-action="undo-last"][data-undo-context="${CSS.escape(context)}"]`;
       this.#store.restorePrevious();
+      this.#requestPersistentStorage();
       this.#announce("已恢复到上一次保存；再次操作可切换回来");
       this.#toast("已恢复上一次保存；需要时可再次撤销。 ");
     } catch (error) {
@@ -1622,6 +1623,7 @@ export class ReentryApp {
       state.crumbs.push(...crumbs, handbookCrumb);
       state.checkpoints.push(checkpoint);
     });
+    this.#requestPersistentStorage();
     this.#toast("示例现场已载入，可以放心探索。 ");
   }
 
@@ -1706,6 +1708,7 @@ export class ReentryApp {
     this.#focusSelector = "#main-content";
     try {
       this.#store.importSnapshot(pending.value);
+      this.#requestPersistentStorage();
       if (location.hash !== "#/") location.hash = "#/";
       this.#toast("备份已按预览结果恢复；上一个工作区仍可撤销回来。 ");
     } catch (error) {
