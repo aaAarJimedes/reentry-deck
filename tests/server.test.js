@@ -1,11 +1,19 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { request } from "node:http";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, before, describe, test } from "node:test";
 
-import { MAX_REQUEST_TARGET_LENGTH, createAppServer, formatServerUrl, parseServerPort, resolvePublicFile } from "../tools/server.mjs";
+import {
+  MAX_REQUEST_TARGET_LENGTH,
+  createAppServer,
+  formatServerStartupError,
+  formatServerUrl,
+  parseServerPort,
+  resolvePublicFile
+} from "../tools/server.mjs";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 let server;
@@ -39,6 +47,26 @@ describe("server configuration", () => {
     assert.equal(formatServerUrl(null, "user@example.test", 4173), null);
     assert.equal(formatServerUrl(null, "bad:host", 4173), null);
     assert.equal(formatServerUrl({ address: "127.0.0.1", port: 65_536 }), null);
+  });
+
+  test("distinguishes expected startup failures from unexpected diagnostics", () => {
+    const occupied = Object.assign(new Error("listen failed"), { code: "EADDRINUSE" });
+    const denied = Object.assign(new Error("listen failed"), { code: "EACCES" });
+    const unexpected = new Error("socket exploded");
+
+    assert.equal(
+      formatServerStartupError(occupied, "127.0.0.1", 4173),
+      "地址 127.0.0.1:4173 已被占用，复航台未启动。"
+    );
+    assert.equal(
+      formatServerStartupError(denied, "0.0.0.0", 80),
+      "没有权限监听 0.0.0.0:80，复航台未启动。请改用 1024–65535 的端口或检查网络权限。"
+    );
+    assert.equal(formatServerStartupError(unexpected, "127.0.0.1", 4173), `复航台启动失败：${unexpected.stack}`);
+    assert.equal(formatServerStartupError({
+      get code() { throw new Error("blocked"); },
+      get stack() { throw new Error("blocked"); }
+    }, "bad host", -1), "复航台启动失败：未知错误");
   });
 });
 
@@ -106,6 +134,25 @@ describe("public path resolution", () => {
 });
 
 describe("local HTTP server", () => {
+  test("CLI reports a real occupied port without a raw stack trace", async () => {
+    const occupied = createAppServer({ root: projectRoot });
+    await new Promise((resolveListen, reject) => {
+      occupied.once("error", reject);
+      occupied.listen(0, "127.0.0.1", resolveListen);
+    });
+    const occupiedPort = occupied.address().port;
+    try {
+      const result = await runServerCli({ HOST: "127.0.0.1", PORT: String(occupiedPort) });
+      assert.equal(result.code, 1);
+      assert.equal(result.signal, null);
+      assert.equal(result.stdout, "");
+      assert.equal(result.stderr, `地址 127.0.0.1:${occupiedPort} 已被占用，复航台未启动。\n`);
+      assert.doesNotMatch(result.stderr, /\n\s+at /u);
+    } finally {
+      await new Promise((resolveClose) => occupied.close(resolveClose));
+    }
+  });
+
   test("serves the app and correct content type", async () => {
     const response = await send("/");
     assert.equal(response.status, 200);
@@ -199,3 +246,35 @@ describe("local HTTP server", () => {
     }
   });
 });
+
+function runServerCli(extraEnvironment) {
+  return new Promise((resolveRun, reject) => {
+    const child = spawn(process.execPath, [resolve(projectRoot, "tools/server.mjs")], {
+      cwd: projectRoot,
+      env: { ...process.env, ...extraEnvironment },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true
+    });
+    const stdout = [];
+    const stderr = [];
+    const timeout = setTimeout(() => {
+      child.kill();
+      reject(new Error("Server CLI did not exit after a startup failure."));
+    }, 5_000);
+    child.stdout.on("data", (chunk) => stdout.push(chunk));
+    child.stderr.on("data", (chunk) => stderr.push(chunk));
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once("exit", (code, signal) => {
+      clearTimeout(timeout);
+      resolveRun({
+        code,
+        signal,
+        stdout: Buffer.concat(stdout).toString("utf8"),
+        stderr: Buffer.concat(stderr).toString("utf8")
+      });
+    });
+  });
+}

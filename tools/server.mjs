@@ -169,15 +169,49 @@ function runCli() {
     return;
   }
   const server = createAppServer();
-  server.once("error", (error) => {
-    console.error(error.code === "EADDRINUSE" ? `端口 ${port} 已被占用，复航台未启动。` : `复航台启动失败：${error.message}`);
+  const reportStartupError = (error) => {
+    console.error(formatServerStartupError(error, host, port));
     process.exitCode = 1;
-  });
+  };
+  server.once("error", reportStartupError);
   server.listen(port, host, () => {
+    server.off("error", reportStartupError);
     const url = formatServerUrl(server.address(), host, port);
     console.log(url ? `复航台已启动：${url}` : "复航台已启动。");
     console.log("按 Ctrl+C 停止。");
   });
+}
+
+export function formatServerStartupError(error, host, port) {
+  const endpoint = formatServerUrl(null, host, port)?.slice("http://".length)
+    ?? (Number.isInteger(port) && port >= 0 && port <= 65_535 ? `端口 ${port}` : "未知地址");
+  const code = readStartupErrorCode(error);
+  if (code === "EADDRINUSE") return `地址 ${endpoint} 已被占用，复航台未启动。`;
+  if (code === "EACCES") {
+    return `没有权限监听 ${endpoint}，复航台未启动。请改用 1024–65535 的端口或检查网络权限。`;
+  }
+  return `复航台启动失败：${readStartupErrorDetail(error)}`;
+}
+
+function readStartupErrorCode(error) {
+  try {
+    const code = error?.code;
+    return typeof code === "string" ? code : "";
+  } catch {
+    return "";
+  }
+}
+
+function readStartupErrorDetail(error) {
+  try {
+    const stack = error?.stack;
+    if (typeof stack === "string" && stack.trim()) return stack;
+    const message = error?.message;
+    if (typeof message === "string" && message.trim()) return message;
+  } catch {
+    // Fall through to a stable diagnostic if a hostile error accessor throws.
+  }
+  return "未知错误";
 }
 
 export function formatServerUrl(address, fallbackHost = "127.0.0.1", fallbackPort = 4173) {
