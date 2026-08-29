@@ -11,7 +11,9 @@ import {
   extractHttpLinks,
   getProjectResources,
   searchWorkspace,
-  searchWorkspaceIndex
+  searchWorkspaceIndex,
+  searchWorkspaceIndexWindow,
+  searchWorkspaceWindow
 } from "../src/core/search.js";
 
 const state = {
@@ -35,6 +37,11 @@ test("searchWorkspace searches all evidence, requires every token, ranks titles,
   assert.deepEqual(searchWorkspace(state, "研究结果图", { limit: 1 }).map((item) => item.id), ["p1"]);
   assert.deepEqual(searchWorkspace(state, "研究结果图", { limit: 0 }), []);
   assert.equal(searchWorkspace(state, "旧资料")[0].projectStatus, "archived");
+  assert.deepEqual(searchWorkspaceWindow(state, "notebook", { limit: 1 }), {
+    items: [searchWorkspace(state, "notebook", { limit: 1 })[0]],
+    total: 3
+  });
+  assert.deepEqual(searchWorkspaceWindow(state, "notebook", { limit: 0 }), { items: [], total: 3 });
 });
 
 test("searchWorkspace normalizes full-width and case variants and is deterministic on ties", () => {
@@ -131,10 +138,11 @@ test("a 50,000-record index only materializes and sorts the bounded result windo
     return originalSort.apply(this, args);
   };
   try {
-    const broadResults = searchWorkspaceIndex(index, "common");
-    assert.equal(broadResults.length, 40);
-    assert.equal(broadResults[0].id, "large-00000");
-    assert.equal(broadResults.at(-1).id, "large-00039");
+    const broadWindow = searchWorkspaceIndexWindow(index, "common");
+    assert.equal(broadWindow.total, 49_999);
+    assert.equal(broadWindow.items.length, 40);
+    assert.equal(broadWindow.items[0].id, "large-00000");
+    assert.equal(broadWindow.items.at(-1).id, "large-00039");
   } finally {
     Array.prototype.sort = originalSort;
   }

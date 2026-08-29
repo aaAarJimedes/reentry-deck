@@ -301,6 +301,8 @@ test("workspace search exposes the same query budget enforced by the core", asyn
   assert.match(source, /import \{ SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex/u);
   assert.match(source, /data-control="workspace-search" maxlength="\$\{SEARCH_QUERY_LIMIT\}"/u);
   assert.match(source, /#onInput\(event\) \{\s+if \(event\.isComposing\) return;/u);
+  assert.match(source, /searchWorkspaceIndexWindow/u);
+  assert.match(source, /找到 \$\{total\} 条匹配，显示前 \$\{results\.length\} 条/u);
 });
 
 test("command availability reuses workspace counts and disables ambiguous docking", async () => {

@@ -14,6 +14,10 @@ export function searchWorkspace(state, query, options = {}) {
   return searchWorkspaceIndex(buildWorkspaceSearchIndex(state), query, options);
 }
 
+export function searchWorkspaceWindow(state, query, options = {}) {
+  return searchWorkspaceIndexWindow(buildWorkspaceSearchIndex(state), query, options);
+}
+
 export function buildWorkspaceSearchIndex(state) {
   const projects = Array.isArray(state?.projects) ? state.projects : [];
   const crumbs = Array.isArray(state?.crumbs) ? state.crumbs : [];
@@ -61,14 +65,25 @@ export function buildWorkspaceSearchIndex(state) {
 }
 
 export function searchWorkspaceIndex(index, query, options = {}) {
+  return searchWorkspaceIndexProjection(index, query, options, false).items;
+}
+
+export function searchWorkspaceIndexWindow(index, query, options = {}) {
+  return searchWorkspaceIndexProjection(index, query, options, true);
+}
+
+function searchWorkspaceIndexProjection(index, query, options, countTotal) {
   const tokens = tokenize(query);
-  if (!tokens.length) return [];
+  if (!tokens.length) return { items: [], total: 0 };
   const limit = boundedLimit(options.limit, RESULT_LIMIT, 100);
-  if (!limit || !Array.isArray(index?.candidates)) return [];
+  if ((!limit && !countTotal) || !Array.isArray(index?.candidates)) return { items: [], total: 0 };
   const matches = [];
+  let total = 0;
   for (const candidate of index.candidates) {
     const score = scoreCandidate(candidate, tokens);
     if (score <= 0) continue;
+    total += 1;
+    if (!limit) continue;
     if (matches.length < limit) {
       pushWorstSearchMatch(matches, { result: candidate.result, score });
       continue;
@@ -77,9 +92,10 @@ export function searchWorkspaceIndex(index, query, options = {}) {
     matches[0] = { result: candidate.result, score };
     sinkWorstSearchMatch(matches, 0);
   }
-  return matches
+  const items = matches
     .sort((left, right) => compareSearchPosition(left.score, left.result, right.score, right.result))
     .map(({ result, score }) => ({ ...result, score }));
+  return { items, total };
 }
 
 function pushWorstSearchMatch(heap, entry) {
