@@ -167,6 +167,7 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
   const pinnedCrumbs = [];
   let pinnedTotal = 0;
   const changesSinceCheckpoint = [];
+  let changesSinceCheckpointTotal = 0;
   for (const item of projectCrumbs) {
     if (stats && item.type === "decision") stats.decisions += 1;
     if (stats && item.type === "blocker") stats.blockers += 1;
@@ -187,8 +188,9 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
       pinnedTotal += 1;
       if (pinnedCrumbs.length < 3) pinnedCrumbs.push(item);
     }
-    if (changesSinceCheckpoint.length < 3 && CHANGE_CRUMB_TYPES.has(item.type) && timeOf(item.createdAt) > checkpointTime) {
-      changesSinceCheckpoint.push(item);
+    if (CHANGE_CRUMB_TYPES.has(item.type) && timeOf(item.createdAt) > checkpointTime) {
+      changesSinceCheckpointTotal += 1;
+      if (changesSinceCheckpoint.length < 3) changesSinceCheckpoint.push(item);
     }
   }
   const historicalOpenLoops = unresolvedSignals.length || !checkpoint?.openLoops || checkpoint.openLoops === QUICK_DOCK_NOT_RECORDED.openLoops
@@ -255,6 +257,7 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
     unresolvedSignals,
     unresolvedSummary,
     changesSinceCheckpoint,
+    changesSinceCheckpointTotal,
     contextGapSessions,
     recentTrail: projectCrumbs.slice(0, 5)
   };

@@ -597,6 +597,13 @@ test("pinned reentry evidence keeps a bounded body and discloses the complete to
   assert.match(source, /另有 \$\{pinnedRemaining\} 个置顶航标，请在完整轨迹中核对。/u);
 });
 
+test("post-checkpoint changes keep a bounded body and disclose the complete total", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /card\.changesSinceCheckpointTotal/u);
+  assert.match(source, /另有 \$\{changeRemaining\} 条检查点后变化，请在完整轨迹中核对。/u);
+});
+
 test("archive cards batch reentry projection and record counting", async () => {
   const source = await readFile(new URL("../src/ui/app.js", import.meta.url), "utf8");
 
