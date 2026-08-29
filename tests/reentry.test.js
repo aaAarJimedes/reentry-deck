@@ -442,12 +442,20 @@ test("buildReentryCard sorts and limits active sessions, signals, decisions, and
   ];
   const originalCrumbOrder = crumbs.map((item) => item.id);
   const originalSessionOrder = sessions.map((item) => item.id);
-  const state = makeState({ projects: [makeProject("p1")], crumbs, sessions });
+  const state = makeState({ projects: [makeProject("p1", { status: "blocked" })], crumbs, sessions });
 
   const card = buildReentryCard(state, "p1", NOW);
 
   assert.equal(card.activeSession.id, "active-new");
   assert.deepEqual(card.unresolvedSignals.map((item) => item.id), ["blocker-new", "question-mid", "blocker-mid"]);
+  assert.deepEqual(card.unresolvedSummary, {
+    blockers: 2,
+    questions: 2,
+    total: 4,
+    oldestBlockerAt: at(-6_000),
+    oldestQuestionAt: at(-8_000)
+  });
+  assert.equal(rankProjectsForReentry({ ...state, sessions: [] }, NOW)[0].recommendationReason, "有 4 条待解阻证据");
   assert.deepEqual(card.decisions.map((item) => item.id), ["decision-newest", "decision-new"]);
   assert.deepEqual(card.changesSinceCheckpoint.map((item) => item.id), ["note-new", "decision-newest", "decision-new"]);
   assert.deepEqual(card.recentTrail.map((item) => item.id), ["note-new", "blocker-new", "decision-newest", "question-mid", "decision-new"]);

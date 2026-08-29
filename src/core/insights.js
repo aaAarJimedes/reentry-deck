@@ -246,8 +246,12 @@ function compareAttention(left, right) {
 
 function attentionForProject(project, card, now, staleAfterDays) {
   const signals = card.unresolvedSignals;
-  const blockers = signals.filter((item) => item.type === "blocker").length;
-  const questions = signals.filter((item) => item.type === "question").length;
+  const blockers = Number.isSafeInteger(card.unresolvedSummary?.blockers)
+    ? Math.max(0, card.unresolvedSummary.blockers)
+    : signals.filter((item) => item.type === "blocker").length;
+  const questions = Number.isSafeInteger(card.unresolvedSummary?.questions)
+    ? Math.max(0, card.unresolvedSummary.questions)
+    : signals.filter((item) => item.type === "question").length;
   const reasons = [];
   let score = 0;
 
@@ -265,7 +269,12 @@ function attentionForProject(project, card, now, staleAfterDays) {
   }
   if (blockers) {
     score += Math.min(blockers * 20, 40);
-    reasons.push(`${blockers} 条阻塞仍未解决`);
+    const oldestBlockerAt = card.unresolvedSummary?.oldestBlockerAt;
+    const oldestBlockerTime = timeOf(oldestBlockerAt);
+    const oldestBlockerDays = oldestBlockerAt ? Math.max(0, Math.floor((now - oldestBlockerTime) / DAY_MS)) : 0;
+    reasons.push(oldestBlockerDays
+      ? `${blockers} 条阻塞未解决，最早已 ${oldestBlockerDays} 天`
+      : `${blockers} 条阻塞仍未解决`);
   }
   if (questions) {
     score += Math.min(questions * 8, 24);

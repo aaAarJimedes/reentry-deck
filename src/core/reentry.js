@@ -156,6 +156,13 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
   let latestNextCrumb = null;
   let latestSummaryCrumb = null;
   const unresolvedSignals = [];
+  const unresolvedSummary = {
+    blockers: 0,
+    questions: 0,
+    total: 0,
+    oldestBlockerAt: null,
+    oldestQuestionAt: null
+  };
   const decisions = [];
   const pinnedCrumbs = [];
   const changesSinceCheckpoint = [];
@@ -164,7 +171,16 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
     if (stats && item.type === "blocker") stats.blockers += 1;
     if (!latestNextCrumb && item.type === "next") latestNextCrumb = item;
     if (!latestSummaryCrumb && SUMMARY_CRUMB_TYPES.has(item.type)) latestSummaryCrumb = item;
-    if (unresolvedSignals.length < 3 && OPEN_SIGNAL_TYPES.has(item.type) && !item.resolvedAt) unresolvedSignals.push(item);
+    if (OPEN_SIGNAL_TYPES.has(item.type) && !item.resolvedAt) {
+      const countKey = item.type === "blocker" ? "blockers" : "questions";
+      const oldestKey = item.type === "blocker" ? "oldestBlockerAt" : "oldestQuestionAt";
+      unresolvedSummary[countKey] += 1;
+      unresolvedSummary.total += 1;
+      if (!unresolvedSummary[oldestKey] || timeOf(item.createdAt) < timeOf(unresolvedSummary[oldestKey])) {
+        unresolvedSummary[oldestKey] = item.createdAt;
+      }
+      if (unresolvedSignals.length < 3) unresolvedSignals.push(item);
+    }
     if (decisions.length < 2 && item.type === "decision") decisions.push(item);
     if (pinnedCrumbs.length < 3 && item.pinned) pinnedCrumbs.push(item);
     if (changesSinceCheckpoint.length < 3 && CHANGE_CRUMB_TYPES.has(item.type) && timeOf(item.createdAt) > checkpointTime) {
@@ -232,6 +248,7 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
     decisions,
     pinnedCrumbs,
     unresolvedSignals,
+    unresolvedSummary,
     changesSinceCheckpoint,
     contextGapSessions,
     recentTrail: projectCrumbs.slice(0, 5)
@@ -419,7 +436,12 @@ function reentryScore(card) {
 
 function reentryReason(card) {
   if (card.activeSession) return "有尚未收拢的活动会话";
-  if (card.project.status === "blocked") return card.unresolvedSignals.length ? `有 ${card.unresolvedSignals.length} 条待解阻证据` : "项目状态为受阻";
+  if (card.project.status === "blocked") {
+    const unresolvedTotal = Number.isSafeInteger(card.unresolvedSummary?.total)
+      ? card.unresolvedSummary.total
+      : card.unresolvedSignals.length;
+    return unresolvedTotal ? `有 ${unresolvedTotal} 条待解阻证据` : "项目状态为受阻";
+  }
   if (card.awayDays >= 7) return `已离开 ${Math.floor(card.awayDays)} 天，且复航证据可用`;
   if (card.project.status === "active") return "推进中且最近现场可恢复";
   return "暂泊项目，保留在候选队列";

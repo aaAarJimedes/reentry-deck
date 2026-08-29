@@ -792,7 +792,13 @@ export class ReentryApp {
   }
 
   #renderOpenLoops(card) {
-    if (card.unresolvedSignals.length) return this.#renderEvidenceList(card.unresolvedSignals, "", true);
+    if (card.unresolvedSignals.length) {
+      const total = Number.isSafeInteger(card.unresolvedSummary?.total)
+        ? Math.max(card.unresolvedSignals.length, card.unresolvedSummary.total)
+        : card.unresolvedSignals.length;
+      const remaining = total - card.unresolvedSignals.length;
+      return `${this.#renderEvidenceList(card.unresolvedSignals, "", true)}${remaining ? `<p class="reentry-value muted">另有 ${remaining} 条未决事项，请在完整轨迹中核对。</p>` : ""}`;
+    }
     if (card.historicalOpenLoops) {
       return `<p class="reentry-value muted"><strong>检查点曾记录（待确认）：</strong><br>${textBlock(card.historicalOpenLoops)}</p>`;
     }

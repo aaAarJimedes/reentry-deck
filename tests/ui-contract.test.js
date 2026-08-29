@@ -582,6 +582,8 @@ test("checkpoint-only open loops are labeled as historical instead of disappeari
   assert.match(source, /#renderOpenLoops\(card\)/u);
   assert.match(source, /检查点曾记录（待确认）：/u);
   assert.match(source, /if \(card\.historicalOpenLoops\)/u);
+  assert.match(source, /card\.unresolvedSummary\?\.total/u);
+  assert.match(source, /另有 \$\{remaining\} 条未决事项，请在完整轨迹中核对。/u);
 });
 
 test("archive cards batch reentry projection and record counting", async () => {

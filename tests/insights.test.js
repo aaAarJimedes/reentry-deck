@@ -224,6 +224,42 @@ test("buildAttentionDeck explains risk without including healthy or archived wor
   assert.deepEqual(buildAttentionDeck(data, NOW, { limit: 0 }), []);
 });
 
+test("attention keeps exact open-signal totals while card evidence stays bounded", () => {
+  const crumbs = [
+    ...Array.from({ length: 5 }, (_, index) => ({
+      id: `blocker-${index}`,
+      projectId: "crowded",
+      type: "blocker",
+      text: `blocker ${index}`,
+      createdAt: at(-(10 - index) * DAY),
+      resolvedAt: null
+    })),
+    ...Array.from({ length: 4 }, (_, index) => ({
+      id: `question-${index}`,
+      projectId: "crowded",
+      type: "question",
+      text: `question ${index}`,
+      createdAt: at(-(5 - index) * DAY),
+      resolvedAt: null
+    })),
+    { id: "resolved", projectId: "crowded", type: "blocker", text: "done", createdAt: at(-11 * DAY), resolvedAt: at(-DAY) }
+  ];
+  const data = state({ projects: [project("crowded", { status: "blocked" })], crumbs });
+
+  const [item] = buildAttentionDeck(data, NOW, { limit: 1, staleAfterDays: 365 });
+
+  assert.equal(item.card.unresolvedSignals.length, 3);
+  assert.deepEqual(item.card.unresolvedSummary, {
+    blockers: 5,
+    questions: 4,
+    total: 9,
+    oldestBlockerAt: at(-10 * DAY),
+    oldestQuestionAt: at(-5 * DAY)
+  });
+  assert.match(item.reasons.join("；"), /5 条阻塞未解决，最早已 10 天/u);
+  assert.match(item.reasons.join("；"), /4 个问题仍待确认/u);
+});
+
 test("buildAttentionDeck sorts only its bounded output under a broad risk match", () => {
   const projects = Array.from({ length: 5_000 }, (_, index) => project(`risk-${String(4_999 - index).padStart(4, "0")}`, {
     status: "blocked"
