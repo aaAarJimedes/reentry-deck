@@ -249,7 +249,6 @@ describe("copyPlainText", () => {
       setSelectionRange(start, end) { events.push(`selection:${start}:${end}`); }
     };
     const control = {
-      style: {},
       setAttribute(name, value) { events.push(`attribute:${name}:${value}`); },
       select() { events.push("select"); },
       remove() { events.push("remove"); }
@@ -265,7 +264,7 @@ describe("copyPlainText", () => {
     });
     assert.equal(result, "fallback");
     assert.equal(control.value, "brief");
-    assert.deepEqual(events, ["attribute:aria-hidden:true", "append", "select", "exec:copy", "remove", "focus:true", "selection:2:5"]);
+    assert.deepEqual(events, ["attribute:aria-hidden:true", "attribute:class:clipboard-fallback-control", "append", "select", "exec:copy", "remove", "focus:true", "selection:2:5"]);
   });
 
   test("reports unsupported or rejected copy without leaking a fallback control", async () => {
@@ -278,7 +277,7 @@ describe("copyPlainText", () => {
       document: {
         body: { append() {} },
         createElement() {
-          return { style: {}, setAttribute() {}, select() {}, remove() { removed = true; } };
+          return { setAttribute() {}, select() {}, remove() { removed = true; } };
         },
         execCommand() { return false; }
       }
@@ -354,7 +353,6 @@ describe("copyPlainText", () => {
         body: { append() {} },
         createElement() {
           return {
-            style: {},
             setAttribute() {},
             select() {},
             remove() { throw new Error("cleanup denied"); }

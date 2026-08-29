@@ -35,6 +35,24 @@ function toProjectPath(path) {
   return relative(projectRoot, path).replaceAll("\\", "/");
 }
 
+async function reachableModules(entry = "src/main.js") {
+  const modules = new Map();
+  const pending = [entry];
+
+  while (pending.length) {
+    const modulePath = pending.pop();
+    if (modules.has(modulePath)) continue;
+    const moduleSource = await source(modulePath);
+    modules.set(modulePath, moduleSource);
+    for (const specifier of localImports(moduleSource)) {
+      const dependency = toProjectPath(resolve(projectRoot, dirname(modulePath), specifier));
+      if (dependency.endsWith(".js")) pending.push(dependency);
+    }
+  }
+
+  return modules;
+}
+
 describe("release contract", () => {
   test("package, backup metadata, changelog, and offline build share one version", async () => {
     const packageMetadata = JSON.parse(await source("package.json"));
@@ -102,26 +120,33 @@ describe("release contract", () => {
     }
   });
 
+  test("runtime UI remains compatible with a self-only style policy", async () => {
+    const [indexSource, modules, serverSource] = await Promise.all([
+      source("index.html"),
+      reachableModules(),
+      source("tools/server.mjs")
+    ]);
+
+    assert.doesNotMatch(indexSource, /\sstyle\s*=/iu);
+    for (const [modulePath, moduleSource] of modules) {
+      assert.doesNotMatch(moduleSource, /\sstyle\s*=/iu, `${modulePath} contains an inline style attribute`);
+      assert.doesNotMatch(moduleSource, /\.style\s*(?:\.|\[|\?\.)/u, `${modulePath} writes through CSSOM inline styles`);
+      assert.doesNotMatch(moduleSource, /setAttribute\(\s*["']style["']/u, `${modulePath} assigns an inline style attribute`);
+    }
+    assert.match(serverSource, /style-src 'self';/u);
+    assert.doesNotMatch(serverSource, /unsafe-inline/u);
+  });
+
   test("every local module reachable from main is served and cached", async () => {
     const shell = new Set(shellPaths(await source("sw.js")).map((path) => path.slice(2)));
-    const visited = new Set();
-    const pending = ["src/main.js"];
+    const modules = await reachableModules();
 
-    while (pending.length) {
-      const modulePath = pending.pop();
-      if (visited.has(modulePath)) continue;
-      visited.add(modulePath);
+    for (const modulePath of modules.keys()) {
       assert.ok(shell.has(modulePath), `${modulePath} is missing from the offline shell`);
       assert.ok(PUBLIC_FILES.has(`/${modulePath}`), `${modulePath} is missing from the HTTP whitelist`);
-
-      const moduleSource = await source(modulePath);
-      for (const specifier of localImports(moduleSource)) {
-        const dependency = toProjectPath(resolve(projectRoot, dirname(modulePath), specifier));
-        if (dependency.endsWith(".js")) pending.push(dependency);
-      }
     }
 
     const cachedModules = [...shell].filter((path) => path.endsWith(".js") && path !== "sw.js");
-    assert.deepEqual(new Set(visited), new Set(cachedModules));
+    assert.deepEqual(new Set(modules.keys()), new Set(cachedModules));
   });
 });

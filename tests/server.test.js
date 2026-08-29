@@ -101,6 +101,8 @@ describe("local HTTP server", () => {
     assert.match(response.headers["content-type"], /^text\/html/);
     assert.match(response.body, /复航台/);
     assert.match(response.headers["content-security-policy"], /object-src 'none'/);
+    assert.match(response.headers["content-security-policy"], /style-src 'self';/u);
+    assert.doesNotMatch(response.headers["content-security-policy"], /unsafe-inline/u);
     assert.equal(response.headers["cross-origin-resource-policy"], "same-origin");
     assert.equal(response.headers["permissions-policy"], "camera=(), microphone=(), geolocation=()");
     assert.equal(response.headers["x-frame-options"], "DENY");

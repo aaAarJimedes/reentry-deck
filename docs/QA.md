@@ -226,6 +226,7 @@ git diff --check
 210. 从应用导航到同源外页后通过浏览器后退恢复 → 只有 `pageshow.persisted === true` 的缓存恢复执行工作区核对与计时器校准；首次载入不重复读取，恢复后的项目、对话框保护和交互仍正常。
 211. 修改 package、备份 `APP_VERSION`、最新 CHANGELOG 或服务工作线程 `BUILD_ID` 中任一版本而不改其余三处 → 发布契约立即失败；四者一致后新缓存名使用同一语义版本。用 Windows `core.autocrlf=true` 重新检出 → `.js`/`.mjs` 仍为 LF，结构契约、原子安装和旧壳清理测试保持通过。
 212. 把 PWA `start_url` 移出 scope、把图标改成跨源/未公开/未缓存路径，或让 manifest 语言、主题色与 HTML 不一致 → 发布契约在安装前失败；相对子路径部署下 `./` 启动与 scope 仍解析到同一应用目录。
+213. 在运行时模板加入 `style` 属性、在剪贴板回退重新写入 `.style`，或把服务器 CSP 恢复为 `unsafe-inline` → 发布契约立即失败；严格 `style-src 'self'` 下完整度 SVG、六种颜色选择器和剪贴板回退仍可工作，浏览器控制台无 CSP 错误。
 
 ## 布局与无障碍
 

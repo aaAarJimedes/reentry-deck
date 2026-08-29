@@ -192,8 +192,7 @@ export async function copyPlainText(value, dependencies = {}) {
     control.value = text;
     control.readOnly = true;
     control.setAttribute("aria-hidden", "true");
-    control.style.position = "fixed";
-    control.style.opacity = "0";
+    control.setAttribute("class", "clipboard-fallback-control");
     documentRef.body.append(control);
     attached = true;
     control.select();

@@ -597,7 +597,7 @@ export class ReentryApp {
           </div>
         </div>
         <div class="hero-gauge" aria-label="复航信息完整度 ${card.completeness}%">
-          <div class="gauge-ring" style="--progress:${card.completeness}%"><span class="gauge-value">${card.completeness}%</span></div>
+          <div class="gauge-ring"><svg class="gauge-chart" viewBox="0 0 36 36" aria-hidden="true"><circle class="gauge-track" cx="18" cy="18" r="15.9155" pathLength="100"></circle><circle class="gauge-progress" cx="18" cy="18" r="15.9155" pathLength="100" stroke-dasharray="${card.completeness} 100"></circle></svg><span class="gauge-value">${card.completeness}%</span></div>
           <span class="gauge-label">复航信息完整度<br>${awayLabel(card.awayDays)}</span>
         </div>
       </section>`;
@@ -656,7 +656,7 @@ export class ReentryApp {
           ${this.#renderStatsPanel(stats)}
         </aside>
       </div>
-      <section class="panel" style="margin-top:18px">
+      <section class="panel spaced-panel">
         <div class="panel-header inline-between"><div><h2>工作轨迹</h2><p>最近的记录在上方；每一条都可以成为下次复航的线索。</p></div><span class="soft-pill">${timeline.total} 条</span></div>
         <div class="panel-body">${this.#renderTimeline(timeline, project.id, true, "还没有轨迹。开始会话后，随手留下第一个发现或决定。")}</div>
       </section>`;
@@ -701,7 +701,7 @@ export class ReentryApp {
             <label class="field"><span>留下工作面包屑</span><textarea name="text" rows="3" maxlength="${IMPORT_LIMITS.crumbText}" placeholder="一句话就够：刚发现了什么、做了什么决定、卡在哪里…" required></textarea></label>
             <div class="capture-row">
               <label class="field"><span class="sr-only">记录类型</span><select name="type" aria-label="记录类型">${Object.entries(CRUMB_LABELS).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></label>
-              <span class="muted" style="align-self:center;font-size:12px">快捷键 C 可随时回到输入框</span>
+              <span class="muted capture-shortcut-hint">快捷键 C 可随时回到输入框</span>
               <button class="primary-button" type="submit">${icon("plus")} 记录</button>
             </div>
           </form>
@@ -737,7 +737,7 @@ export class ReentryApp {
           <label class="field"><span>项目状态</span><select data-control="project-status" data-project-id="${attr(project.id)}">
             ${["active", "paused", "blocked"].map((status) => `<option value="${status}" ${project.status === status ? "selected" : ""}>${PROJECT_STATUS_LABELS[status]}</option>`).join("")}
           </select></label>
-          <div class="button-row" style="margin-top:14px"><button class="ghost-button danger-text" type="button" data-action="archive-project" data-project-id="${attr(project.id)}">${icon("archive")} 移入归档</button></div>
+          <div class="button-row project-archive-actions"><button class="ghost-button danger-text" type="button" data-action="archive-project" data-project-id="${attr(project.id)}">${icon("archive")} 移入归档</button></div>
         </div>
       </section>`;
   }
@@ -824,7 +824,7 @@ export class ReentryApp {
         <div class="project-header-actions"><button class="primary-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}" aria-label="恢复到暂泊状态：${attr(controlContext(project.title))}">恢复到暂泊状态</button></div>
       </section>
       <section class="panel reentry-card"><div class="panel-header"><h2>最后的复航现场</h2><p>恢复项目后可从这个检查点继续。</p></div><div class="panel-body"><div class="reentry-section"><span class="reentry-label">最后状态</span><p class="reentry-value">${textBlock(card.summary)}</p></div><div class="reentry-section"><span class="reentry-label">下一动作</span><p class="reentry-value next-action">${textBlock(card.nextAction)}</p></div></div></section>
-      <section class="panel" style="margin-top:18px"><div class="panel-header inline-between"><div><h2>历史轨迹</h2><p>归档项目不会接受新的会话或记录。</p></div><span class="soft-pill">${timeline.total} 条</span></div><div class="panel-body">${this.#renderTimeline(timeline, project.id, false, "没有历史轨迹。")}</div></section>`;
+      <section class="panel spaced-panel"><div class="panel-header inline-between"><div><h2>历史轨迹</h2><p>归档项目不会接受新的会话或记录。</p></div><span class="soft-pill">${timeline.total} 条</span></div><div class="panel-body">${this.#renderTimeline(timeline, project.id, false, "没有历史轨迹。")}</div></section>`;
   }
 
   #renderSettings(state) {
@@ -879,7 +879,6 @@ export class ReentryApp {
   }
 
   #renderDialogs(project, activeSession, reentryCard) {
-    const colors = { fern: "#2f6b61", amber: "#d99752", clay: "#b9644d", sky: "#568695", plum: "#785e76", slate: "#65736f" };
     const state = this.#store.getState();
     const pendingArchiveProject = project?.id === this.#pendingArchiveId ? project : null;
     const reviewCheckpoint = reentryCard?.checkpoint ?? null;
@@ -895,7 +894,7 @@ export class ReentryApp {
           <label class="field"><span class="required">项目名称</span><input name="title" maxlength="${IMPORT_LIMITS.projectTitle}" placeholder="例如：重构论文结果图" required autofocus /></label>
           <label class="field"><span>为什么要做</span><textarea name="description" maxlength="${IMPORT_LIMITS.projectDescription}" placeholder="一句话说明目的，帮助未来的自己快速校准。"></textarea></label>
           <label class="field"><span>已知的第一动作</span><input name="nextAction" maxlength="${IMPORT_LIMITS.nextAction}" placeholder="例如：打开 figure_03.ipynb，核对配色映射" /></label>
-          <fieldset class="field-group" style="border:0;padding:0;margin:0"><legend class="field-label">识别颜色</legend><div class="color-options">${Object.entries(colors).map(([name, color], index) => `<label class="color-choice" title="${COLOR_LABELS[name]}"><input type="radio" name="color" value="${name}" aria-label="${COLOR_LABELS[name]}" ${index === 0 ? "checked" : ""}/><span style="--choice-color:${color}"></span></label>`).join("")}</div></fieldset>
+          <fieldset class="field-group color-fieldset"><legend class="field-label">识别颜色</legend><div class="color-options">${Object.keys(COLOR_LABELS).map((name, index) => `<label class="color-choice" title="${COLOR_LABELS[name]}"><input type="radio" name="color" value="${name}" aria-label="${COLOR_LABELS[name]}" ${index === 0 ? "checked" : ""}/><span class="color-swatch color-swatch-${name}"></span></label>`).join("")}</div></fieldset>
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">建立项目</button></div>
         </form>
       </dialog>
