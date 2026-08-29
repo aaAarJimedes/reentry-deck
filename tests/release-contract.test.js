@@ -36,14 +36,17 @@ function toProjectPath(path) {
 }
 
 describe("release contract", () => {
-  test("package, exported backup metadata, and newest changelog entry share one version", async () => {
+  test("package, backup metadata, changelog, and offline build share one version", async () => {
     const packageMetadata = JSON.parse(await source("package.json"));
     const changelog = await source("CHANGELOG.md");
+    const serviceWorker = await source("sw.js");
     const newestVersion = changelog.match(/^## (\d+\.\d+\.\d+)\b/mu)?.[1];
+    const offlineBuild = serviceWorker.match(/^const BUILD_ID = "([^"]+)";$/mu)?.[1];
 
     assert.match(packageMetadata.version, /^\d+\.\d+\.\d+$/u);
     assert.equal(APP_VERSION, packageMetadata.version);
     assert.equal(newestVersion, packageMetadata.version);
+    assert.equal(offlineBuild, packageMetadata.version);
   });
 
   test("offline shell and HTTP whitelist expose the same runtime files", async () => {
