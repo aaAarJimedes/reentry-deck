@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { COPY_TEXT_LIMIT, REENTRY_BRIEF_GAP_LIMIT, REENTRY_BRIEF_SIGNAL_LIMIT, SHARE_TEXT_SCAN_LIMIT, WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT, WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildReentryMarkdown, buildWorkspaceHandoff, copyPlainText } from "../src/core/share.js";
+import { COPY_TEXT_LIMIT, REENTRY_BRIEF_GAP_LIMIT, REENTRY_BRIEF_SIGNAL_LIMIT, SHARE_TEXT_SCAN_LIMIT, WORKSPACE_HANDOFF_INPUT_SCAN_LIMIT, WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildReentryMarkdown, buildWorkspaceHandoff, buildWorkspaceHandoffMarkdown, copyPlainText } from "../src/core/share.js";
 
 describe("buildReentryBrief", () => {
   test("builds a focused bounded plain-text handoff", () => {
@@ -182,7 +182,7 @@ describe("buildReentryMarkdown", () => {
       openLoops: "过期检查点事项",
       unresolvedSignals: [{ text: "确认 _旧邀请_ 是否可重发" }],
       unresolvedSummary: { total: 3 },
-      returnHint: "从 `403` 响应继续。",
+      returnHint: "从 `403` 响应继续，~~不要重跑~~。",
       completeness: 75,
       readinessGaps: ["补充 [材料入口]"]
     });
@@ -193,7 +193,7 @@ describe("buildReentryMarkdown", () => {
       "- **当前状态：** 已定位 \\*邀请\\* 失效。",
       "- **第一动作：** 打开 \\<sample\\.json\\>。",
       "- **未决事项：** 确认 \\_旧邀请\\_ 是否可重发（另有 2 条未显示，请查看完整轨迹）",
-      "- **复航提示：** 从 \\`403\\` 响应继续。",
+      "- **复航提示：** 从 \\`403\\` 响应继续，\\~\\~不要重跑\\~\\~。",
       "- **证据状态：** 75% · 需补：补充 \\[材料入口\\]",
       "",
       "> 由复航台根据本机已记录证据生成；请在继续工作前核对现场。"
@@ -290,6 +290,42 @@ describe("buildWorkspaceHandoff", () => {
     assert.match(handoff, /当前会话：Last safe project｜Resume safely/u);
     assert.match(handoff, /1\. Last safe project｜推进中｜复航 80%/u);
     assert.match(handoff, /Last safe project：Needs review/u);
+  });
+});
+
+describe("buildWorkspaceHandoffMarkdown", () => {
+  test("renders the bounded handoff as safe editable Markdown", () => {
+    const markdown = buildWorkspaceHandoffMarkdown({
+      rankedProjects: [{
+        project: { title: "[Portal](https://example.com)", status: "active" },
+        activeSession: { intention: "Fix *login*" },
+        nextAction: "Open <trace.json>",
+        completeness: 80
+      }],
+      rankedTotal: 1,
+      attentionDeck: [{ project: { title: "[Portal]" }, reasons: ["~~stale~~"], reasonTotal: 2 }],
+      attentionTotal: 1,
+      weeklyReview: { focusedMinutes: 30, sessions: 1, records: 2, recoverability: 80 }
+    }, Date.parse("2026-08-28T08:00:00.000Z"));
+
+    assert.equal(markdown, [
+      "# 复航台 · 工作区交接清单",
+      "",
+      "- **生成时间：** 2026\\-08\\-28T08:00:00\\.000Z",
+      "- **未归档项目：** 1",
+      "- **当前会话：** \\[Portal\\]\\(https://example\\.com\\)｜Fix \\*login\\*",
+      "",
+      "## 优先复航",
+      "1. \\[Portal\\]\\(https://example\\.com\\)｜推进中｜复航 80%",
+      "   - **下一步：** Open \\<trace\\.json\\>",
+      "",
+      "## 值得核对",
+      "- \\[Portal\\]：\\~\\~stale\\~\\~（另有 1 项现场缺口未列出）",
+      "",
+      "**七日航迹：** 30 分钟 · 1 段会话 · 2 条轨迹 · 平均复航 80%",
+      "> **说明：** 仅根据本机已记录证据生成，不代表产出评价。"
+    ].join("\n"));
+    assert.ok(markdown.length < 3_000);
   });
 });
 

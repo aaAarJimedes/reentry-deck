@@ -562,13 +562,17 @@ test("reentry brief copy is accessible and ignores stale asynchronous completion
   assert.match(source, /this\.#clipboardRequestGate\.invalidate\(\)/u);
 });
 
-test("dashboard exposes a bounded accessible workspace handoff copy action", async () => {
+test("dashboard exposes bounded accessible workspace handoff copy and Markdown actions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 
   assert.match(source, /data-action="copy-workspace-handoff" aria-label="复制工作区交接清单"/u);
+  assert.match(source, /data-action="download-workspace-handoff" aria-label="下载 Markdown 工作区交接清单"/u);
   assert.match(source, /if \(action === "copy-workspace-handoff"\) this\.#copyWorkspaceHandoff\(\)/u);
+  assert.match(source, /if \(action === "download-workspace-handoff"\) this\.#downloadWorkspaceHandoff\(\)/u);
   assert.match(source, /rankedLimit: WORKSPACE_HANDOFF_PROJECT_LIMIT/u);
   assert.match(source, /copyPlainText\(buildWorkspaceHandoff\(overview, now\)\)/u);
+  assert.match(source, /buildWorkspaceHandoffMarkdown\(overview, now\)/u);
+  assert.match(source, /reentry-workspace-handoff-\$\{new Date\(now\)\.toISOString\(\)\.slice\(0, 10\)\}\.md/u);
   assert.match(source, /const isCurrentRequest = this\.#clipboardRequestGate\.begin\(\)/u);
 });
 

@@ -50,7 +50,7 @@ function reentryBriefFields(card) {
 }
 
 function escapeMarkdownInline(value) {
-  return value.replace(/[\\`*_[\]{}()<>#+\-.!|]/gu, "\\$&");
+  return value.replace(/[\\`*_[\]{}()<>#+\-.!|~]/gu, "\\$&");
 }
 
 export function buildWorkspaceHandoff(overview, now = Date.now()) {
@@ -119,6 +119,36 @@ export function buildWorkspaceHandoff(overview, now = Date.now()) {
     "说明：仅根据本机已记录证据生成，不代表产出评价。"
   );
   return lines.join("\n");
+}
+
+export function buildWorkspaceHandoffMarkdown(overview, now = Date.now()) {
+  const lines = buildWorkspaceHandoff(overview, now).split("\n");
+  const markdown = ["# 复航台 · 工作区交接清单", ""];
+  for (let index = 1; index < lines.length; index += 1) {
+    markdown.push(workspaceHandoffMarkdownLine(lines[index]));
+  }
+  return markdown.join("\n");
+}
+
+function workspaceHandoffMarkdownLine(line) {
+  if (!line) return "";
+  if (line === "优先复航：") return "## 优先复航";
+  if (line === "值得核对：") return "## 值得核对";
+  for (const label of ["生成时间", "未归档项目", "当前会话"]) {
+    const prefix = `${label}：`;
+    if (line.startsWith(prefix)) return `- **${label}：** ${escapeMarkdownInline(line.slice(prefix.length))}`;
+  }
+  if (line.startsWith("   下一步：")) {
+    return `   - **下一步：** ${escapeMarkdownInline(line.slice("   下一步：".length))}`;
+  }
+  const rankedMatch = /^(\d+)\. (.*)$/u.exec(line);
+  if (rankedMatch) return `${rankedMatch[1]}. ${escapeMarkdownInline(rankedMatch[2])}`;
+  if (line.startsWith("- ")) return `- ${escapeMarkdownInline(line.slice(2))}`;
+  if (line.startsWith("七日航迹：")) {
+    return `**七日航迹：** ${escapeMarkdownInline(line.slice("七日航迹：".length))}`;
+  }
+  if (line.startsWith("说明：")) return `> **说明：** ${escapeMarkdownInline(line.slice("说明：".length))}`;
+  return escapeMarkdownInline(line);
 }
 
 function currentOpenLoops(card) {

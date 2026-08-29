@@ -457,6 +457,13 @@ svg {
   margin-bottom: 30px;
 }
 
+.page-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .eyebrow {
   display: inline-flex;
   align-items: center;

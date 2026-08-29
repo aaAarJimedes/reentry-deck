@@ -14,7 +14,7 @@ import { triggerBlobDownload } from "../core/download.js";
 import { safeDiagnosticMessage } from "../core/diagnostic.js";
 import { buildWorkspaceCounts, buildWorkspaceFrame, buildWorkspaceOverview } from "../core/insights.js";
 import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepareProjectArchive, prepareProjectEdit, prepareProjectRestore, prepareProjectStatusChange, prepareProjectTemplate, prepareSessionDialog, prepareSessionStart } from "../core/reentry.js";
-import { WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildReentryMarkdown, buildWorkspaceHandoff, copyPlainText } from "../core/share.js";
+import { WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildReentryMarkdown, buildWorkspaceHandoff, buildWorkspaceHandoffMarkdown, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndexWindow } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, inspectSession, locateActiveSessionContext, prepareQuickCheckpointReview, prepareQuickDock } from "../core/session.js";
 import { STORAGE_DURABILITY_STATUS, inspectPersistentStorage, requestPersistentStorage } from "../core/storage-durability.js";
@@ -544,7 +544,7 @@ export class ReentryApp {
           <h1>从清楚的地方，重新开始。</h1>
           <p class="lede">这里不催促你做更多，只帮你找回上次离开时已经想清楚的东西。</p>
         </div>
-        <button class="secondary-button" type="button" data-action="copy-workspace-handoff" aria-label="复制工作区交接清单">${icon("copy")} 复制交接清单</button>
+        <div class="page-heading-actions"><button class="secondary-button" type="button" data-action="copy-workspace-handoff" aria-label="复制工作区交接清单">${icon("copy")} 复制交接清单</button><button class="secondary-button" type="button" data-action="download-workspace-handoff" aria-label="下载 Markdown 工作区交接清单">${icon("download")} 下载 Markdown</button></div>
       </section>
       ${lead ? this.#renderHero(lead, activeSession) : ""}
       <section class="metrics-grid" aria-label="工作区概览">
@@ -1081,6 +1081,7 @@ export class ReentryApp {
     if (action === "load-sample") this.#loadSample();
     if (action === "export-data") this.#exportData();
     if (action === "copy-workspace-handoff") this.#copyWorkspaceHandoff();
+    if (action === "download-workspace-handoff") this.#downloadWorkspaceHandoff();
     if (action === "copy-reentry-brief") this.#copyReentryBrief(control.dataset.projectId);
     if (action === "download-reentry-brief") this.#downloadReentryBrief(control.dataset.projectId);
     if (action === "choose-import") this.#root.querySelector("#import-file")?.click();
@@ -1757,6 +1758,16 @@ export class ReentryApp {
     triggerBlobDownload(blob, `reentry-${card.project.title}-${new Date().toISOString().slice(0, 10)}.md`);
     this.#announce("Markdown 复航简报已下载");
     this.#toast("Markdown 复航简报已生成。 ");
+  }
+
+  #downloadWorkspaceHandoff() {
+    const now = Date.now();
+    const overview = buildWorkspaceOverview(this.#store.getState(), now, { rankedLimit: WORKSPACE_HANDOFF_PROJECT_LIMIT });
+    const markdown = buildWorkspaceHandoffMarkdown(overview, now);
+    const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+    triggerBlobDownload(blob, `reentry-workspace-handoff-${new Date(now).toISOString().slice(0, 10)}.md`);
+    this.#announce("Markdown 工作区交接清单已下载");
+    this.#toast("Markdown 工作区交接清单已生成。 ");
   }
 
   async #copyWorkspaceHandoff() {
