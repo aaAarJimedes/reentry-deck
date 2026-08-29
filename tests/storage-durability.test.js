@@ -61,11 +61,12 @@ test("persistent storage inspection is read-only and preserves its receiver", as
   assert.equal(await inspectPersistentStorage({ persisted: async () => "true" }), STORAGE_DURABILITY_STATUS.DENIED);
 });
 
-test("persistent storage inspection distinguishes unsupported and failed capabilities", async () => {
+test("persistent storage inspection distinguishes unknown, unsupported, and failed capabilities", async () => {
   const hostile = {};
   Object.defineProperty(hostile, "persisted", { get() { throw new Error("denied"); } });
 
-  assert.equal(await inspectPersistentStorage({}), STORAGE_DURABILITY_STATUS.UNSUPPORTED);
+  assert.equal(await inspectPersistentStorage({ persist: async () => true }), STORAGE_DURABILITY_STATUS.UNKNOWN);
+  assert.equal(await inspectPersistentStorage(undefined), STORAGE_DURABILITY_STATUS.UNSUPPORTED);
   assert.equal(await inspectPersistentStorage(hostile), STORAGE_DURABILITY_STATUS.ERROR);
   assert.equal(await inspectPersistentStorage({ persisted: async () => Promise.reject(new Error("denied")) }), STORAGE_DURABILITY_STATUS.ERROR);
 });

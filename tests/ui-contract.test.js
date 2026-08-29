@@ -113,6 +113,7 @@ test("settings expose an accessible persistent-storage result and a race-safe re
   assert.notEqual(request, "");
   assert.match(source, /data-action="request-persistent-storage" aria-describedby="storage-durability-status"/u);
   assert.match(source, /id="storage-durability-status" role="status"/u);
+  assert.match(source, /STORAGE_DURABILITY_STATUS\.UNKNOWN[^\n]*action: "主动请求保护"/u);
   assert.match(source, /if \(action === "request-persistent-storage"\) this\.#requestPersistentStorage\(true\)/u);
   assert.match(request, /this\.#storageDurabilityRequestGate\.begin\(\)/u);
   assert.match(source, /this\.#storageDurabilityRequestGate\.invalidate\(\)/u);

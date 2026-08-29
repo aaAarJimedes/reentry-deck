@@ -58,6 +58,7 @@ const STORAGE_DURABILITY_DETAILS = Object.freeze({
   checking: Object.freeze({ message: "正在检查浏览器是否已保护当前来源；不会弹出权限请求。", action: "正在检查" }),
   [STORAGE_DURABILITY_STATUS.GRANTED]: Object.freeze({ message: "浏览器已确认对当前来源使用持久存储保护。", action: "已受保护" }),
   [STORAGE_DURABILITY_STATUS.DENIED]: Object.freeze({ message: "浏览器尚未授予持久保护；请定期导出 JSON 备份。", action: "重新请求保护" }),
+  [STORAGE_DURABILITY_STATUS.UNKNOWN]: Object.freeze({ message: "浏览器无法自动确认保护状态；仍可主动请求，并请保留 JSON 备份。", action: "主动请求保护" }),
   [STORAGE_DURABILITY_STATUS.UNSUPPORTED]: Object.freeze({ message: "当前浏览器不支持持久存储请求；请依靠 JSON 备份恢复。", action: "浏览器不支持" }),
   [STORAGE_DURABILITY_STATUS.ERROR]: Object.freeze({ message: "无法检查浏览器保护状态；请稍后重试并保留 JSON 备份。", action: "重新检查" })
 });
