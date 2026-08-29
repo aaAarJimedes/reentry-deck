@@ -58,6 +58,50 @@ describe("release contract", () => {
     for (const path of shell.filter((item) => item !== "./")) await source(path.slice(2));
   });
 
+  test("web app manifest stays inside the install and offline-shell contract", async () => {
+    const [manifestText, indexSource, swSource] = await Promise.all([
+      source("app.webmanifest"),
+      source("index.html"),
+      source("sw.js")
+    ]);
+    const manifest = JSON.parse(manifestText);
+    const manifestUrl = new URL("https://example.test/reentry-deck/app.webmanifest");
+    const scopeUrl = new URL(manifest.scope, manifestUrl);
+    const startUrl = new URL(manifest.start_url, manifestUrl);
+    const scopePath = scopeUrl.pathname.endsWith("/") ? scopeUrl.pathname : `${scopeUrl.pathname}/`;
+    const shell = new Set(shellPaths(swSource));
+    const documentLanguage = indexSource.match(/<html lang="([^"]+)"/u)?.[1];
+    const documentTheme = indexSource.match(/<meta name="theme-color" content="([^"]+)"/u)?.[1];
+
+    assert.equal(manifest.lang, documentLanguage);
+    assert.equal(manifest.theme_color, documentTheme);
+    assert.equal(manifest.background_color, documentTheme);
+    assert.equal(manifest.display, "standalone");
+    assert.equal(scopeUrl.origin, manifestUrl.origin);
+    assert.equal(startUrl.origin, scopeUrl.origin);
+    assert.ok(startUrl.pathname === scopeUrl.pathname || startUrl.pathname.startsWith(scopePath));
+    assert.equal(startUrl.username, "");
+    assert.equal(startUrl.password, "");
+    assert.equal(startUrl.search, "");
+    assert.equal(startUrl.hash, "");
+    assert.match(indexSource, /<link rel="manifest" href="\.\/app\.webmanifest" \/>/u);
+    assert.ok(Array.isArray(manifest.icons) && manifest.icons.length > 0);
+
+    for (const icon of manifest.icons) {
+      const iconUrl = new URL(icon.src, manifestUrl);
+      assert.equal(iconUrl.origin, scopeUrl.origin);
+      assert.ok(iconUrl.pathname.startsWith(scopePath));
+      assert.equal(iconUrl.username, "");
+      assert.equal(iconUrl.password, "");
+      const relativePath = iconUrl.pathname.slice(scopePath.length);
+      assert.ok(relativePath && !relativePath.includes(".."));
+      assert.ok(PUBLIC_FILES.has(`/${relativePath}`), `${icon.src} is missing from the HTTP whitelist`);
+      assert.ok(shell.has(`./${relativePath}`), `${icon.src} is missing from the offline shell`);
+      assert.match(icon.type, /^image\//u);
+      assert.match(icon.purpose, /(?:^|\s)any(?:\s|$)/u);
+    }
+  });
+
   test("every local module reachable from main is served and cached", async () => {
     const shell = new Set(shellPaths(await source("sw.js")).map((path) => path.slice(2)));
     const visited = new Set();
