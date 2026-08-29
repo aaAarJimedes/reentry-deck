@@ -666,6 +666,16 @@ test("archived project details export the same bounded handoff without restorati
   assert.doesNotMatch(archived, /#restoreProject|restoreProject\(/u);
 });
 
+test("an active work session keeps the shared read-only handoff exports available", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const focus = source.match(/#renderFocusPanel\(project, session, card\) \{([\s\S]*?)\n  \}\n\n  #renderStaleSessionWarning/u)?.[1] ?? "";
+
+  assert.match(source, /isRunning \? this\.#renderFocusPanel\(project, activeSession, card\)/u);
+  assert.match(focus, /\$\{this\.#renderReentryExportTools\(card\)\}/u);
+  assert.match(focus, /class="session-timer js-session-timer"/u);
+  assert.doesNotMatch(focus, /#copyReentryBrief|#downloadReentryBrief/u);
+});
+
 test("repeated dynamic controls expose bounded contextual names and labeled groups", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

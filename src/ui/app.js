@@ -657,7 +657,7 @@ export class ReentryApp {
         </div>
       </section>
       <div class="workspace-grid">
-        ${isRunning ? this.#renderFocusPanel(project, activeSession) : this.#renderReentryPanel(card, anotherRunning)}
+        ${isRunning ? this.#renderFocusPanel(project, activeSession, card) : this.#renderReentryPanel(card, anotherRunning)}
         <aside class="side-stack">
           ${this.#renderProjectControls(project)}
           ${this.#renderResourcesPanel(state, project.id)}
@@ -716,13 +716,14 @@ export class ReentryApp {
     return `<div class="reentry-card-tools"><button class="ghost-button" type="button" data-action="copy-reentry-brief" data-project-id="${attr(card.project.id)}" aria-label="复制${label}：${projectLabel}">${icon("copy")} 复制简报</button><button class="ghost-button" type="button" data-action="download-reentry-brief" data-project-id="${attr(card.project.id)}" aria-label="下载 Markdown ${label}：${projectLabel}">${icon("download")} 下载 Markdown</button><span class="soft-pill">${icon("compass")} ${card.completeness}%</span></div>`;
   }
 
-  #renderFocusPanel(project, session) {
+  #renderFocusPanel(project, session, card) {
     const health = inspectSession(session);
     const showStaleWarning = health.stale && session.id !== this.#acknowledgedStaleSessionId;
     return `
       <section class="panel focus-panel" aria-labelledby="focus-heading">
         <div class="panel-header inline-between"><div><h2 id="focus-heading">工作现场已展开</h2><p>计时以开始时间为准，关闭页面也不会失真。</p></div><span class="status-pill" data-status="active">会话中</span></div>
         <div class="panel-body">
+          ${this.#renderReentryExportTools(card)}
           ${showStaleWarning ? this.#renderStaleSessionWarning(project, session, health) : ""}
           <div class="session-timer js-session-timer" role="timer" aria-label="本次会话用时" data-started-at="${attr(session.startedAt)}">${formatDuration(elapsedSeconds(session.startedAt))}</div>
           <p class="session-intention"><span class="muted">本次意图：</span> <strong>${escapeHTML(session.intention || project.nextAction || "先推进一个清楚的下一步")}</strong></p>
