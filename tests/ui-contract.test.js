@@ -572,7 +572,7 @@ test("dashboard exposes bounded accessible workspace handoff copy and Markdown a
   assert.match(source, /rankedLimit: WORKSPACE_HANDOFF_PROJECT_LIMIT/u);
   assert.match(source, /copyPlainText\(buildWorkspaceHandoff\(overview, now\)\)/u);
   assert.match(source, /buildWorkspaceHandoffMarkdown\(overview, now\)/u);
-  assert.match(source, /reentry-workspace-handoff-\$\{new Date\(now\)\.toISOString\(\)\.slice\(0, 10\)\}\.md/u);
+  assert.match(source, /reentry-workspace-handoff-\$\{formatLocalDownloadDate\(now\)\}\.md/u);
   assert.match(source, /const isCurrentRequest = this\.#clipboardRequestGate\.begin\(\)/u);
 });
 
@@ -583,6 +583,7 @@ test("backup sizing and download share the compact serialized snapshot path", as
 
   assert.match(sizing, /this\.#store\.exportSnapshotText\(\)/u);
   assert.match(download, /new Blob\(\[this\.#store\.exportSnapshotText\(\)\]/u);
+  assert.match(download, /reentry-backup-\$\{formatLocalDownloadDate\(\)\}\.json/u);
   assert.doesNotMatch(`${sizing}\n${download}`, /exportSnapshot\(\)|JSON\.stringify/u);
 });
 
@@ -630,7 +631,7 @@ test("project cards expose an accessible bounded Markdown brief download", async
 
   assert.match(source, /data-action="download-reentry-brief"[^>]*aria-label="下载 Markdown 复航简报：/u);
   assert.match(source, /new Blob\(\[markdown\], \{ type: "text\/markdown;charset=utf-8" \}\)/u);
-  assert.match(source, /triggerBlobDownload\(blob, `reentry-\$\{card\.project\.title\}-\$\{new Date\(\)\.toISOString\(\)\.slice\(0, 10\)\}\.md`\)/u);
+  assert.match(source, /triggerBlobDownload\(blob, `reentry-\$\{card\.project\.title\}-\$\{formatLocalDownloadDate\(\)\}\.md`\)/u);
   assert.match(source, /buildReentryMarkdown\(card\)/u);
 });
 

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { describe, test } from "node:test";
 
-import { DOWNLOAD_FILENAME_LIMIT, DOWNLOAD_FILENAME_SCAN_LIMIT, DOWNLOAD_REVOKE_DELAY_MS, safeDownloadFilename, triggerBlobDownload } from "../src/core/download.js";
+import { DOWNLOAD_FILENAME_LIMIT, DOWNLOAD_FILENAME_SCAN_LIMIT, DOWNLOAD_REVOKE_DELAY_MS, formatLocalDownloadDate, safeDownloadFilename, triggerBlobDownload } from "../src/core/download.js";
+
+const DOWNLOAD_MODULE_URL = new URL("../src/core/download.js", import.meta.url).href;
 
 function harness({ clickError = null, scheduleError = null } = {}) {
   const events = [];
@@ -58,6 +61,24 @@ function harness({ clickError = null, scheduleError = null } = {}) {
 }
 
 describe("triggerBlobDownload", () => {
+  test("formats calendar dates in the user's local timezone", () => {
+    const program = `import { formatLocalDownloadDate } from ${JSON.stringify(DOWNLOAD_MODULE_URL)}; process.stdout.write(formatLocalDownloadDate(Date.parse("2026-01-01T16:05:00.000Z")));`;
+    const result = spawnSync(process.execPath, ["--input-type=module", "--eval", program], {
+      encoding: "utf8",
+      env: { ...process.env, TZ: "Asia/Shanghai" }
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, "2026-01-02");
+    assert.equal(formatLocalDownloadDate(new Date(2026, 9, 3, 12).getTime()), "2026-10-03");
+  });
+
+  test("rejects coercive or out-of-range download dates", () => {
+    for (const value of ["2026-01-02", null, {}, Number.NaN, Number.POSITIVE_INFINITY, 9e15]) {
+      assert.throws(() => formatLocalDownloadDate(value), /下载日期无效/u);
+    }
+  });
+
   test("projects filenames to a bounded portable download name", () => {
     assert.equal(safeDownloadFilename("  report\\Q3:final?.json.  "), "report-Q3-final-.json");
     assert.equal(safeDownloadFilename("CON.json"), "_CON.json");

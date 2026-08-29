@@ -10,7 +10,7 @@ import {
 } from "../core/model.js";
 import { QUICK_CAPTURE_QUERY_LIMIT, buildQuickCaptureProjectWindow, prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture.js";
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
-import { triggerBlobDownload } from "../core/download.js";
+import { formatLocalDownloadDate, triggerBlobDownload } from "../core/download.js";
 import { safeDiagnosticMessage } from "../core/diagnostic.js";
 import { buildWorkspaceCounts, buildWorkspaceFrame, buildWorkspaceOverview } from "../core/insights.js";
 import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepareProjectArchive, prepareProjectEdit, prepareProjectRestore, prepareProjectStatusChange, prepareProjectTemplate, prepareSessionDialog, prepareSessionStart } from "../core/reentry.js";
@@ -1732,7 +1732,7 @@ export class ReentryApp {
 
   #exportData() {
     const blob = new Blob([this.#store.exportSnapshotText()], { type: "application/json" });
-    triggerBlobDownload(blob, `reentry-backup-${new Date().toISOString().slice(0, 10)}.json`);
+    triggerBlobDownload(blob, `reentry-backup-${formatLocalDownloadDate()}.json`);
     this.#toast("完整备份已生成。 ");
   }
 
@@ -1755,7 +1755,7 @@ export class ReentryApp {
     if (!card) throw new Error("找不到可下载的项目现场。 ");
     const markdown = buildReentryMarkdown(card);
     const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-    triggerBlobDownload(blob, `reentry-${card.project.title}-${new Date().toISOString().slice(0, 10)}.md`);
+    triggerBlobDownload(blob, `reentry-${card.project.title}-${formatLocalDownloadDate()}.md`);
     this.#announce("Markdown 复航简报已下载");
     this.#toast("Markdown 复航简报已生成。 ");
   }
@@ -1765,7 +1765,7 @@ export class ReentryApp {
     const overview = buildWorkspaceOverview(this.#store.getState(), now, { rankedLimit: WORKSPACE_HANDOFF_PROJECT_LIMIT });
     const markdown = buildWorkspaceHandoffMarkdown(overview, now);
     const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-    triggerBlobDownload(blob, `reentry-workspace-handoff-${new Date(now).toISOString().slice(0, 10)}.md`);
+    triggerBlobDownload(blob, `reentry-workspace-handoff-${formatLocalDownloadDate(now)}.md`);
     this.#announce("Markdown 工作区交接清单已下载");
     this.#toast("Markdown 工作区交接清单已生成。 ");
   }

@@ -4,6 +4,19 @@ export const DOWNLOAD_REVOKE_DELAY_MS = 1_000;
 export const DOWNLOAD_FILENAME_LIMIT = 160;
 export const DOWNLOAD_FILENAME_SCAN_LIMIT = 640;
 
+export function formatLocalDownloadDate(timestamp = Date.now()) {
+  if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) {
+    throw new TypeError("下载日期无效。 ");
+  }
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) throw new TypeError("下载日期无效。 ");
+  return [
+    String(date.getFullYear()).padStart(4, "0"),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0")
+  ].join("-");
+}
+
 export function safeDownloadFilename(value) {
   if (typeof value !== "string") return "download.json";
   let result = "";
