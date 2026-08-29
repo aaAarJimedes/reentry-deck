@@ -4,6 +4,7 @@ import { inspectSession } from "./session.js";
 const DAY_MS = 86_400_000;
 const NEARBY_SWITCH_MS = 4 * 3_600_000;
 const MAX_COUNTED_SESSION_MS = 12 * 3_600_000;
+export const ATTENTION_REASON_LIMIT = 3;
 
 export function buildWorkspaceCounts(state, now = Date.now()) {
   return buildWorkspaceFrame(state, null, now).counts;
@@ -309,7 +310,8 @@ function attentionForProject(project, card, now, staleAfterDays) {
     card,
     score,
     level: score >= 90 ? "high" : score >= 45 ? "medium" : "low",
-    reasons: reasons.slice(0, 3)
+    reasons: reasons.slice(0, ATTENTION_REASON_LIMIT),
+    reasonTotal: reasons.length
   };
 }
 

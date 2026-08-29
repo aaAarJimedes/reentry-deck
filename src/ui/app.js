@@ -582,7 +582,7 @@ export class ReentryApp {
           </div>
           <div class="attention-deck">
             <div class="attention-heading"><strong>值得核对</strong><span>按现场缺口排序，不评价产出</span></div>
-            ${attentionDeck.length ? `<ul>${attentionDeck.map((item) => `<li><a href="#/project/${encodeURIComponent(item.project.id)}"><span class="attention-level" data-level="${attr(item.level)}" aria-hidden="true"></span><span><strong>${escapeHTML(item.project.title)}</strong><small>${escapeHTML(item.reasons.join(" · "))}</small></span>${icon("arrow")}</a></li>`).join("")}</ul>${attentionRemaining ? `<p class="attention-overflow">另有 ${attentionRemaining} 个项目未列出，请在项目舰桥中核对。</p>` : ""}` : '<p class="attention-empty">当前没有明显的现场缺口。</p>'}
+            ${attentionDeck.length ? `<ul>${attentionDeck.map((item) => `<li><a href="#/project/${encodeURIComponent(item.project.id)}"><span class="attention-level" data-level="${attr(item.level)}" aria-hidden="true"></span><span><strong>${escapeHTML(item.project.title)}</strong><small>${escapeHTML(attentionReasonText(item))}</small></span>${icon("arrow")}</a></li>`).join("")}</ul>${attentionRemaining ? `<p class="attention-overflow">另有 ${attentionRemaining} 个项目未列出，请在项目舰桥中核对。</p>` : ""}` : '<p class="attention-empty">当前没有明显的现场缺口。</p>'}
           </div>
         </div>
       </section>`;
@@ -2073,6 +2073,17 @@ function quickCaptureProjectStatus(window) {
 
 function pulseMetric(value, label, detail) {
   return `<article><strong>${escapeHTML(value)}</strong><span>${escapeHTML(label)}</span><small>${escapeHTML(detail)}</small></article>`;
+}
+
+function attentionReasonText(item) {
+  const reasons = Array.isArray(item?.reasons) ? item.reasons : [];
+  const declaredTotal = Number.isSafeInteger(item?.reasonTotal) && item.reasonTotal >= 0
+    ? item.reasonTotal
+    : reasons.length;
+  const total = Math.max(reasons.length, declaredTotal);
+  const remaining = total - reasons.length;
+  const visible = reasons.join(" · ");
+  return `${visible}${remaining ? `${visible ? " · " : ""}另有 ${remaining} 项现场缺口` : ""}` || "需要人工核对现场";
 }
 
 function formatInsightDuration(minutes) {

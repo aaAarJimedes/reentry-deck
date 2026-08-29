@@ -98,7 +98,7 @@ export function buildWorkspaceHandoff(overview, now = Date.now()) {
     if (attentionCount >= WORKSPACE_HANDOFF_ATTENTION_LIMIT) break;
     if (!item?.project) continue;
     attentionCount += 1;
-    const reasons = boundedReasonList(item.reasons) || "需要人工核对现场";
+    const reasons = boundedReasonList(item.reasons, item.reasonTotal) || "需要人工核对现场";
     lines.push(`- ${briefLine(item.project.title, IMPORT_LIMITS.projectTitle)}：${reasons}`);
   }
   const declaredAttentionTotal = Number.isSafeInteger(overview.attentionTotal) && overview.attentionTotal >= 0
@@ -221,15 +221,23 @@ function workspaceStatus(value) {
   return { active: "推进中", paused: "暂泊", blocked: "受阻" }[value] ?? "状态未知";
 }
 
-function boundedReasonList(values) {
+function boundedReasonList(values, declaredTotal) {
   if (!Array.isArray(values)) return "";
-  let joined = "";
+  const items = [];
   for (let index = 0; index < values.length && index < WORKSPACE_HANDOFF_REASON_LIMIT; index += 1) {
     const reason = briefLine(values[index], IMPORT_LIMITS.returnHint);
     if (!reason) continue;
-    joined = briefLine(`${joined}${joined ? "；" : ""}${reason}`, IMPORT_LIMITS.checkpointSummary);
+    items.push(reason);
   }
-  return joined;
+  const sourceTotal = Number.isSafeInteger(declaredTotal) && declaredTotal >= 0
+    ? declaredTotal
+    : values.length;
+  const total = Math.max(items.length, sourceTotal);
+  if (!items.length) return total ? `有 ${total} 项现场缺口未列出` : "";
+  const remaining = total - items.length;
+  const suffix = remaining ? `（另有 ${remaining} 项现场缺口未列出）` : "";
+  const bodyBudget = Math.max(items.length, IMPORT_LIMITS.checkpointSummary - suffix.length);
+  return `${joinBoundedSummaryItems(items, bodyBudget)}${suffix}`;
 }
 
 export async function copyPlainText(value, dependencies = {}) {

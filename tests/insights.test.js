@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildAttentionDeck, buildWeeklyReview, buildWorkspaceCounts, buildWorkspaceFrame, buildWorkspaceOverview } from "../src/core/insights.js";
+import { ATTENTION_REASON_LIMIT, buildAttentionDeck, buildWeeklyReview, buildWorkspaceCounts, buildWorkspaceFrame, buildWorkspaceOverview } from "../src/core/insights.js";
 
 const NOW = Date.parse("2026-08-28T12:00:00.000Z");
 const HOUR = 3_600_000;
@@ -258,6 +258,32 @@ test("attention keeps exact open-signal totals while card evidence stays bounded
   });
   assert.match(item.reasons.join("；"), /5 条阻塞未解决，最早已 10 天/u);
   assert.match(item.reasons.join("；"), /4 个问题仍待确认/u);
+});
+
+test("attention keeps a bounded reason window while reporting every applicable gap", () => {
+  const data = state({
+    projects: [project("all-gaps", {
+      status: "blocked",
+      createdAt: at(-20 * DAY),
+      updatedAt: at(-10 * DAY),
+      lastOpenedAt: at(-10 * DAY)
+    })],
+    sessions: [{ id: "open", projectId: "all-gaps", status: "active", startedAt: at(-10 * DAY), endedAt: null }],
+    crumbs: [
+      { id: "b", projectId: "all-gaps", type: "blocker", text: "blocked", createdAt: at(-12 * DAY), resolvedAt: null },
+      { id: "q", projectId: "all-gaps", type: "question", text: "unknown", createdAt: at(-11 * DAY), resolvedAt: null }
+    ]
+  });
+
+  const [item] = buildAttentionDeck(data, NOW, { limit: 1 });
+
+  assert.equal(item.reasonTotal, 7);
+  assert.equal(item.reasons.length, ATTENTION_REASON_LIMIT);
+  assert.deepEqual(item.reasons, [
+    "活动会话可能没有收拢",
+    "项目标记为受阻",
+    "1 条阻塞未解决，最早已 12 天"
+  ]);
 });
 
 test("buildAttentionDeck sorts only its bounded output under a broad risk match", () => {

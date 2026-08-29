@@ -215,7 +215,7 @@ describe("buildWorkspaceHandoff", () => {
       rankedProjects,
       rankedTotal: 8,
       weeklyReview: { focusedMinutes: 95, sessions: 3, records: 12, recoverability: 77 },
-      attentionDeck: [{ project: { title: "Project 2" }, reasons: ["有未解决阻塞", "已离开 9 天"] }],
+      attentionDeck: [{ project: { title: "Project 2" }, reasons: ["有未解决阻塞", "已离开 9 天"], reasonTotal: 4 }],
       attentionTotal: 3
     }, Date.parse("2026-08-28T08:00:00.000Z"));
 
@@ -223,6 +223,7 @@ describe("buildWorkspaceHandoff", () => {
     assert.match(handoff, /当前会话：Project 1｜Finish the critical path/u);
     assert.match(handoff, /2\. Project 2｜受阻｜复航 89%/u);
     assert.match(handoff, /Project 2：有未解决阻塞；已离开 9 天/u);
+    assert.match(handoff, /另有 2 项现场缺口未列出/u);
     assert.match(handoff, /另有 2 个项目未列出，请回到项目舰桥核对/u);
     assert.match(handoff, /七日航迹：95 分钟 · 3 段会话 · 12 条轨迹 · 平均复航 77%/u);
     assert.equal((handoff.match(/^\d+\. /gmu) ?? []).length, WORKSPACE_HANDOFF_PROJECT_LIMIT);
@@ -262,6 +263,7 @@ describe("buildWorkspaceHandoff", () => {
 
     assert.match(handoff, /1\. Valid｜暂泊｜复航 0%/u);
     assert.match(handoff, /Valid：one；two；three/u);
+    assert.match(handoff, /另有 49997 项现场缺口未列出/u);
     assert.ok(handoff.length < 3_000);
   });
 
