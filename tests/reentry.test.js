@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import { IMPORT_LIMITS, containsLoneSurrogate } from "../src/core/model.js";
+
 import {
   buildReentryCard,
   buildReentryCards,
@@ -12,6 +14,7 @@ import {
   prepareProjectEdit,
   prepareProjectRestore,
   prepareProjectStatusChange,
+  prepareProjectTemplate,
   prepareSessionDialog,
   prepareSessionStart,
   rankProjectsForReentry
@@ -244,6 +247,40 @@ test("project change plans enforce live and archived lifecycle boundaries", () =
   assert.throws(() => prepareProjectStatusChange(state, "live", "archived"), /状态不可用/u);
   assert.throws(() => prepareProjectRestore(state, "live"), /不在归档舱/u);
   assert.throws(() => prepareProjectRestore(state, "missing"), /找不到/u);
+});
+
+test("project templates copy only bounded reusable fields from live or archived projects", () => {
+  const source = makeProject("source", {
+    title: `${"研".repeat(95)}👩‍💻`,
+    description: "  保留目的说明  ",
+    nextAction: "  打开第一份材料  ",
+    color: "plum"
+  });
+  const archived = makeProject("archived", { status: "archived", color: "sky" });
+  const projects = [source, archived];
+  Object.defineProperty(projects, "find", { value() { throw new Error("find must not be used"); } });
+  const state = { projects };
+  for (const collection of ["sessions", "crumbs", "checkpoints"]) {
+    Object.defineProperty(state, collection, {
+      get() { throw new Error(`${collection} must not be read`); }
+    });
+  }
+
+  const plan = prepareProjectTemplate(state, source.id);
+
+  assert.equal(plan.project, source);
+  assert.equal(plan.projectIndex, 0);
+  assert.deepEqual(Object.keys(plan.draft), ["sourceProjectId", "title", "description", "nextAction", "color"]);
+  assert.equal(plan.draft.sourceProjectId, source.id);
+  assert.equal(plan.draft.description, "保留目的说明");
+  assert.equal(plan.draft.nextAction, "打开第一份材料");
+  assert.equal(plan.draft.color, "plum");
+  assert.match(plan.draft.title, / · 新现场$/u);
+  assert.ok(plan.draft.title.length <= IMPORT_LIMITS.projectTitle);
+  assert.equal(containsLoneSurrogate(plan.draft.title), false);
+  assert.equal(Object.isFrozen(plan.draft), true);
+  assert.equal(prepareProjectTemplate(makeState({ projects }), archived.id).draft.color, "sky");
+  assert.throws(() => prepareProjectTemplate(makeState({ projects }), "missing"), /找不到要复用/u);
 });
 
 test("buildReentryCard uses the newest timestamped evidence instead of blindly trusting a checkpoint", () => {

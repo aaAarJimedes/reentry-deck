@@ -1,3 +1,4 @@
+import { IMPORT_LIMITS, compactText } from "./model.js";
 import { daysSince } from "./time.js";
 import { QUICK_DOCK_NOT_RECORDED } from "./session.js";
 
@@ -6,6 +7,7 @@ const SUMMARY_CRUMB_TYPES = new Set(["note", "discovery", "decision"]);
 const CHANGE_CRUMB_TYPES = new Set(["note", "discovery", "decision", "next"]);
 const LIVE_PROJECT_STATUSES = new Set(["active", "paused", "blocked"]);
 const PROJECT_EDIT_FIELDS = Object.freeze(["title", "description", "descriptionUpdatedAt", "nextAction", "nextActionUpdatedAt", "updatedAt"]);
+const PROJECT_TEMPLATE_SUFFIX = " · 新现场";
 
 export function getProjectActivity(state, projectId) {
   return getIndexedProjectActivity(buildReentryIndex(state, [projectId]), projectId);
@@ -91,6 +93,26 @@ export function prepareProjectEdit(state, projectId, expectedToken = undefined) 
     throw new Error("项目在编辑期间已发生变化，请重新打开表单核对最新内容。 ");
   }
   return { ...context, editToken: buildProjectEditToken(context.project) };
+}
+
+export function prepareProjectTemplate(state, projectId) {
+  const context = locateProjectRecord(state, projectId);
+  if (!context.project) throw new Error("找不到要复用的项目。 ");
+  const title = compactText(
+    context.project.title,
+    IMPORT_LIMITS.projectTitle - PROJECT_TEMPLATE_SUFFIX.length
+  );
+  if (!title) throw new Error("项目名称不可用，无法建立新现场。 ");
+  return {
+    ...context,
+    draft: Object.freeze({
+      sourceProjectId: context.project.id,
+      title: `${title}${PROJECT_TEMPLATE_SUFFIX}`,
+      description: compactText(context.project.description, IMPORT_LIMITS.projectDescription),
+      nextAction: compactText(context.project.nextAction, IMPORT_LIMITS.nextAction),
+      color: typeof context.project.color === "string" ? context.project.color : "fern"
+    })
+  };
 }
 
 export function prepareProjectStatusChange(state, projectId, status) {

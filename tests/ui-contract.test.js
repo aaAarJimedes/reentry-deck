@@ -47,6 +47,31 @@ test("project mutations enforce lifecycle-specific core plans", async () => {
   for (const handler of [edit, status, restore]) assert.doesNotMatch(handler, /state\.projects\.find/u);
 });
 
+test("existing projects seed a bounded new-project draft without copying history", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const prepare = source.match(/#prepareProjectTemplateDialog\(projectId\) \{([\s\S]*?)\n  \}\n\n  #openNewProjectDialog/u)?.[1] ?? "";
+  const open = source.match(/#openNewProjectDialog\(\) \{([\s\S]*?)\n  \}\n\n  #clearNewProjectTemplate/u)?.[1] ?? "";
+  const clear = source.match(/#clearNewProjectTemplate\(dialog\) \{([\s\S]*?)\n  \}\n\n  #changeProjectStatus/u)?.[1] ?? "";
+
+  assert.match(source, /data-action="use-project-template" data-project-id="\$\{attr\(project\.id\)\}"/u);
+  assert.match(source, /以归档项目为模板建立新现场/u);
+  assert.match(source, /if \(action === "use-project-template"\) this\.#prepareProjectTemplateDialog\(control\.dataset\.projectId\)/u);
+  assert.match(source, /addEventListener\("cancel",[\s\S]*?\{ \.\.\.listenerOptions, capture: true \}\)/u);
+  assert.match(source, /<dialog id="new-project-dialog"[^>]* aria-describedby="new-project-description">/u);
+  assert.match(source, /会话、轨迹与检查点不会复制/u);
+  assert.match(prepare, /prepareProjectTemplate\(this\.#store\.getState\(\), projectId\)/u);
+  assert.match(prepare, /form\.elements\.title\.value = draft\.title/u);
+  assert.match(prepare, /form\.elements\.description\.value = draft\.description/u);
+  assert.match(prepare, /form\.elements\.nextAction\.value = draft\.nextAction/u);
+  assert.match(prepare, /Object\.hasOwn\(COLOR_LABELS, draft\.color\)/u);
+  assert.doesNotMatch(prepare, /(?:sessions|crumbs|checkpoints)/u);
+  assert.match(open, /this\.#clearNewProjectTemplate\(dialog\)/u);
+  assert.match(clear, /this\.#newProjectTemplate = null/u);
+  assert.match(clear, /form\?\.reset\(\)/u);
+  assert.match(clear, /form\.elements\.title\.value = ""/u);
+  assert.match(clear, /form\.elements\.color\.value = "fern"/u);
+});
+
 test("user-triggered mutation surfaces are guarded by the shared action boundary", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

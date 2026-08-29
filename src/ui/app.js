@@ -13,7 +13,7 @@ import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js"
 import { triggerBlobDownload } from "../core/download.js";
 import { safeDiagnosticMessage } from "../core/diagnostic.js";
 import { buildWorkspaceCounts, buildWorkspaceFrame, buildWorkspaceOverview } from "../core/insights.js";
-import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepareProjectArchive, prepareProjectEdit, prepareProjectRestore, prepareProjectStatusChange, prepareSessionDialog, prepareSessionStart } from "../core/reentry.js";
+import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepareProjectArchive, prepareProjectEdit, prepareProjectRestore, prepareProjectStatusChange, prepareProjectTemplate, prepareSessionDialog, prepareSessionStart } from "../core/reentry.js";
 import { WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildWorkspaceHandoff, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndex } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, inspectSession, locateActiveSessionContext, prepareQuickCheckpointReview, prepareQuickDock } from "../core/session.js";
@@ -144,6 +144,7 @@ export class ReentryApp {
   #acknowledgedStaleSessionId = null;
   #pendingImport = null;
   #pendingProjectEdit = null;
+  #newProjectTemplate = null;
   #pendingCheckpointSessionId = null;
   #importRequestGate = createLatestRequestGate();
   #importReadController = null;
@@ -185,8 +186,9 @@ export class ReentryApp {
         if (event.target.id === "import-preview-dialog") this.#pendingImport = null;
         if (event.target.id === "archive-confirm-dialog") this.#pendingArchiveId = null;
         if (event.target.id === "edit-project-dialog") this.#pendingProjectEdit = null;
+        if (event.target.id === "new-project-dialog") this.#clearNewProjectTemplate(event.target);
         if (event.target.id === "checkpoint-dialog") this.#pendingCheckpointSessionId = null;
-      }, listenerOptions);
+      }, { ...listenerOptions, capture: true });
       window.addEventListener("hashchange", () => {
         this.#focusSelector = "#main-content";
         this.render();
@@ -231,6 +233,7 @@ export class ReentryApp {
     this.#storageDurabilityRequestGate.invalidate();
     this.#pendingImport = null;
     this.#pendingProjectEdit = null;
+    this.#newProjectTemplate = null;
     this.#pendingCheckpointSessionId = null;
     this.#activeSession = null;
     this.#acknowledgedStaleSessionId = null;
@@ -645,6 +648,7 @@ export class ReentryApp {
         </div>
         <div class="project-header-actions">
           <button class="secondary-button" type="button" data-action="edit-project">${icon("edit")} 编辑</button>
+          <button class="secondary-button" type="button" data-action="use-project-template" data-project-id="${attr(project.id)}" aria-label="以当前项目为模板建立新现场：${attr(controlContext(project.title))}">${icon("copy")} 复用为新项目</button>
           ${isRunning ? `<button class="secondary-button" type="button" data-action="quick-dock" data-session-id="${attr(activeSession.id)}" aria-label="快速停靠：${attr(controlContext(project.title))}" title="快速停靠（Ctrl/⌘ Shift S）">${icon("archive")} 快速停靠</button><button class="primary-button" type="button" data-action="open-checkpoint">${icon("stop")} 留下检查点</button>` : anotherRunning ? `<a class="secondary-button" href="#/project/${encodeURIComponent(activeSession.projectId)}">先处理活动会话</a>` : `<button class="primary-button" type="button" data-action="start-session" data-project-id="${attr(project.id)}">${icon("play")} 开始会话</button>`}
         </div>
       </section>
@@ -821,7 +825,7 @@ export class ReentryApp {
     return `
       <section class="project-header">
         <div><p class="eyebrow">已归档</p><h1>${escapeHTML(project.title)}</h1><p class="lede">${escapeHTML(project.description || card.summary)}</p><div class="project-meta"><span>归档于 ${formatDateTime(project.archivedAt ?? project.updatedAt)}</span><span class="separator">•</span><span>所有历史记录保持只读</span></div></div>
-        <div class="project-header-actions"><button class="primary-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}" aria-label="恢复到暂泊状态：${attr(controlContext(project.title))}">恢复到暂泊状态</button></div>
+        <div class="project-header-actions"><button class="secondary-button" type="button" data-action="use-project-template" data-project-id="${attr(project.id)}" aria-label="以归档项目为模板建立新现场：${attr(controlContext(project.title))}">${icon("copy")} 复用为新项目</button><button class="primary-button" type="button" data-action="restore-project" data-project-id="${attr(project.id)}" aria-label="恢复到暂泊状态：${attr(controlContext(project.title))}">恢复到暂泊状态</button></div>
       </section>
       <section class="panel reentry-card"><div class="panel-header"><h2>最后的复航现场</h2><p>恢复项目后可从这个检查点继续。</p></div><div class="panel-body"><div class="reentry-section"><span class="reentry-label">最后状态</span><p class="reentry-value">${textBlock(card.summary)}</p></div><div class="reentry-section"><span class="reentry-label">下一动作</span><p class="reentry-value next-action">${textBlock(card.nextAction)}</p></div></div></section>
       <section class="panel spaced-panel"><div class="panel-header inline-between"><div><h2>历史轨迹</h2><p>归档项目不会接受新的会话或记录。</p></div><span class="soft-pill">${timeline.total} 条</span></div><div class="panel-body">${this.#renderTimeline(timeline, project.id, false, "没有历史轨迹。")}</div></section>`;
@@ -880,6 +884,8 @@ export class ReentryApp {
 
   #renderDialogs(project, activeSession, reentryCard) {
     const state = this.#store.getState();
+    const projectTemplate = this.#newProjectTemplate;
+    const templateColor = projectTemplate && Object.hasOwn(COLOR_LABELS, projectTemplate.color) ? projectTemplate.color : "fern";
     const pendingArchiveProject = project?.id === this.#pendingArchiveId ? project : null;
     const reviewCheckpoint = reentryCard?.checkpoint ?? null;
     const captureWindow = buildQuickCaptureProjectWindow(state, {
@@ -888,13 +894,13 @@ export class ReentryApp {
     const captureProjectId = captureWindow.items[0]?.id;
     const captureProjectOptions = renderQuickCaptureProjectOptions(captureWindow.items, captureProjectId, activeSession?.projectId);
     return `
-      <dialog id="new-project-dialog" aria-labelledby="new-project-title">
-        <div class="dialog-header"><div><h2 id="new-project-title">建立工作现场</h2><p>只需一个清楚的名字；其他信息以后再补也可以。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
+      <dialog id="new-project-dialog" data-template-source-id="${attr(projectTemplate?.sourceProjectId ?? "")}" aria-labelledby="new-project-title" aria-describedby="new-project-description">
+        <div class="dialog-header"><div><h2 id="new-project-title">${projectTemplate ? "从现有项目建立新现场" : "建立工作现场"}</h2><p id="new-project-description">${projectTemplate ? "已带入名称、目的、下一动作和识别颜色；会话、轨迹与检查点不会复制。" : "只需一个清楚的名字；其他信息以后再补也可以。"}</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <form class="dialog-body" data-form="new-project">
-          <label class="field"><span class="required">项目名称</span><input name="title" maxlength="${IMPORT_LIMITS.projectTitle}" placeholder="例如：重构论文结果图" required autofocus /></label>
-          <label class="field"><span>为什么要做</span><textarea name="description" maxlength="${IMPORT_LIMITS.projectDescription}" placeholder="一句话说明目的，帮助未来的自己快速校准。"></textarea></label>
-          <label class="field"><span>已知的第一动作</span><input name="nextAction" maxlength="${IMPORT_LIMITS.nextAction}" placeholder="例如：打开 figure_03.ipynb，核对配色映射" /></label>
-          <fieldset class="field-group color-fieldset"><legend class="field-label">识别颜色</legend><div class="color-options">${Object.keys(COLOR_LABELS).map((name, index) => `<label class="color-choice" title="${COLOR_LABELS[name]}"><input type="radio" name="color" value="${name}" aria-label="${COLOR_LABELS[name]}" ${index === 0 ? "checked" : ""}/><span class="color-swatch color-swatch-${name}"></span></label>`).join("")}</div></fieldset>
+          <label class="field"><span class="required">项目名称</span><input name="title" value="${attr(projectTemplate?.title ?? "")}" maxlength="${IMPORT_LIMITS.projectTitle}" placeholder="例如：重构论文结果图" required autofocus /></label>
+          <label class="field"><span>为什么要做</span><textarea name="description" maxlength="${IMPORT_LIMITS.projectDescription}" placeholder="一句话说明目的，帮助未来的自己快速校准。">${escapeHTML(projectTemplate?.description ?? "")}</textarea></label>
+          <label class="field"><span>已知的第一动作</span><input name="nextAction" value="${attr(projectTemplate?.nextAction ?? "")}" maxlength="${IMPORT_LIMITS.nextAction}" placeholder="例如：打开 figure_03.ipynb，核对配色映射" /></label>
+          <fieldset class="field-group color-fieldset"><legend class="field-label">识别颜色</legend><div class="color-options">${Object.keys(COLOR_LABELS).map((name) => `<label class="color-choice" title="${COLOR_LABELS[name]}"><input type="radio" name="color" value="${name}" aria-label="${COLOR_LABELS[name]}" ${name === templateColor ? "checked" : ""}/><span class="color-swatch color-swatch-${name}"></span></label>`).join("")}</div></fieldset>
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="primary-button" type="submit">建立项目</button></div>
         </form>
       </dialog>
@@ -1029,7 +1035,8 @@ export class ReentryApp {
     if (!control) return;
     const action = control.dataset.action;
 
-    if (action === "open-new-project") this.#openDialog("new-project-dialog");
+    if (action === "open-new-project") this.#openNewProjectDialog();
+    if (action === "use-project-template") this.#prepareProjectTemplateDialog(control.dataset.projectId);
     if (action === "open-quick-capture") this.#openDialog("quick-capture-dialog");
     if (action === "open-search") this.#openDialog("search-dialog");
     if (action === "undo-last") this.#restorePrevious(control.dataset.undoContext);
@@ -1183,7 +1190,7 @@ export class ReentryApp {
     if (isTypingTarget(event.target)) return;
     if (event.key.toLowerCase() === "n") {
       event.preventDefault();
-      this.#openDialog("new-project-dialog");
+      this.#openNewProjectDialog();
     }
     if (event.key.toLowerCase() === "c") {
       const capture = this.#root.querySelector('[data-form="capture-crumb"] textarea');
@@ -1205,7 +1212,7 @@ export class ReentryApp {
       this.#runUserAction(() => {
         if (command === "quick-capture") this.#openDialog("quick-capture-dialog");
         if (command === "quick-dock") this.#quickDock(undefined, false);
-        if (command === "new-project") this.#openDialog("new-project-dialog");
+        if (command === "new-project") this.#openNewProjectDialog();
         if (command === "undo") this.#restorePrevious("topbar");
         if (command === "export") this.#exportData();
         if (command === "home") location.hash = "#/";
@@ -1221,6 +1228,7 @@ export class ReentryApp {
       state.projects.push(project);
       state.ui.selectedProjectId = project.id;
     });
+    this.#newProjectTemplate = null;
     form.closest("dialog")?.close();
     location.hash = `#/project/${encodeURIComponent(project.id)}`;
     this.#requestPersistentStorage();
@@ -1459,6 +1467,49 @@ export class ReentryApp {
     const { project, editToken } = prepareProjectEdit(state, route.id);
     this.#pendingProjectEdit = { projectId: project.id, editToken };
     this.#openDialog("edit-project-dialog");
+  }
+
+  #prepareProjectTemplateDialog(projectId) {
+    const { draft } = prepareProjectTemplate(this.#store.getState(), projectId);
+    const dialog = this.#root.querySelector("#new-project-dialog");
+    const form = dialog?.querySelector('[data-form="new-project"]');
+    if (!dialog || !form) throw new Error("无法打开新项目表单。 ");
+    this.#newProjectTemplate = draft;
+    dialog.dataset.templateSourceId = draft.sourceProjectId;
+    dialog.querySelector("#new-project-title").textContent = "从现有项目建立新现场";
+    dialog.querySelector("#new-project-description").textContent = "已带入名称、目的、下一动作和识别颜色；会话、轨迹与检查点不会复制。";
+    form.reset();
+    form.elements.title.value = draft.title;
+    form.elements.description.value = draft.description;
+    form.elements.nextAction.value = draft.nextAction;
+    if (Object.hasOwn(COLOR_LABELS, draft.color)) form.elements.color.value = draft.color;
+    this.#openDialog("new-project-dialog");
+    form.elements.title.focus();
+    form.elements.title.select();
+  }
+
+  #openNewProjectDialog() {
+    const dialog = this.#root.querySelector("#new-project-dialog");
+    if (dialog) this.#clearNewProjectTemplate(dialog);
+    this.#openDialog("new-project-dialog");
+  }
+
+  #clearNewProjectTemplate(dialog) {
+    if (!this.#newProjectTemplate && !dialog?.dataset.templateSourceId) return;
+    this.#newProjectTemplate = null;
+    delete dialog.dataset.templateSourceId;
+    const form = dialog.querySelector('[data-form="new-project"]');
+    form?.reset();
+    if (form) {
+      form.elements.title.value = "";
+      form.elements.description.value = "";
+      form.elements.nextAction.value = "";
+      form.elements.color.value = "fern";
+    }
+    const title = dialog.querySelector("#new-project-title");
+    const description = dialog.querySelector("#new-project-description");
+    if (title) title.textContent = "建立工作现场";
+    if (description) description.textContent = "只需一个清楚的名字；其他信息以后再补也可以。";
   }
 
   #changeProjectStatus(projectId, status) {
@@ -1747,6 +1798,7 @@ export class ReentryApp {
     if (dialog?.id === "import-preview-dialog") this.#pendingImport = null;
     if (dialog?.id === "archive-confirm-dialog") this.#pendingArchiveId = null;
     if (dialog?.id === "edit-project-dialog") this.#pendingProjectEdit = null;
+    if (dialog?.id === "new-project-dialog") this.#clearNewProjectTemplate(dialog);
     if (dialog?.id === "checkpoint-dialog") this.#pendingCheckpointSessionId = null;
     dialog?.close();
   }
