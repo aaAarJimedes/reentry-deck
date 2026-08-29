@@ -160,11 +160,14 @@ test("settings expose an accessible persistent-storage result and a race-safe re
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const settings = source.match(/#renderSettings\(state\) \{([\s\S]*?)\n  \}\n\n  #getBackupSize/u)?.[1] ?? "";
   const request = source.match(/async #requestPersistentStorage\(report = false\) \{([\s\S]*?)\n  \}\n\}/u)?.[1] ?? "";
+  const inspect = source.match(/async #inspectPersistentStorage\(\) \{([\s\S]*?)\n  \}\n\}/u)?.[1] ?? "";
 
   assert.notEqual(settings, "");
   assert.notEqual(request, "");
+  assert.notEqual(inspect, "");
   assert.match(source, /data-action="request-persistent-storage" aria-describedby="storage-durability-status"/u);
-  assert.match(source, /id="storage-durability-status" role="status"/u);
+  assert.match(settings, /id="storage-durability-status"/u);
+  assert.doesNotMatch(settings, /id="storage-durability-status"[^>]*(?:role="status"|aria-live)/u);
   assert.match(source, /STORAGE_DURABILITY_STATUS\.UNKNOWN[^\n]*action: "主动请求保护"/u);
   assert.match(source, /if \(action === "request-persistent-storage"\) this\.#requestPersistentStorage\(true\)/u);
   assert.match(request, /this\.#storageDurabilityRequestGate\.begin\(\)/u);
@@ -172,10 +175,13 @@ test("settings expose an accessible persistent-storage result and a race-safe re
   assert.match(request, /await requestPersistentStorage\(navigator\.storage\)/u);
   assert.match(request, /if \(!isCurrentRequest\(\)\) return/u);
   assert.match(request, /result === STORAGE_DURABILITY_STATUS\.GRANTED/u);
+  assert.match(request, /this\.#announce\(message\)/u);
   assert.match(source, /this\.render\(\);\n      this\.#inspectPersistentStorage\(\);/u);
   assert.match(source, /await inspectPersistentStorage\(navigator\.storage\)/u);
   assert.match(source, /if \(location\.hash !== "#\/settings"\) return/u);
-  assert.match(source, /this\.render\(\{ preserveDialog: true \}\)/u);
+  assert.match(inspect, /this\.render\(\{ preserveDialog: true \}\)/u);
+  assert.match(inspect, /this\.#announce\(message\)/u);
+  assert.ok(inspect.indexOf("this.render") < inspect.indexOf("this.#announce"));
 });
 
 test("toast output is text-bounded, count-bounded, and timer-bounded", async () => {
