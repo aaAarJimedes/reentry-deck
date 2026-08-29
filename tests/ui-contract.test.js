@@ -583,8 +583,10 @@ test("backup sizing and download share the compact serialized snapshot path", as
   const download = source.match(/#exportData\(\) \{([\s\S]*?)\n  \}\n\n  async #copyReentryBrief/u)?.[1] ?? "";
 
   assert.match(sizing, /this\.#store\.exportSnapshotText\(\)/u);
-  assert.match(download, /new Blob\(\[this\.#store\.exportSnapshotText\(\)\]/u);
-  assert.match(download, /reentry-backup-\$\{formatLocalDownloadDate\(\)\}\.json/u);
+  assert.match(download, /const now = Date\.now\(\)/u);
+  assert.match(download, /new Blob\(\[this\.#store\.exportSnapshotText\(now\)\]/u);
+  assert.match(download, /reentry-backup-\$\{formatLocalDownloadDate\(now\)\}\.json/u);
+  assert.equal(download.match(/Date\.now\(\)/gu)?.length, 1);
   assert.doesNotMatch(`${sizing}\n${download}`, /exportSnapshot\(\)|JSON\.stringify/u);
 });
 
