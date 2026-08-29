@@ -193,7 +193,9 @@ export class ReentryApp {
       }, listenerOptions);
       window.addEventListener("keydown", (event) => this.#runUserAction(() => this.#onKeydown(event)), listenerOptions);
       document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "visible") this.#refreshTimers();
+        if (document.visibilityState !== "visible") return;
+        this.#store.refreshFromStorage();
+        this.#refreshTimers();
       }, listenerOptions);
       this.#colorSchemeQuery = window.matchMedia?.("(prefers-color-scheme: dark)") ?? null;
       this.#colorSchemeListener = () => {
