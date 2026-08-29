@@ -120,7 +120,20 @@ test("deferred UI callbacks cannot outlive their render or app instance", async 
   assert.ok((render.match(/renderSequence !== this\.#renderSequence/gu)?.length ?? 0) >= 3);
   assert.match(command, /if \(this\.#destroyed\) return/u);
   assert.match(open, /!this\.#destroyed && dialog\.isConnected && dialog\.open/u);
-  assert.match(announce, /!this\.#destroyed && region\.isConnected/u);
+  assert.match(announce, /this\.#destroyed[^\n]*!region\.isConnected\) return/u);
+});
+
+test("live announcements let only the latest animation-frame request commit", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const announce = source.match(/#announce\(message\) \{([\s\S]*?)\n  \}\n\n  async #requestPersistentStorage/u)?.[1] ?? "";
+
+  assert.match(source, /#announcementSequence = 0/u);
+  assert.match(source, /this\.#announcementSequence \+= 1/u);
+  assert.match(announce, /const announcementSequence = \+\+this\.#announcementSequence/u);
+  assert.match(announce, /announcementSequence !== this\.#announcementSequence/u);
+  assert.match(announce, /!region\.isConnected\) return/u);
+  assert.ok(announce.indexOf("++this.#announcementSequence") < announce.indexOf('querySelector("#live-region")'));
+  assert.ok(announce.indexOf('region.textContent = ""') < announce.indexOf("requestAnimationFrame"));
 });
 
 test("every user-established workspace requests persistent storage only after commit", async () => {

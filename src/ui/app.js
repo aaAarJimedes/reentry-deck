@@ -169,6 +169,7 @@ export class ReentryApp {
   #sessionHealthSignature = "none";
   #calendarDaySignature = "invalid";
   #renderSequence = 0;
+  #announcementSequence = 0;
   #destroyed = false;
 
   constructor(root, store) {
@@ -225,6 +226,7 @@ export class ReentryApp {
     if (this.#destroyed) return;
     this.#destroyed = true;
     this.#renderSequence += 1;
+    this.#announcementSequence += 1;
     window.clearInterval(this.#timerId);
     this.#importRequestGate.invalidate();
     this.#importReadController?.abort();
@@ -1964,11 +1966,13 @@ export class ReentryApp {
   }
 
   #announce(message) {
+    const announcementSequence = ++this.#announcementSequence;
     const region = this.#root.querySelector("#live-region");
     if (!region) return;
     region.textContent = "";
     requestAnimationFrame(() => {
-      if (!this.#destroyed && region.isConnected) region.textContent = message;
+      if (this.#destroyed || announcementSequence !== this.#announcementSequence || !region.isConnected) return;
+      region.textContent = message;
     });
   }
 
