@@ -1,5 +1,6 @@
 import { closeSync, createReadStream, fstatSync, openSync } from "node:fs";
 import { createServer } from "node:http";
+import { isIP } from "node:net";
 import { extname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -162,9 +163,14 @@ function sendText(response, status, message, extraHeaders = {}, headOnly = false
 
 function runCli() {
   const port = parseServerPort(process.env.PORT ?? "4173");
-  const host = process.env.HOST ?? "127.0.0.1";
+  const host = parseServerHost(process.env.HOST ?? "127.0.0.1");
   if (port === null) {
     console.error("PORT 必须是 0–65535 之间的整数。");
+    process.exitCode = 1;
+    return;
+  }
+  if (host === null) {
+    console.error("HOST 必须是有效的主机名、IPv4 或 IPv6 地址，且不能包含协议、端口或路径。");
     process.exitCode = 1;
     return;
   }
@@ -240,6 +246,45 @@ export function parseServerPort(value) {
   if (!/^\d{1,5}$/.test(text)) return null;
   const port = Number(text);
   return Number.isInteger(port) && port <= 65_535 ? port : null;
+}
+
+export function parseServerHost(value) {
+  if (typeof value !== "string"
+    || !value
+    || value.length > 255
+    || /[\s\u007f-\u009f]/u.test(value)) {
+    return null;
+  }
+
+  const startsWithBracket = value.startsWith("[");
+  const endsWithBracket = value.endsWith("]");
+  if (startsWithBracket !== endsWithBracket) return null;
+  const bracketed = startsWithBracket && endsWithBracket;
+  const host = bracketed ? value.slice(1, -1) : value;
+  if (!host || host.includes("%")) return null;
+
+  const ipVersion = isIP(host);
+  if (bracketed) return ipVersion === 6 ? host.toLowerCase() : null;
+  if (ipVersion === 4 || ipVersion === 6) return host.toLowerCase();
+  if (host.includes(":") || !/^[A-Za-z0-9.-]+$/u.test(host)) return null;
+
+  const trailingDot = host.endsWith(".");
+  const hostname = trailingDot ? host.slice(0, -1) : host;
+  if (!hostname || hostname.length > 253) return null;
+  const labels = hostname.split(".");
+  if (labels.some((label) => label.length < 1
+    || label.length > 63
+    || !/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/u.test(label))) {
+    return null;
+  }
+
+  const normalized = `${hostname.toLowerCase()}${trailingDot ? "." : ""}`;
+  try {
+    if (new URL(`http://${normalized}:4173`).hostname !== normalized) return null;
+  } catch {
+    return null;
+  }
+  return normalized;
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : null;

@@ -11,6 +11,7 @@ import {
   createAppServer,
   formatServerStartupError,
   formatServerUrl,
+  parseServerHost,
   parseServerPort,
   resolvePublicFile
 } from "../tools/server.mjs";
@@ -36,6 +37,57 @@ describe("server configuration", () => {
     for (const value of ["", "4173abc", "1.5", "-1", "+80", "65536", null, undefined]) {
       assert.equal(parseServerPort(value), null, String(value));
     }
+  });
+
+  test("normalizes only bounded hostnames and IP addresses", () => {
+    for (const [value, expected] of [
+      ["localhost", "localhost"],
+      ["LOCALHOST", "localhost"],
+      ["dev-box.local", "dev-box.local"],
+      ["EXAMPLE.TEST.", "example.test."],
+      ["xn--mnich-kva.example", "xn--mnich-kva.example"],
+      ["127.0.0.1", "127.0.0.1"],
+      ["0.0.0.0", "0.0.0.0"],
+      ["::1", "::1"],
+      ["::", "::"],
+      ["[2001:DB8::1]", "2001:db8::1"]
+    ]) {
+      assert.equal(parseServerHost(value), expected, value);
+    }
+
+    for (const value of [
+      "",
+      " localhost",
+      "localhost ",
+      "local\thost",
+      "local\u00a0host",
+      "http://localhost",
+      "user@localhost",
+      "localhost:4173",
+      "localhost/path",
+      "localhost?query",
+      "localhost#fragment",
+      "[localhost]",
+      "[::1",
+      "::1]",
+      "[bad:host]",
+      "fe80::1%12",
+      "-bad.test",
+      "bad-.test",
+      "bad..test",
+      "a_b.test",
+      "münich.example",
+      "127.0.0.01",
+      "0x7f000001",
+      "256.256.256.256",
+      `${"a".repeat(64)}.test`,
+      `${"a".repeat(63)}.${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(62)}`,
+      null,
+      undefined
+    ]) {
+      assert.equal(parseServerHost(value), null, String(value));
+    }
+    assert.equal(formatServerUrl(null, parseServerHost("[::1]"), 4173), "http://[::1]:4173");
   });
 
   test("reports the actual bound port and formats IPv6 URLs", () => {
@@ -134,6 +186,15 @@ describe("public path resolution", () => {
 });
 
 describe("local HTTP server", () => {
+  test("CLI rejects a malformed host before DNS or listen", async () => {
+    const result = await runServerCli({ HOST: "bad host", PORT: "0" });
+    assert.equal(result.code, 1);
+    assert.equal(result.signal, null);
+    assert.equal(result.stdout, "");
+    assert.equal(result.stderr, "HOST 必须是有效的主机名、IPv4 或 IPv6 地址，且不能包含协议、端口或路径。\n");
+    assert.doesNotMatch(result.stderr, /getaddrinfo|\n\s+at /u);
+  });
+
   test("CLI reports a real occupied port without a raw stack trace", async () => {
     const occupied = createAppServer({ root: projectRoot });
     await new Promise((resolveListen, reject) => {
