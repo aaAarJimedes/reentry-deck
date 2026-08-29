@@ -51,9 +51,10 @@ describe("buildReentryBrief", () => {
       ...base,
       checkpoint: { id: "cp" },
       openLoops: "stale checkpoint loop",
-      unresolvedSignals: [{ text: "new blocker" }, { text: "new question" }]
+      unresolvedSignals: [{ text: "new blocker" }, { text: "new question" }],
+      unresolvedSummary: { total: 4 }
     });
-    assert.match(live, /未决事项：new blocker；new question/u);
+    assert.match(live, /未决事项：new blocker；new question（另有 2 条未显示，请查看完整轨迹）/u);
     assert.doesNotMatch(live, /stale checkpoint loop/u);
     assert.match(live, /证据状态：50% · 需补：核对 1 段未收拢或中断的会话/u);
 
@@ -104,13 +105,34 @@ describe("buildReentryBrief", () => {
       nextAction: "next",
       returnHint: "hint",
       unresolvedSignals: signals,
+      unresolvedSummary: { total: 50_000 },
       readinessGaps: gaps,
       completeness: 50
     });
 
-    assert.match(brief, /未决事项：signal 1；signal 2；signal 3/u);
+    assert.match(brief, /未决事项：signal 1；signal 2；signal 3（另有 49997 条未显示，请查看完整轨迹）/u);
     assert.match(brief, /需补：gap 1；gap 2；gap 3；gap 4；gap 5；gap 6/u);
     assert.ok(brief.length < 3_000);
+  });
+
+  test("keeps the exact omitted-signal notice inside the bounded open-loop line", () => {
+    const openLoops = buildReentryBrief({
+      project: { title: "Crowded" },
+      summary: "state",
+      nextAction: "next",
+      returnHint: "hint",
+      unresolvedSignals: [
+        { text: "甲".repeat(1_200) },
+        { text: "😀".repeat(600) },
+        { text: "丙".repeat(1_200) }
+      ],
+      unresolvedSummary: { total: 9 },
+      readinessGaps: []
+    }).split("\n")[3].slice("未决事项：".length);
+
+    assert.ok(openLoops.length <= 800);
+    assert.match(openLoops, /甲+…；😀+…；丙+…（另有 6 条未显示，请查看完整轨迹）$/u);
+    assert.doesNotMatch(openLoops, /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/u);
   });
 
   test("bounds raw field normalization and ignores coercion hooks", (t) => {

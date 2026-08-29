@@ -83,13 +83,7 @@ function currentOpenLoops(card) {
   if (!Array.isArray(card.unresolvedSignals)) {
     return briefLine(card.openLoops || "当前没有未解决的问题或阻塞。", IMPORT_LIMITS.openLoops);
   }
-  const current = boundedBriefList(
-    card.unresolvedSignals,
-    REENTRY_BRIEF_SIGNAL_LIMIT,
-    IMPORT_LIMITS.crumbText,
-    IMPORT_LIMITS.openLoops,
-    (signal) => signal?.text
-  );
+  const current = boundedOpenSignalSummary(card.unresolvedSignals, card.unresolvedSummary);
   if (current) return current;
   const checkpointLoops = card.checkpoint
     ? briefLine(Object.hasOwn(card, "historicalOpenLoops") ? card.historicalOpenLoops : card.openLoops, IMPORT_LIMITS.openLoops)
@@ -98,6 +92,38 @@ function currentOpenLoops(card) {
     return briefLine(`检查点曾记录（待确认）：${checkpointLoops}`, IMPORT_LIMITS.openLoops);
   }
   return "当前没有未解决的问题或阻塞。";
+}
+
+function boundedOpenSignalSummary(signals, summary) {
+  const items = [];
+  for (let index = 0; index < signals.length && index < REENTRY_BRIEF_SIGNAL_LIMIT; index += 1) {
+    const item = briefLine(signals[index]?.text, IMPORT_LIMITS.crumbText);
+    if (item) items.push(item);
+  }
+  const declaredTotal = Number.isSafeInteger(summary?.total) && summary.total >= 0
+    ? summary.total
+    : signals.length;
+  const total = Math.max(items.length, declaredTotal);
+  if (!items.length) {
+    return total ? briefLine(`有 ${total} 条未决事项，请查看完整轨迹。`, IMPORT_LIMITS.openLoops) : "";
+  }
+  const remaining = total - items.length;
+  const suffix = remaining ? `（另有 ${remaining} 条未显示，请查看完整轨迹）` : "";
+  const bodyBudget = Math.max(items.length, IMPORT_LIMITS.openLoops - suffix.length);
+  return `${joinBoundedSummaryItems(items, bodyBudget)}${suffix}`;
+}
+
+function joinBoundedSummaryItems(items, maximum) {
+  const separator = "；";
+  let remaining = Math.max(items.length, maximum - separator.length * Math.max(0, items.length - 1));
+  let joined = "";
+  for (let index = 0; index < items.length; index += 1) {
+    const itemBudget = Math.max(1, Math.floor(remaining / (items.length - index)));
+    const item = compactText(items[index], itemBudget);
+    joined += `${joined ? separator : ""}${item}`;
+    remaining -= item.length;
+  }
+  return joined;
 }
 
 function evidenceStatus(card) {
