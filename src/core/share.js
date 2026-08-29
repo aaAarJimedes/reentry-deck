@@ -15,6 +15,7 @@ export function buildReentryBrief(card) {
   return [
     `【${fields.title}｜复航简报】`,
     `项目状态：${fields.status}`,
+    `现场更新：${fields.updatedAt}`,
     `当前状态：${fields.summary}`,
     `第一动作：${fields.nextAction}`,
     `未决事项：${fields.openLoops}`,
@@ -29,6 +30,7 @@ export function buildReentryMarkdown(card) {
     `# ${escapeMarkdownInline(fields.title)} · 复航简报`,
     "",
     `- **项目状态：** ${escapeMarkdownInline(fields.status)}`,
+    `- **现场更新：** ${fields.updatedAt}`,
     `- **当前状态：** ${escapeMarkdownInline(fields.summary)}`,
     `- **第一动作：** ${escapeMarkdownInline(fields.nextAction)}`,
     `- **未决事项：** ${escapeMarkdownInline(fields.openLoops)}`,
@@ -44,6 +46,7 @@ function reentryBriefFields(card) {
   return {
     title: briefLine(card.project.title, IMPORT_LIMITS.projectTitle),
     status: workspaceStatus(card.project.status),
+    updatedAt: canonicalHandoffTime(card.project.updatedAt),
     summary: briefLine(card.summary, IMPORT_LIMITS.checkpointSummary),
     nextAction: briefLine(card.nextAction, IMPORT_LIMITS.nextAction),
     openLoops: currentOpenLoops(card),
@@ -244,6 +247,12 @@ function handoffDate(value) {
   else if (value instanceof Date) timestamp = value.getTime();
   else if (typeof value === "string" && value.trim()) timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? new Date(timestamp) : null;
+}
+
+function canonicalHandoffTime(value) {
+  if (typeof value !== "string" || value.length !== 24) return "时间未知";
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value ? value : "时间未知";
 }
 
 function boundedPercent(value) {

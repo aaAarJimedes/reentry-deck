@@ -6,7 +6,7 @@ import { COPY_TEXT_LIMIT, REENTRY_BRIEF_GAP_LIMIT, REENTRY_BRIEF_SIGNAL_LIMIT, S
 describe("buildReentryBrief", () => {
   test("builds a focused bounded plain-text handoff", () => {
     const brief = buildReentryBrief({
-      project: { title: "客户门户", status: "blocked" },
+      project: { title: "客户门户", status: "blocked", updatedAt: "2026-08-28T08:00:00.000Z" },
       summary: "已定位邀请失效\n返回。",
       nextAction: "补画失效分支。",
       openLoops: "确认旧邀请是否可重发。",
@@ -17,6 +17,7 @@ describe("buildReentryBrief", () => {
     assert.equal(brief, [
       "【客户门户｜复航简报】",
       "项目状态：受阻",
+      "现场更新：2026-08-28T08:00:00.000Z",
       "当前状态：已定位邀请失效 返回。",
       "第一动作：补画失效分支。",
       "未决事项：确认旧邀请是否可重发。",
@@ -37,6 +38,10 @@ describe("buildReentryBrief", () => {
     assert.match(bounded, /😀…$/u);
     assert.equal(buildReentryBrief({ project: { title: " A\tB " }, summary: "s", nextAction: "n", openLoops: "", returnHint: "r" }).split("\n")[0], "【A B｜复航简报】");
     assert.match(buildReentryBrief({ project: { title: "Unknown", status: "mystery" }, summary: "s", nextAction: "n", returnHint: "r" }), /项目状态：状态未知/u);
+    let timeConversions = 0;
+    const hostileTime = { toString() { timeConversions += 1; throw new Error("timestamp coercion must not run"); } };
+    assert.match(buildReentryBrief({ project: { title: "Unknown time", status: "active", updatedAt: hostileTime }, summary: "s", nextAction: "n", returnHint: "r" }), /现场更新：时间未知/u);
+    assert.equal(timeConversions, 0);
     assert.throws(() => buildReentryBrief(null), /缺少可生成简报/u);
   });
 
@@ -177,7 +182,7 @@ describe("buildReentryBrief", () => {
 describe("buildReentryMarkdown", () => {
   test("builds an escaped bounded Markdown handoff from the same live evidence", () => {
     const markdown = buildReentryMarkdown({
-      project: { title: "[门户](https://example.com) #1", status: "archived" },
+      project: { title: "[门户](https://example.com) #1", status: "archived", updatedAt: "2026-08-27T07:06:05.004Z" },
       summary: "已定位 *邀请* 失效。",
       nextAction: "打开 <sample.json>。",
       checkpoint: { id: "cp" },
@@ -193,6 +198,7 @@ describe("buildReentryMarkdown", () => {
       "# \\[门户\\]\\(https://example\\.com\\) \\#1 · 复航简报",
       "",
       "- **项目状态：** 已归档",
+      "- **现场更新：** 2026-08-27T07:06:05.004Z",
       "- **当前状态：** 已定位 \\*邀请\\* 失效。",
       "- **第一动作：** 打开 \\<sample\\.json\\>。",
       "- **未决事项：** 确认 \\_旧邀请\\_ 是否可重发（另有 2 条未显示，请查看完整轨迹）",
