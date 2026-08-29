@@ -714,8 +714,46 @@ test("an unclosed session after the checkpoint lowers readiness and old next rec
   assert.equal(card.nextAction, "checkpoint next");
   assert.equal(card.nextActionEvidence.id, "cp");
   assert.deepEqual(card.contextGapSessions.map((item) => item.id), ["open-session"]);
+  assert.equal(card.contextGapTotal, 1);
   assert.equal(card.completeness, 80);
   assert.deepEqual(card.readinessGaps, ["核对 1 段未收拢或中断的会话"]);
+});
+
+test("context gap details stay bounded while totals remain exact at the record limit", () => {
+  const gapCount = IMPORT_LIMITS.records - 2;
+  const sessions = Array.from({ length: gapCount }, (_, index) => ({
+    id: `gap-${index}`,
+    projectId: "p1",
+    status: "abandoned",
+    startedAt: at(-4_000),
+    endedAt: at(-3_000),
+    checkpointId: null,
+    closeReason: "interrupted"
+  }));
+  const state = makeState({
+    projects: [makeProject("p1")],
+    sessions,
+    checkpoints: [{
+      id: "cp",
+      projectId: "p1",
+      summary: "known state",
+      nextAction: "known next",
+      returnHint: "known route",
+      captureMode: "manual",
+      createdAt: at(-5_000)
+    }]
+  });
+
+  const card = buildReentryCard(state, "p1", NOW);
+
+  assert.equal(card.contextGapTotal, gapCount);
+  assert.deepEqual(card.contextGapSessions.map((item) => item.id), [
+    `gap-${gapCount - 1}`,
+    `gap-${gapCount - 2}`,
+    `gap-${gapCount - 3}`
+  ]);
+  assert.equal(card.completeness, 60);
+  assert.deepEqual(card.readinessGaps, [`核对 ${gapCount} 段未收拢或中断的会话`]);
 });
 
 test("a reliable checkpoint without a return route exposes one focused readiness gap", () => {

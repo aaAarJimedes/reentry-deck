@@ -674,6 +674,9 @@ export class ReentryApp {
     const checkpointLabel = card.checkpoint
       ? `${card.checkpoint.captureMode === "quick" ? "快速停靠，需复核" : "可靠检查点"} · ${formatDateTime(card.checkpoint.createdAt)}`
       : "尚无检查点";
+    const contextGapTotal = Number.isSafeInteger(card.contextGapTotal)
+      ? Math.max(card.contextGapSessions.length, card.contextGapTotal)
+      : card.contextGapSessions.length;
     const pinnedTotal = Number.isSafeInteger(card.pinnedTotal)
       ? Math.max(card.pinnedCrumbs.length, card.pinnedTotal)
       : card.pinnedCrumbs.length;
@@ -690,7 +693,7 @@ export class ReentryApp {
       <section class="panel reentry-card" aria-labelledby="reentry-card-heading">
         <div class="panel-header inline-between"><div><h2 id="reentry-card-heading">60 秒复航卡</h2><p>${card.checkpoint ? (card.checkpoint.captureMode === "quick" ? `快速停靠 · ${formatDateTime(card.checkpoint.createdAt)} · 请先复核` : `来自 ${formatDateTime(card.checkpoint.createdAt)} 的可靠检查点`) : "信息不足时，从三问校准开始"}</p></div><div class="reentry-card-tools"><button class="ghost-button" type="button" data-action="copy-reentry-brief" data-project-id="${attr(card.project.id)}" aria-label="复制复航简报：${attr(controlContext(card.project.title))}">${icon("copy")} 复制简报</button><span class="soft-pill">${icon("compass")} ${card.completeness}%</span></div></div>
         <div class="panel-body">
-          ${card.contextGapSessions.length ? `<div class="evidence-warning" role="status">${icon("alert")} 检查点之后还有 ${card.contextGapSessions.length} 段未收拢或中断的会话，完整度已下调；请先核对现场。</div>` : ""}
+          ${contextGapTotal ? `<div class="evidence-warning" role="status">${icon("alert")} 检查点之后还有 ${contextGapTotal} 段未收拢或中断的会话，完整度已下调；请先核对现场。</div>` : ""}
           ${card.readinessGaps.length ? `<div class="reentry-gaps" role="note"><strong>${icon("compass")} 复航缺口</strong><ul>${card.readinessGaps.map((gap) => `<li>${escapeHTML(gap)}</li>`).join("")}</ul>${card.checkpoint?.captureMode === "quick" ? '<button class="secondary-button" type="button" data-action="review-quick-checkpoint">复核并升级检查点</button>' : ""}</div>` : ""}
           <div class="reentry-section"><span class="reentry-label">${icon("trail")} 01 · 可靠检查点</span><p class="reentry-value">${textBlock(card.checkpoint?.summary || "还没有可靠检查点；以下内容来自零散证据。")}</p><p class="evidence-source">${escapeHTML(checkpointLabel)}</p></div>
           ${card.pinnedCrumbs.length ? `<div class="reentry-section pinned-evidence"><span class="reentry-label">${icon("pin")} 置顶航标</span>${this.#renderEvidenceList(card.pinnedCrumbs, "")}${pinnedRemaining ? `<p class="reentry-value muted">另有 ${pinnedRemaining} 个置顶航标，请在完整轨迹中核对。</p>` : ""}</div>` : ""}

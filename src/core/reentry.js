@@ -6,6 +6,7 @@ const OPEN_SIGNAL_TYPES = new Set(["question", "blocker"]);
 const SUMMARY_CRUMB_TYPES = new Set(["note", "discovery", "decision"]);
 const CHANGE_CRUMB_TYPES = new Set(["note", "discovery", "decision", "next"]);
 const LIVE_PROJECT_STATUSES = new Set(["active", "paused", "blocked"]);
+const CONTEXT_GAP_WINDOW = 3;
 const PROJECT_EDIT_FIELDS = Object.freeze(["title", "description", "descriptionUpdatedAt", "nextAction", "nextActionUpdatedAt", "updatedAt"]);
 const PROJECT_TEMPLATE_SUFFIX = " · 新现场";
 
@@ -202,13 +203,17 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
     : checkpoint.openLoops;
   let activeSession = null;
   const contextGapSessions = [];
+  let contextGapTotal = 0;
   for (const item of sessions) {
     if (stats && item.status === "completed") stats.completedSessions += 1;
     if (!activeSession && item.status === "active") activeSession = item;
     const evidenceTime = timeOf(item.endedAt ?? item.startedAt);
     const unclosed = item.status === "active";
     const interrupted = item.status === "abandoned" && item.closeReason === "interrupted";
-    if ((unclosed || interrupted) && evidenceTime > checkpointTime && item.checkpointId !== checkpoint?.id) contextGapSessions.push(item);
+    if ((unclosed || interrupted) && evidenceTime > checkpointTime && item.checkpointId !== checkpoint?.id) {
+      contextGapTotal += 1;
+      if (contextGapSessions.length < CONTEXT_GAP_WINDOW) contextGapSessions.push(item);
+    }
   }
 
   const summaryEvidence = newestEvidence(
@@ -231,9 +236,9 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
     + Number(Boolean(checkpoint || projectCrumbs.length));
   const rawCompleteness = Math.round((completenessCount / 4) * 100);
   const confidenceCap = checkpoint?.captureMode === "quick" ? 50 : 100;
-  const completeness = Math.max(0, Math.min(rawCompleteness, confidenceCap) - Math.min(contextGapSessions.length * 20, 40));
+  const completeness = Math.max(0, Math.min(rawCompleteness, confidenceCap) - Math.min(contextGapTotal * 20, 40));
   const readinessGaps = [];
-  if (contextGapSessions.length) readinessGaps.push(`核对 ${contextGapSessions.length} 段未收拢或中断的会话`);
+  if (contextGapTotal) readinessGaps.push(`核对 ${contextGapTotal} 段未收拢或中断的会话`);
   if (checkpoint?.captureMode === "quick") readinessGaps.push("复核快速停靠生成的低置信度检查点");
   if (!summaryEvidence) readinessGaps.push("补一条当前状态摘要");
   if (!nextActionEvidence) readinessGaps.push("明确一个可直接执行的下一动作");
@@ -264,6 +269,7 @@ function buildIndexedReentryCard(index, projectId, now, includeStats = false) {
     changesSinceCheckpoint,
     changesSinceCheckpointTotal,
     contextGapSessions,
+    contextGapTotal,
     recentTrail: projectCrumbs.slice(0, 5)
   };
   if (stats) card.stats = stats;

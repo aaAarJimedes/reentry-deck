@@ -611,6 +611,14 @@ test("recent decisions keep a bounded body and disclose the complete total", asy
   assert.match(source, /另有 \$\{decisionRemaining\} 条较早决定，请在完整轨迹中核对。/u);
 });
 
+test("context-gap warnings consume the exact total instead of the bounded session window", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /card\.contextGapTotal/u);
+  assert.match(source, /检查点之后还有 \$\{contextGapTotal\} 段未收拢或中断的会话/u);
+  assert.doesNotMatch(source, /检查点之后还有 \$\{card\.contextGapSessions\.length\} 段未收拢或中断的会话/u);
+});
+
 test("archive cards batch reentry projection and record counting", async () => {
   const source = await readFile(new URL("../src/ui/app.js", import.meta.url), "utf8");
 
