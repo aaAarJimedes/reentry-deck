@@ -317,6 +317,18 @@ test("workspace search exposes the same query budget enforced by the core", asyn
   assert.match(source, /找到 \$\{total\} 条匹配，显示前 \$\{results\.length\} 条/u);
 });
 
+test("workspace search announces concise summaries outside the interactive result list", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+
+  assert.match(source, /data-search-status aria-live="polite" aria-atomic="true"/u);
+  assert.doesNotMatch(source, /data-search-results aria-live/u);
+  assert.match(source, /const projection = this\.#buildSearchResults\(control\.value\)/u);
+  assert.match(source, /output\.innerHTML = projection\.markup/u);
+  assert.match(source, /status\.textContent = projection\.announcement/u);
+  assert.match(source, /announcement: countLabel/u);
+  assert.match(source, /announcement: "快捷动作已显示"/u);
+});
+
 test("command availability reuses workspace counts and disables ambiguous docking", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const commands = source.match(/#renderQuickCommands\(\) \{([\s\S]*?)\n  \}\n\n  #onKeydown/u)?.[1] ?? "";

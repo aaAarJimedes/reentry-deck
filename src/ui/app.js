@@ -993,7 +993,8 @@ export class ReentryApp {
         <div class="dialog-header"><div><h2 id="search-title">找回工作现场</h2><p id="search-description">搜索项目、轨迹与检查点，或直接执行常用动作；数据不会离开浏览器。</p></div><button class="icon-button dialog-close" type="button" data-action="close-dialog" aria-label="关闭">${icon("close")}</button></div>
         <div class="dialog-body">
           <label class="search-field">${icon("search")}<span class="sr-only">搜索所有工作现场或筛选动作</span><input type="search" data-control="workspace-search" maxlength="${SEARCH_QUERY_LIMIT}" placeholder="输入项目、决定、问题或下一步…" autocomplete="off" autofocus /></label>
-          <div class="search-results" data-search-results aria-live="polite">${this.#renderSearchResults("")}</div>
+          <p class="sr-only" data-search-status aria-live="polite" aria-atomic="true"></p>
+          <div class="search-results" data-search-results>${this.#buildSearchResults("").markup}</div>
         </div>
       </dialog>
       <dialog id="archive-confirm-dialog" data-context-id="${attr(pendingArchiveProject?.id ?? "")}" aria-labelledby="archive-confirm-title" aria-describedby="archive-confirm-description">
@@ -1130,8 +1131,11 @@ export class ReentryApp {
     if (event.isComposing) return;
     const control = event.target;
     if (control.matches('[data-control="workspace-search"]')) {
+      const projection = this.#buildSearchResults(control.value);
       const output = this.#root.querySelector("[data-search-results]");
-      if (output) output.innerHTML = this.#renderSearchResults(control.value);
+      const status = this.#root.querySelector("[data-search-status]");
+      if (output) output.innerHTML = projection.markup;
+      if (status) status.textContent = projection.announcement;
       return;
     }
     if (control.matches('[data-control="quick-project-filter"]')) this.#updateQuickCaptureProjects(control);
@@ -1162,15 +1166,26 @@ export class ReentryApp {
     }
   }
 
-  #renderSearchResults(query) {
-    if (!String(query).trim()) return this.#renderQuickCommands();
+  #buildSearchResults(query) {
+    if (!String(query).trim()) {
+      return { markup: this.#renderQuickCommands(), announcement: "快捷动作已显示" };
+    }
     const { items: results, total } = searchWorkspaceIndexWindow(this.#getSearchIndex(), query);
-    if (!results.length) return `<p class="search-empty">没有找到“${escapeHTML(query)}”。试试更短或更具体的词。</p>`;
+    if (!results.length) {
+      const announcement = `没有找到“${query}”`;
+      return {
+        markup: `<p class="search-empty">${escapeHTML(announcement)}。试试更短或更具体的词。</p>`,
+        announcement
+      };
+    }
     const kindLabels = { project: "项目", crumb: "轨迹", checkpoint: "检查点" };
     const countLabel = total > results.length
       ? `找到 ${total} 条匹配，显示前 ${results.length} 条`
       : `找到 ${total} 条匹配`;
-    return `<p class="search-count">${countLabel}</p><ul>${results.map((result) => `<li><a href="#/project/${encodeURIComponent(result.projectId)}"><span class="search-result-kind">${escapeHTML(result.kind === "crumb" ? CRUMB_LABELS[result.subtype] ?? "轨迹" : kindLabels[result.kind] ?? "记录")}${result.projectStatus === "archived" ? " · 已归档" : ""}</span><strong>${escapeHTML(result.title || result.projectTitle)}</strong>${result.kind !== "project" ? `<small>${escapeHTML(result.projectTitle)} · ${formatDateTime(result.createdAt)}</small>` : ""}${result.snippet && result.snippet !== result.title ? `<p>${escapeHTML(result.snippet)}</p>` : ""}</a></li>`).join("")}</ul>`;
+    return {
+      markup: `<p class="search-count">${countLabel}</p><ul>${results.map((result) => `<li><a href="#/project/${encodeURIComponent(result.projectId)}"><span class="search-result-kind">${escapeHTML(result.kind === "crumb" ? CRUMB_LABELS[result.subtype] ?? "轨迹" : kindLabels[result.kind] ?? "记录")}${result.projectStatus === "archived" ? " · 已归档" : ""}</span><strong>${escapeHTML(result.title || result.projectTitle)}</strong>${result.kind !== "project" ? `<small>${escapeHTML(result.projectTitle)} · ${formatDateTime(result.createdAt)}</small>` : ""}${result.snippet && result.snippet !== result.title ? `<p>${escapeHTML(result.snippet)}</p>` : ""}</a></li>`).join("")}</ul>`,
+      announcement: countLabel
+    };
   }
 
   #getSearchIndex() {
