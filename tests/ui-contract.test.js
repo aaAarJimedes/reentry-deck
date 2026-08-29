@@ -165,7 +165,7 @@ test("settings expose an accessible persistent-storage result and a race-safe re
 
 test("toast output is text-bounded, count-bounded, and timer-bounded", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
-  const toast = source.match(/#toast\(message, kind = "success"\) \{([\s\S]*?)\n  \}\n\n  #renderToasts/u)?.[1] ?? "";
+  const toast = source.match(/#toast\(message, kind = "success", announce = true\) \{([\s\S]*?)\n  \}\n\n  #renderToasts/u)?.[1] ?? "";
   const render = source.match(/#renderToasts\(\) \{([\s\S]*?)\n  \}\n\n  #renderToast/u)?.[1] ?? "";
 
   assert.match(source, /const MAX_VISIBLE_TOASTS = 4/u);
@@ -176,6 +176,19 @@ test("toast output is text-bounded, count-bounded, and timer-bounded", async () 
   assert.match(toast, /window\.clearTimeout\(timerId\)/u);
   assert.match(toast, /this\.#toastTimers\.delete\(removed\.id\)/u);
   assert.match(render, /slice\(-MAX_VISIBLE_TOASTS\)/u);
+});
+
+test("visual toasts and assistive feedback share one live announcement channel", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const toast = source.match(/#toast\(message, kind = "success", announce = true\) \{([\s\S]*?)\n  \}\n\n  #renderToasts/u)?.[1] ?? "";
+  const pairedFeedback = source.match(/this\.#announce\([^;]+;\s+this\.#toast\([^;]+;/gu) ?? [];
+
+  assert.match(source, /<div class="toast-region" id="toast-region">/u);
+  assert.doesNotMatch(source, /id="toast-region"[^>]*aria-live/u);
+  assert.match(source, /id="live-region" aria-live="polite" aria-atomic="true"/u);
+  assert.match(toast, /if \(announce\) this\.#announce\(toast\.message\)/u);
+  assert.ok(pairedFeedback.length >= 10);
+  for (const pair of pairedFeedback) assert.match(pair, /, (?:"success"|result === [^;]+), false\);$/u);
 });
 
 test("storage diagnostics are consumed only after the rendered shell commits", async () => {

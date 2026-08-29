@@ -318,8 +318,8 @@ export class ReentryApp {
       </div>
       ${activeSession && activeProject && !(route.name === "project" && route.id === activeProject.id) ? this.#renderSessionDock(activeSession, activeProject) : ""}
       ${this.#renderDialogs(currentProject, activeSession, currentReentryCard)}
-      <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="false">${this.#renderToasts()}</div>
-      <div class="sr-only" id="live-region" aria-live="polite"></div>
+      <div class="toast-region" id="toast-region">${this.#renderToasts()}</div>
+      <div class="sr-only" id="live-region" aria-live="polite" aria-atomic="true"></div>
     `;
     this.#noticeQueue = [];
     this.#root.setAttribute("aria-busy", "false");
@@ -1321,7 +1321,7 @@ export class ReentryApp {
     form.closest("dialog")?.close();
     location.hash = `#/project/${encodeURIComponent(project.id)}`;
     this.#announce("会话已开始");
-    this.#toast("工作现场已展开。 ");
+    this.#toast("工作现场已展开。 ", "success", false);
   }
 
   #captureCrumb(data) {
@@ -1350,7 +1350,7 @@ export class ReentryApp {
       }
     });
     this.#announce(`${CRUMB_LABELS[crumb.type]}已记录`);
-    this.#toast(`${CRUMB_LABELS[crumb.type]}已留在轨迹中。`);
+    this.#toast(`${CRUMB_LABELS[crumb.type]}已留在轨迹中。`, "success", false);
   }
 
   #quickCapture(data, form) {
@@ -1371,7 +1371,7 @@ export class ReentryApp {
     });
     form.closest("dialog")?.close();
     this.#announce(`${projectTitle}的${CRUMB_LABELS[crumb.type]}已记录`);
-    this.#toast(`已保存到“${projectTitle}”${linkedToActiveSession ? "的活动会话" : ""}${crumb.pinned ? "，并设为航标" : ""}。`);
+    this.#toast(`已保存到“${projectTitle}”${linkedToActiveSession ? "的活动会话" : ""}${crumb.pinned ? "，并设为航标" : ""}。`, "success", false);
   }
 
   #prepareCheckpointDialog() {
@@ -1414,7 +1414,7 @@ export class ReentryApp {
     this.#pendingCheckpointSessionId = null;
     form.closest("dialog")?.close();
     this.#announce("检查点已保存，会话已结束");
-    this.#toast("现场已安全收拢，下次可以从这里复航。 ");
+    this.#toast("现场已安全收拢，下次可以从这里复航。 ", "success", false);
   }
 
   #reviewQuickCheckpoint(data, form) {
@@ -1432,7 +1432,7 @@ export class ReentryApp {
     }, Date.parse(checkpoint.createdAt));
     form.closest("dialog")?.close();
     this.#announce("快速检查点已复核为可靠检查点");
-    this.#toast(`“${projectTitle}”已建立新的可靠检查点。`);
+    this.#toast(`“${projectTitle}”已建立新的可靠检查点。`, "success", false);
   }
 
   #continueStaleSession(sessionId) {
@@ -1485,7 +1485,7 @@ export class ReentryApp {
 
       if (this.#acknowledgedStaleSessionId === targetSessionId) this.#acknowledgedStaleSessionId = null;
       this.#announce(continueAfter ? "旧会话已标记中断，并已开始接续会话" : "会话已快速停靠");
-      this.#toast(continueAfter ? "旧现场已保留，接续会话已经开始。" : "已用现有证据生成低置信度检查点。 ");
+      this.#toast(continueAfter ? "旧现场已保留，接续会话已经开始。" : "已用现有证据生成低置信度检查点。 ", "success", false);
     } catch (error) {
       this.#toast(userFacingErrorMessage(error), "error");
     }
@@ -1592,7 +1592,7 @@ export class ReentryApp {
       if (project) project.updatedAt = isoAtOrAfter(changedAt, project.updatedAt);
     });
     this.#announce(resolved ? "事项已标记为解决" : "事项已重新打开");
-    this.#toast(resolved ? "已从待解决清单移除。" : "已重新加入待解决清单。");
+    this.#toast(resolved ? "已从待解决清单移除。" : "已重新加入待解决清单。", "success", false);
   }
 
   #toggleCrumbPin(crumbId) {
@@ -1607,7 +1607,7 @@ export class ReentryApp {
       if (project) project.updatedAt = isoAtOrAfter(Date.now(), project.updatedAt, crumb.createdAt);
     });
     this.#announce(pinned ? "轨迹已设为置顶航标" : "轨迹已取消置顶");
-    this.#toast(pinned ? "已加入复航卡的置顶航标。" : "已从置顶航标移除。 ");
+    this.#toast(pinned ? "已加入复航卡的置顶航标。" : "已从置顶航标移除。 ", "success", false);
   }
 
   #prepareArchive(projectId) {
@@ -1680,7 +1680,7 @@ export class ReentryApp {
     this.#focusSelector = '[data-control="stale-days"]';
     this.#store.update((state) => { state.settings.staleAfterDays = days; });
     this.#announce(`离开提醒阈值已设为 ${days} 天`);
-    this.#toast(`关注清单将在离开 ${days} 天后提示核对。`);
+    this.#toast(`关注清单将在离开 ${days} 天后提示核对。`, "success", false);
   }
 
   #restorePrevious(context = "topbar") {
@@ -1690,7 +1690,7 @@ export class ReentryApp {
       this.#store.restorePrevious();
       this.#requestPersistentStorage();
       this.#announce("已恢复到上一次保存；再次操作可切换回来");
-      this.#toast("已恢复上一次保存；需要时可再次撤销。 ");
+      this.#toast("已恢复上一次保存；需要时可再次撤销。 ", "success", false);
     } catch (error) {
       this.#toast(userFacingErrorMessage(error), "error");
     }
@@ -1767,7 +1767,7 @@ export class ReentryApp {
       await copyPlainText(buildReentryBrief(card));
       if (!isCurrentRequest()) return;
       this.#announce("复航简报已复制");
-      this.#toast("复航简报已复制到剪贴板。 ");
+      this.#toast("复航简报已复制到剪贴板。 ", "success", false);
     } catch (error) {
       if (isCurrentRequest()) this.#toast(`无法复制简报：${userFacingErrorMessage(error)}`, "error");
     }
@@ -1780,7 +1780,7 @@ export class ReentryApp {
     const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
     triggerBlobDownload(blob, `reentry-${card.project.title}-${formatLocalDownloadDate()}.md`);
     this.#announce("Markdown 复航简报已下载");
-    this.#toast("Markdown 复航简报已生成。 ");
+    this.#toast("Markdown 复航简报已生成。 ", "success", false);
   }
 
   #downloadWorkspaceHandoff() {
@@ -1790,7 +1790,7 @@ export class ReentryApp {
     const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
     triggerBlobDownload(blob, `reentry-workspace-handoff-${formatLocalDownloadDate(now)}.md`);
     this.#announce("Markdown 工作区交接清单已下载");
-    this.#toast("Markdown 工作区交接清单已生成。 ");
+    this.#toast("Markdown 工作区交接清单已生成。 ", "success", false);
   }
 
   async #copyWorkspaceHandoff() {
@@ -1801,7 +1801,7 @@ export class ReentryApp {
       await copyPlainText(buildWorkspaceHandoff(overview, now));
       if (!isCurrentRequest()) return;
       this.#announce("工作区交接清单已复制");
-      this.#toast("工作区交接清单已复制到剪贴板。 ");
+      this.#toast("工作区交接清单已复制到剪贴板。 ", "success", false);
     } catch (error) {
       if (isCurrentRequest()) this.#toast(`无法复制交接清单：${userFacingErrorMessage(error)}`, "error");
     }
@@ -1921,7 +1921,7 @@ export class ReentryApp {
     this.render({ preserveDialog: true });
   }
 
-  #toast(message, kind = "success") {
+  #toast(message, kind = "success", announce = true) {
     if (this.#destroyed) return;
     const toast = {
       id: `toast-${++this.#toastSequence}`,
@@ -1939,6 +1939,7 @@ export class ReentryApp {
     }
     const region = this.#root.querySelector("#toast-region");
     if (region) region.insertAdjacentHTML("beforeend", this.#renderToast(toast));
+    if (announce) this.#announce(toast.message);
     const timerId = window.setTimeout(() => {
       this.#toastTimers.delete(toast.id);
       this.#dismissToast(toast.id);
@@ -1987,7 +1988,7 @@ export class ReentryApp {
       this.render();
       const message = STORAGE_DURABILITY_DETAILS[result]?.message ?? STORAGE_DURABILITY_DETAILS.error.message;
       this.#announce(message);
-      this.#toast(message, result === STORAGE_DURABILITY_STATUS.GRANTED ? "success" : "error");
+      this.#toast(message, result === STORAGE_DURABILITY_STATUS.GRANTED ? "success" : "error", false);
     } catch (error) {
       if (!isCurrentRequest() || !report) return;
       this.#storageDurabilityStatus = STORAGE_DURABILITY_STATUS.ERROR;
