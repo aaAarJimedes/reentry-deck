@@ -159,7 +159,7 @@ test("every user-established workspace requests persistent storage only after co
 test("settings expose an accessible persistent-storage result and a race-safe request", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const settings = source.match(/#renderSettings\(state\) \{([\s\S]*?)\n  \}\n\n  #getBackupSize/u)?.[1] ?? "";
-  const request = source.match(/async #requestPersistentStorage\(report = false\) \{([\s\S]*?)\n  \}\n\}/u)?.[1] ?? "";
+  const request = source.match(/async #requestPersistentStorage\(report = false, reportControl = null\) \{([\s\S]*?)\n  \}\n\n  async #inspectPersistentStorage/u)?.[1] ?? "";
   const inspect = source.match(/async #inspectPersistentStorage\(\) \{([\s\S]*?)\n  \}\n\}/u)?.[1] ?? "";
 
   assert.notEqual(settings, "");
@@ -169,7 +169,7 @@ test("settings expose an accessible persistent-storage result and a race-safe re
   assert.match(settings, /id="storage-durability-status"/u);
   assert.doesNotMatch(settings, /id="storage-durability-status"[^>]*(?:role="status"|aria-live)/u);
   assert.match(source, /STORAGE_DURABILITY_STATUS\.UNKNOWN[^\n]*action: "主动请求保护"/u);
-  assert.match(source, /if \(action === "request-persistent-storage"\) this\.#requestPersistentStorage\(true\)/u);
+  assert.match(source, /if \(action === "request-persistent-storage"\) this\.#requestPersistentStorage\(true, control\)/u);
   assert.match(request, /this\.#storageDurabilityRequestGate\.begin\(\)/u);
   assert.match(source, /this\.#storageDurabilityRequestGate\.invalidate\(\)/u);
   assert.match(request, /await requestPersistentStorage\(navigator\.storage\)/u);
@@ -179,9 +179,34 @@ test("settings expose an accessible persistent-storage result and a race-safe re
   assert.match(source, /this\.render\(\);\n      this\.#inspectPersistentStorage\(\);/u);
   assert.match(source, /await inspectPersistentStorage\(navigator\.storage\)/u);
   assert.match(source, /if \(location\.hash !== "#\/settings"\) return/u);
-  assert.match(inspect, /this\.render\(\{ preserveDialog: true \}\)/u);
+  assert.match(inspect, /this\.#syncStorageDurabilityView\(\)/u);
+  assert.doesNotMatch(inspect, /this\.render\(/u);
   assert.match(inspect, /this\.#announce\(message\)/u);
-  assert.ok(inspect.indexOf("this.render") < inspect.indexOf("this.#announce"));
+  assert.ok(inspect.indexOf("#syncStorageDurabilityView") < inspect.indexOf("this.#announce"));
+});
+
+test("persistent-storage request feedback cannot redraw or steal focus from later work", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const request = source.match(/async #requestPersistentStorage\(report = false, reportControl = null\) \{([\s\S]*?)\n  \}\n\n  async #inspectPersistentStorage/u)?.[1] ?? "";
+  const inspect = source.match(/async #inspectPersistentStorage\(\) \{([\s\S]*?)\n  \}\n\}/u)?.[1] ?? "";
+  const syncView = source.match(/export function syncStorageDurabilityView\(root, durabilityStatus\) \{([\s\S]*?)\n\}\n\nconst MAX_TOAST_MESSAGE_LENGTH/u)?.[1] ?? "";
+  const syncDelegate = source.match(/#syncStorageDurabilityView\(\) \{([\s\S]*?)\n  \}\n\n  async #requestPersistentStorage/u)?.[1] ?? "";
+
+  assert.match(source, /if \(action === "request-persistent-storage"\) this\.#requestPersistentStorage\(true, control\)/u);
+  assert.match(source, /data-storage-durability-action/u);
+  assert.match(syncView, /status\.textContent = durability\.message/u);
+  assert.match(syncView, /action\.textContent = durability\.action/u);
+  assert.match(syncView, /control\.disabled = durabilityUnavailable/u);
+  assert.match(syncDelegate, /return syncStorageDurabilityView\(this\.#root, this\.#storageDurabilityStatus\)/u);
+  assert.doesNotMatch(request, /this\.render\(/u);
+  assert.doesNotMatch(request, /#focusSelector/u);
+  assert.match(request, /if \(!report \|\| location\.hash !== "#\/settings"\) return/u);
+  assert.match(request, /this\.#syncStorageDurabilityView\(\)/u);
+  assert.ok(request.indexOf("#syncStorageDurabilityView") < request.indexOf("if (!report"));
+  assert.match(request, /!reportControl\?\.isConnected \|\| this\.#root\.querySelector\("dialog\[open\]"\)/u);
+  assert.doesNotMatch(inspect, /this\.render\(/u);
+  assert.match(inspect, /this\.#syncStorageDurabilityView\(\)/u);
+  assert.match(inspect, /!updated \|\| this\.#root\.querySelector\("dialog\[open\]"\)/u);
 });
 
 test("toast output is text-bounded, count-bounded, and timer-bounded", async () => {
