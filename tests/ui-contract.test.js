@@ -84,6 +84,27 @@ test("project mutation focus is armed only for the matching successful local com
   assert.match(restore, /this\.#localCommitFocusGate\.run\("#main-content",/u);
 });
 
+test("settings focus is armed only for the matching successful local commit", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const theme = source.match(/#setTheme\(theme\) \{([\s\S]*?)\n  \}\n\n  #syncThemeColor/u)?.[1] ?? "";
+  const motion = source.match(/#setReducedMotion\(value\) \{([\s\S]*?)\n  \}\n\n  #setStaleAfterDays/u)?.[1] ?? "";
+  const staleDays = source.match(/#setStaleAfterDays\(value\) \{([\s\S]*?)\n  \}\n\n  #restorePrevious/u)?.[1] ?? "";
+
+  for (const handler of [theme, motion, staleDays]) assert.doesNotMatch(handler, /this\.#focusSelector\s*=/u);
+  assert.match(
+    theme,
+    /this\.#localCommitFocusGate\.run\(`\[data-action="set-theme"\]\[data-theme="\$\{theme\}"\]`, \(\) => \{\s*this\.#store\.update\(\(state\) => \{ state\.settings\.theme = theme; \}\);\s*\}\);/u
+  );
+  assert.match(
+    motion,
+    /this\.#localCommitFocusGate\.run\(`\[data-action="set-motion"\]\[data-reduced-motion="\$\{value\}"\]`, \(\) => \{\s*this\.#store\.update\(\(state\) => \{ state\.settings\.reducedMotion = reduced; \}\);\s*\}\);/u
+  );
+  assert.match(
+    staleDays,
+    /this\.#localCommitFocusGate\.run\('\[data-control="stale-days"\]', \(\) => \{\s*this\.#store\.update\(\(state\) => \{ state\.settings\.staleAfterDays = days; \}\);\s*\}\);/u
+  );
+});
+
 test("existing projects seed a bounded new-project draft without copying history", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const prepare = source.match(/#prepareProjectTemplateDialog\(projectId\) \{([\s\S]*?)\n  \}\n\n  #openNewProjectDialog/u)?.[1] ?? "";

@@ -1774,8 +1774,9 @@ export class ReentryApp {
 
   #setTheme(theme) {
     if (!["system", "light", "dark"].includes(theme)) return;
-    this.#focusSelector = `[data-action="set-theme"][data-theme="${theme}"]`;
-    this.#store.update((state) => { state.settings.theme = theme; });
+    this.#localCommitFocusGate.run(`[data-action="set-theme"][data-theme="${theme}"]`, () => {
+      this.#store.update((state) => { state.settings.theme = theme; });
+    });
   }
 
   #syncThemeColor(theme = this.#store.getState().settings.theme) {
@@ -1786,16 +1787,18 @@ export class ReentryApp {
   #setReducedMotion(value) {
     if (value !== "system" && value !== "reduce") throw new Error("动态效果设置不可用。");
     const reduced = value === "reduce";
-    this.#focusSelector = `[data-action="set-motion"][data-reduced-motion="${value}"]`;
-    this.#store.update((state) => { state.settings.reducedMotion = reduced; });
+    this.#localCommitFocusGate.run(`[data-action="set-motion"][data-reduced-motion="${value}"]`, () => {
+      this.#store.update((state) => { state.settings.reducedMotion = reduced; });
+    });
     this.#announce(reduced ? "已始终减少动态效果" : "动态效果已改为跟随系统");
   }
 
   #setStaleAfterDays(value) {
     const days = Number(value);
     if (!Number.isSafeInteger(days) || days < 1 || days > 365) throw new Error("离开提醒阈值必须在 1 到 365 天之间。");
-    this.#focusSelector = '[data-control="stale-days"]';
-    this.#store.update((state) => { state.settings.staleAfterDays = days; });
+    this.#localCommitFocusGate.run('[data-control="stale-days"]', () => {
+      this.#store.update((state) => { state.settings.staleAfterDays = days; });
+    });
     this.#announce(`离开提醒阈值已设为 ${days} 天`);
     this.#toast(`关注清单将在离开 ${days} 天后提示核对。`, "success", false);
   }

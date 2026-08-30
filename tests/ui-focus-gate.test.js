@@ -76,7 +76,10 @@ for (const [label, focusSelector] of [
   ["project edit trigger", '[data-action="edit-project"]'],
   ["project status control", '[data-control="project-status"]'],
   ["resolution control", '[data-action="toggle-crumb-resolution"]'],
-  ["pin control", '[data-action="toggle-crumb-pin"]']
+  ["pin control", '[data-action="toggle-crumb-pin"]'],
+  ["theme control", '[data-action="set-theme"]'],
+  ["motion control", '[data-action="set-motion"]'],
+  ["attention threshold", '[data-control="stale-days"]']
 ]) {
   test(`a real stale-tab rejection cannot transfer ${label} focus to the adopted workspace`, () => {
     const storage = new MemoryStorage();
