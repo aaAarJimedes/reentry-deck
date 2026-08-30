@@ -545,6 +545,22 @@ test("inline capture focus is armed only for a successful local commit", async (
   assert.match(storeRender, /this\.render\(\{ preserveDialog: event\?\.source === "external" \}\)/u);
 });
 
+test("manual checkpoint focus is armed only for its successful local commit", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const checkpoint = source.match(/#saveCheckpoint\(data, form\) \{([\s\S]*?)\n  \}\n\n  #reviewQuickCheckpoint/u)?.[1] ?? "";
+
+  assert.match(checkpoint, /this\.#localCommitFocusGate\.run\("#main-content", \(\) => \{[\s\S]*?this\.#store\.update/u);
+  assert.ok(checkpoint.indexOf("#localCommitFocusGate.run") < checkpoint.indexOf("#store.update"));
+  assert.doesNotMatch(checkpoint, /this\.#focusSelector\s*=/u);
+  assert.ok(checkpoint.indexOf("#store.update") < checkpoint.indexOf("this.#pendingCheckpointSessionId = null"));
+  assert.ok(checkpoint.indexOf("#store.update") < checkpoint.indexOf('form.closest("dialog")?.close()'));
+  assert.ok(checkpoint.indexOf("this.#pendingCheckpointSessionId = null") < checkpoint.indexOf('form.closest("dialog")?.close()'));
+  assert.ok(checkpoint.indexOf('form.closest("dialog")?.close()') < checkpoint.indexOf("this.#announce"));
+  assert.ok(checkpoint.indexOf("this.#announce") < checkpoint.indexOf("this.#toast"));
+  assert.match(checkpoint, /this\.#announce\("检查点已保存，会话已结束"\)/u);
+  assert.match(checkpoint, /this\.#toast\("现场已安全收拢，下次可以从这里复航。 ", "success", false\)/u);
+});
+
 test("emergency docking is discoverable, modal-safe, and project-contextual", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const handler = source.match(/#onKeydown\(event\) \{([\s\S]*?)\n  \}\n\n  #runCommand/u)?.[1] ?? "";

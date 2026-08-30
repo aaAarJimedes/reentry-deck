@@ -1465,22 +1465,23 @@ export class ReentryApp {
       isoAtOrAfter(Date.now(), session.startedAt, project?.updatedAt)
     );
     if (!checkpoint.summary || !checkpoint.nextAction) throw new Error("状态摘要和第一物理动作不能为空。 ");
-    this.#focusSelector = "#main-content";
-    this.#store.update((next) => {
-      const currentSession = next.sessions[sessionIndex];
-      const currentProject = next.projects[projectIndex];
-      if (currentSession?.id !== session.id || currentSession.status !== "active"
-        || currentProject?.id !== session.projectId || currentProject.status === "archived") {
-        throw new Error("活动现场在保存检查点前已发生变化。 ");
-      }
-      next.checkpoints.push(checkpoint);
-      currentSession.status = "completed";
-      currentSession.endedAt = checkpoint.createdAt;
-      currentSession.checkpointId = checkpoint.id;
-      currentSession.closeReason = "checkpoint";
-      currentProject.nextAction = checkpoint.nextAction;
-      currentProject.nextActionUpdatedAt = checkpoint.createdAt;
-      currentProject.updatedAt = checkpoint.createdAt;
+    this.#localCommitFocusGate.run("#main-content", () => {
+      this.#store.update((next) => {
+        const currentSession = next.sessions[sessionIndex];
+        const currentProject = next.projects[projectIndex];
+        if (currentSession?.id !== session.id || currentSession.status !== "active"
+          || currentProject?.id !== session.projectId || currentProject.status === "archived") {
+          throw new Error("活动现场在保存检查点前已发生变化。 ");
+        }
+        next.checkpoints.push(checkpoint);
+        currentSession.status = "completed";
+        currentSession.endedAt = checkpoint.createdAt;
+        currentSession.checkpointId = checkpoint.id;
+        currentSession.closeReason = "checkpoint";
+        currentProject.nextAction = checkpoint.nextAction;
+        currentProject.nextActionUpdatedAt = checkpoint.createdAt;
+        currentProject.updatedAt = checkpoint.createdAt;
+      });
     });
     this.#pendingCheckpointSessionId = null;
     form.closest("dialog")?.close();
