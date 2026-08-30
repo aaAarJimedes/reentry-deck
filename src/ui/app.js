@@ -187,6 +187,63 @@ export function createLocalCommitFocusGate() {
   });
 }
 
+export function createInlineCaptureDraftGate() {
+  let consumingDepth = 0;
+  return Object.freeze({
+    runConsuming(commit) {
+      consumingDepth += 1;
+      try {
+        return commit();
+      } finally {
+        consumingDepth -= 1;
+      }
+    },
+    shouldPreserve(source) {
+      return source !== "local" || consumingDepth === 0;
+    }
+  });
+}
+
+export function createTransientDialogRestoreGate() {
+  let pendingRequest = null;
+  return Object.freeze({
+    prepare(renderSequence, snapshot, preserve) {
+      if (!preserve) {
+        pendingRequest = null;
+        return null;
+      }
+      const carriedSnapshot = snapshot ?? pendingRequest?.snapshot ?? null;
+      if (!carriedSnapshot) {
+        pendingRequest = null;
+        return null;
+      }
+      const request = {
+        renderSequence,
+        snapshot: carriedSnapshot,
+        notice: pendingRequest?.notice ?? null
+      };
+      pendingRequest = request;
+      return request;
+    },
+    hasPending() {
+      return pendingRequest !== null;
+    },
+    addNotice(message) {
+      if (!pendingRequest) return false;
+      pendingRequest.notice = compactText(message, MAX_TOAST_MESSAGE_LENGTH);
+      return true;
+    },
+    consume(request) {
+      if (pendingRequest !== request) return null;
+      pendingRequest = null;
+      return request;
+    },
+    clear() {
+      pendingRequest = null;
+    }
+  });
+}
+
 export function createRouteFocusGate() {
   let pendingRequest = null;
   return Object.freeze({
@@ -255,6 +312,8 @@ export class ReentryApp {
   #timerId;
   #focusSelector = null;
   #localCommitFocusGate = createLocalCommitFocusGate();
+  #inlineCaptureDraftGate = createInlineCaptureDraftGate();
+  #transientDialogRestoreGate = createTransientDialogRestoreGate();
   #routeFocusGate = createRouteFocusGate();
   #workspaceCounts = null;
   #activeSession = null;
@@ -368,6 +427,7 @@ export class ReentryApp {
     this.#newProjectTemplate = null;
     this.#pendingCheckpointSessionId = null;
     this.#localCommitFocusGate.clear();
+    this.#transientDialogRestoreGate.clear();
     this.#routeFocusGate.clear();
     this.#activeSession = null;
     this.#acknowledgedStaleSessionId = null;
@@ -394,16 +454,22 @@ export class ReentryApp {
   }
 
   #renderStoreUpdate(event) {
-    const focusSelector = this.#localCommitFocusGate.consume(event?.source);
+    const source = event?.source;
+    const focusSelector = this.#localCommitFocusGate.consume(source);
     if (focusSelector) this.#focusSelector = focusSelector;
-    this.render({ preserveDialog: event?.source === "external" });
+    this.render({
+      preserveDialog: source === "external",
+      preserveCaptureDraft: this.#inlineCaptureDraftGate.shouldPreserve(source)
+    });
   }
 
-  render({ preserveDialog = false } = {}) {
+  render({ preserveDialog = false, preserveCaptureDraft = preserveDialog } = {}) {
     if (this.#destroyed) return;
     const renderSequence = ++this.#renderSequence;
-    const transientDialog = preserveDialog ? this.#captureTransientDialog() : null;
-    const captureDraft = preserveDialog ? this.#captureInlineCaptureDraft() : null;
+    const reopenImportPreview = Boolean(this.#root.querySelector("#import-preview-dialog")?.open && this.#pendingImport);
+    const preserveTransientDialog = preserveDialog || reopenImportPreview;
+    const transientDialog = preserveTransientDialog ? this.#captureTransientDialog() : null;
+    const captureDraft = preserveCaptureDraft ? this.#captureInlineCaptureDraft() : null;
     this.#noticeQueue.push(...this.#store.drainNotices());
     if (this.#noticeQueue.length > STORE_NOTICE_LIMIT) {
       this.#noticeQueue.splice(0, this.#noticeQueue.length - STORE_NOTICE_LIMIT);
@@ -415,7 +481,6 @@ export class ReentryApp {
       this.#collectionLimits.clear();
     }
     const now = Date.now();
-    const reopenImportPreview = Boolean(this.#root.querySelector("#import-preview-dialog")?.open && this.#pendingImport);
     if (this.#pendingImport && this.#pendingImport.baseState !== state) {
       this.#pendingImport.preview = {
         ...this.#store.previewImport(this.#pendingImport.value),
@@ -448,6 +513,11 @@ export class ReentryApp {
     document.documentElement.dataset.reducedMotion = state.settings.reducedMotion ? "reduce" : "system";
     this.#syncThemeColor(theme);
     document.title = `${currentProject?.title ?? routeTitle(route)} · 复航台`;
+    const dialogRestoreRequest = this.#transientDialogRestoreGate.prepare(
+      renderSequence,
+      transientDialog,
+      preserveTransientDialog
+    );
 
     this.#root.innerHTML = `
       <div class="app-shell">
@@ -471,16 +541,17 @@ export class ReentryApp {
     if (captureDraft) this.#restoreInlineCaptureDraft(captureDraft, activeSession);
     this.#refreshTimers();
 
-    if (reopenImportPreview && this.#pendingImport) {
+    if (dialogRestoreRequest) {
       requestAnimationFrame(() => {
         if (this.#destroyed || renderSequence !== this.#renderSequence) return;
-        if (transientDialog?.id === "import-preview-dialog") this.#restoreTransientDialog(transientDialog);
-        else this.#openDialog("import-preview-dialog");
-      });
-    } else if (transientDialog) {
-      requestAnimationFrame(() => {
-        if (this.#destroyed || renderSequence !== this.#renderSequence) return;
-        this.#restoreTransientDialog(transientDialog);
+        const restoreRequest = this.#transientDialogRestoreGate.consume(dialogRestoreRequest);
+        if (!restoreRequest) return;
+        this.#restoreTransientDialog(restoreRequest.snapshot);
+        if (restoreRequest.notice) {
+          const dialog = this.#root.querySelector(`#${CSS.escape(restoreRequest.snapshot.id)}`);
+          if (dialog?.open) this.#showDialogNotice(dialog, restoreRequest.notice);
+          else this.#toast(restoreRequest.notice, "error");
+        }
       });
     }
 
@@ -570,14 +641,11 @@ export class ReentryApp {
   }
 
   #captureInlineCaptureDraft() {
-    if (this.#root.querySelector("dialog[open]")) return null;
     const form = this.#root.querySelector('[data-form="capture-crumb"]');
     const text = form?.elements?.text;
     const type = form?.elements?.type;
     const sessionId = this.#activeSession?.id;
     if (!text || !type || !sessionId) return null;
-    const focused = document.activeElement === text || document.activeElement === type;
-    if (!focused && !text.value) return null;
     return {
       sessionId,
       text: text.value,
@@ -1518,19 +1586,21 @@ export class ReentryApp {
     );
     if (!crumb.text) throw new Error("先写下一条记录。 ");
     this.#localCommitFocusGate.run('[data-form="capture-crumb"] textarea', () => {
-      this.#store.update((next) => {
-        const currentSession = next.sessions[sessionIndex];
-        const currentProject = next.projects[projectIndex];
-        if (currentSession?.id !== session.id || currentSession.status !== "active"
-          || currentProject?.id !== session.projectId || currentProject.status === "archived") {
-          throw new Error("活动现场在保存前已发生变化。 ");
-        }
-        next.crumbs.push(crumb);
-        currentProject.updatedAt = crumb.createdAt;
-        if (crumb.type === "next") {
-          currentProject.nextAction = projectNextActionFromCrumb(crumb);
-          currentProject.nextActionUpdatedAt = crumb.createdAt;
-        }
+      this.#inlineCaptureDraftGate.runConsuming(() => {
+        this.#store.update((next) => {
+          const currentSession = next.sessions[sessionIndex];
+          const currentProject = next.projects[projectIndex];
+          if (currentSession?.id !== session.id || currentSession.status !== "active"
+            || currentProject?.id !== session.projectId || currentProject.status === "archived") {
+            throw new Error("活动现场在保存前已发生变化。 ");
+          }
+          next.crumbs.push(crumb);
+          currentProject.updatedAt = crumb.createdAt;
+          if (crumb.type === "next") {
+            currentProject.nextAction = projectNextActionFromCrumb(crumb);
+            currentProject.nextActionUpdatedAt = crumb.createdAt;
+          }
+        });
       });
     });
     this.#announce(`${CRUMB_LABELS[crumb.type]}已记录`);
@@ -1626,7 +1696,7 @@ export class ReentryApp {
     if (!sessionId || this.#activeSession?.id !== sessionId) throw new Error("活动会话已经变化，请重新确认。 ");
     this.#acknowledgedStaleSessionId = sessionId;
     this.#focusSelector = '[data-form="capture-crumb"] textarea';
-    this.render();
+    this.render({ preserveCaptureDraft: true });
     this.#announce("继续原会话；计时保持不变");
   }
 
@@ -1908,7 +1978,7 @@ export class ReentryApp {
       this.#timelineLimits.delete(this.#timelineLimits.keys().next().value);
     }
     if (firstNewItem) this.#focusSelector = `[data-crumb-id="${CSS.escape(firstNewItem.id)}"]`;
-    this.render();
+    this.render({ preserveCaptureDraft: true });
     this.#announce(`已显示 ${expanded.shown} 条轨迹，还剩 ${expanded.remaining} 条`);
   }
 
@@ -2015,6 +2085,13 @@ export class ReentryApp {
     try {
       const parsed = await readBackupFile(file, { signal: controller.signal });
       if (!isCurrentRequest()) return;
+      const openDialog = this.#root.querySelector("dialog[open]");
+      if (openDialog || this.#transientDialogRestoreGate.hasPending()) {
+        const message = "导入文件已读取，但当前对话框正在编辑；请完成或关闭后重新选择文件。";
+        if (openDialog) this.#showDialogNotice(openDialog, message);
+        else this.#transientDialogRestoreGate.addNotice(message);
+        return;
+      }
       const preview = this.#store.previewImport(parsed);
       this.#pendingImport = {
         value: preview.normalizedSnapshot,
@@ -2025,7 +2102,7 @@ export class ReentryApp {
         fileSize: file.size,
         refreshed: false
       };
-      this.render();
+      this.render({ preserveCaptureDraft: true });
       this.#openDialog("import-preview-dialog");
     } catch (error) {
       if (isCurrentRequest()) this.#toast(`无法导入：${userFacingErrorMessage(error)}`, "error");
@@ -2044,7 +2121,7 @@ export class ReentryApp {
       pending.value = pending.preview.normalizedSnapshot;
       pending.baseState = currentState;
       pending.refreshed = true;
-      this.render();
+      this.render({ preserveCaptureDraft: true });
       this.#openDialog("import-preview-dialog");
       this.#toast("工作区刚刚有变化，已刷新导入差异，请重新核对。", "error");
       return;
@@ -2067,7 +2144,7 @@ export class ReentryApp {
         pending.baseState = latestState;
         pending.refreshed = true;
       }
-      this.render();
+      this.render({ preserveCaptureDraft: true });
       this.#openDialog("import-preview-dialog");
       this.#toast(`无法导入：${userFacingErrorMessage(error)}`, "error");
     }
@@ -2081,6 +2158,23 @@ export class ReentryApp {
     if (dialog?.id === "new-project-dialog") this.#clearNewProjectTemplate(dialog);
     if (dialog?.id === "checkpoint-dialog") this.#pendingCheckpointSessionId = null;
     dialog?.close();
+  }
+
+  #showDialogNotice(dialog, message) {
+    const body = dialog?.querySelector(".dialog-body");
+    if (!body) {
+      this.#toast(message, "error");
+      return;
+    }
+    let notice = body.querySelector("[data-import-read-notice]");
+    if (!notice) {
+      notice = document.createElement("p");
+      notice.className = "notice-banner";
+      notice.dataset.importReadNotice = "";
+      notice.setAttribute("role", "alert");
+      body.prepend(notice);
+    }
+    notice.textContent = compactText(message, MAX_TOAST_MESSAGE_LENGTH);
   }
 
   #openDialog(id) {

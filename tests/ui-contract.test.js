@@ -4,6 +4,7 @@ import test from "node:test";
 
 const APP_SOURCE_URL = new URL("../src/ui/app.js", import.meta.url);
 const STYLE_SOURCE_URL = new URL("../src/styles.css", import.meta.url);
+const RENDER_BODY_PATTERN = /render\(\{ preserveDialog = false, preserveCaptureDraft = preserveDialog \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u;
 
 test("project archival uses an accessible in-app confirmation instead of window.confirm", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
@@ -158,13 +159,14 @@ test("app destruction releases listeners, subscriptions, and toast timers", asyn
 
 test("deferred UI callbacks cannot outlive their render or app instance", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
-  const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
+  const render = source.match(RENDER_BODY_PATTERN)?.[1] ?? "";
   const command = source.match(/#runCommand\(command, dialog\) \{([\s\S]*?)\n  \}\n\n  #createProject/u)?.[1] ?? "";
   const open = source.match(/#openDialog\(id\) \{([\s\S]*?)\n  \}\n\n  #focusDialogControl/u)?.[1] ?? "";
   const announce = source.match(/#announce\(message\) \{([\s\S]*?)\n  \}\n\n  async #requestPersistentStorage/u)?.[1] ?? "";
 
   assert.match(render, /const renderSequence = \+\+this\.#renderSequence/u);
-  assert.ok((render.match(/renderSequence !== this\.#renderSequence/gu)?.length ?? 0) >= 3);
+  assert.ok((render.match(/renderSequence !== this\.#renderSequence/gu)?.length ?? 0) >= 2);
+  assert.match(render, /this\.#transientDialogRestoreGate\.consume\(dialogRestoreRequest\)/u);
   assert.match(command, /const renderSequence = this\.#renderSequence/u);
   assert.match(command, /if \(this\.#destroyed \|\| renderSequence !== this\.#renderSequence\) return/u);
   assert.ok(command.indexOf("const renderSequence") < command.indexOf("dialog?.close()"));
@@ -351,7 +353,7 @@ test("visual toasts and assistive feedback share one live announcement channel",
 
 test("storage diagnostics are consumed only after the rendered shell commits", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
-  const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
+  const render = source.match(RENDER_BODY_PATTERN)?.[1] ?? "";
   const notices = source.match(/#renderNotices\(\) \{([\s\S]*?)\n  \}\n\n  #renderSessionInvariantNotice/u)?.[1] ?? "";
 
   assert.match(notices, /this\.#noticeQueue\.map/u);
@@ -388,12 +390,14 @@ test("session lifecycle warnings refresh after time boundaries without erasing a
   assert.match(pageRestore, /if \(event\.persisted\) this\.#refreshAfterResume\(\)/u);
   assert.ok(resume.indexOf("this.#store.refreshFromStorage()") < resume.indexOf("this.#refreshTimers()"));
   assert.match(source, /this\.#store\.subscribe\(\(_state, event\) => this\.#renderStoreUpdate\(event\)\)/u);
-  assert.match(storeRender, /this\.render\(\{ preserveDialog: event\?\.source === "external" \}\)/u);
+  assert.match(storeRender, /const source = event\?\.source/u);
+  assert.match(storeRender, /preserveDialog: source === "external"/u);
+  assert.match(storeRender, /preserveCaptureDraft: this\.#inlineCaptureDraftGate\.shouldPreserve\(source\)/u);
 });
 
 test("stale-session acknowledgement is single-use and bound to the current active session", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
-  const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
+  const render = source.match(RENDER_BODY_PATTERN)?.[1] ?? "";
   const acknowledge = source.match(/#continueStaleSession\(sessionId\) \{([\s\S]*?)\n  \}\n\n  #quickDock/u)?.[1] ?? "";
 
   assert.match(source, /#acknowledgedStaleSessionId = null/u);
@@ -407,7 +411,7 @@ test("stale-session acknowledgement is single-use and bound to the current activ
 
 test("interactive refresh paths reuse the invariant-safe render context", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
-  const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
+  const render = source.match(RENDER_BODY_PATTERN)?.[1] ?? "";
   const filter = source.match(/#updateQuickCaptureProjects\(control\) \{([\s\S]*?)\n  \}\n\n  #runUserAction/u)?.[1] ?? "";
   const keydown = source.match(/#onKeydown\(event\) \{([\s\S]*?)\n  \}\n\n  #runCommand/u)?.[1] ?? "";
   const refresh = source.match(/#refreshTimers\(\) \{([\s\S]*?)\n  \}\n\n  #toast/u)?.[1] ?? "";
@@ -433,7 +437,8 @@ test("dialog redraw restoration preserves controls only while their entity conte
   assert.match(source, /activeControlIndex,\s+activeFocusableIndex,/u);
   assert.match(source, /const active = focusables\[snapshot\.activeFocusableIndex\]/u);
   assert.match(source, /active === controls\[snapshot\.activeControlIndex\]/u);
-  assert.match(source, /transientDialog\?\.id === "import-preview-dialog"/u);
+  assert.match(source, /const reopenImportPreview = Boolean\(this\.#root\.querySelector\("#import-preview-dialog"\)\?\.open && this\.#pendingImport\)/u);
+  assert.match(source, /const preserveTransientDialog = preserveDialog \|\| reopenImportPreview/u);
   assert.match(capture, /contextKey: this\.#dialogContextKey\(dialog\)/u);
   assert.match(capture, /dataControl: control\.dataset\.control \?\? ""/u);
   assert.match(restore, /if \(!this\.#validateTransientDialogContext\(snapshot, dialog\)\) return/u);
@@ -467,20 +472,36 @@ test("quick capture redraw restores its filtered target or requires reselection"
   assert.match(restore, /select\.disabled = plan\.captureWindow\.items\.length === 0 && !plan\.requiresSelection/u);
 });
 
-test("external redraw preserves an inline capture draft only for the same session", async () => {
+test("eligible redraws preserve the complete inline capture draft only for the same session", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
-  const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
+  const render = source.match(RENDER_BODY_PATTERN)?.[1] ?? "";
+  const storeRender = source.match(/#renderStoreUpdate\(event\) \{([\s\S]*?)\n  \}\n\n  render/u)?.[1] ?? "";
   const capture = source.match(/#captureInlineCaptureDraft\(\) \{([\s\S]*?)\n  \}\n\n  #restoreInlineCaptureDraft/u)?.[1] ?? "";
   const restore = source.match(/#restoreInlineCaptureDraft\(snapshot, activeSession\) \{([\s\S]*?)\n  \}\n\n  #restoreTransientDialog/u)?.[1] ?? "";
+  const captureCrumb = source.match(/#captureCrumb\(data\) \{([\s\S]*?)\n  \}\n\n  #quickCapture/u)?.[1] ?? "";
+  const consumingBlock = captureCrumb.match(/this\.#inlineCaptureDraftGate\.runConsuming\(\(\) => \{([\s\S]*?)\n      \}\);/u)?.[1] ?? "";
+  const acknowledge = source.match(/#continueStaleSession\(sessionId\) \{([\s\S]*?)\n  \}\n\n  #quickDock/u)?.[1] ?? "";
+  const timeline = source.match(/#showMoreTimeline\(projectId\) \{([\s\S]*?)\n  \}\n\n  #showMoreProjects/u)?.[1] ?? "";
+  const importData = source.match(/async #importData\(file, input\) \{([\s\S]*?)\n  \}\n\n  #confirmImport/u)?.[1] ?? "";
+  const confirmImport = source.match(/#confirmImport\(\) \{([\s\S]*?)\n  \}\n\n  #closeDialog/u)?.[1] ?? "";
 
-  assert.match(render, /preserveDialog \? this\.#captureInlineCaptureDraft\(\) : null/u);
+  assert.match(render, /preserveCaptureDraft \? this\.#captureInlineCaptureDraft\(\) : null/u);
   assert.match(render, /this\.#restoreInlineCaptureDraft\(captureDraft, activeSession\)/u);
   assert.match(capture, /sessionId = this\.#activeSession\?\.id/u);
-  assert.match(capture, /if \(!focused && !text\.value\) return null/u);
+  assert.match(capture, /if \(!text \|\| !type \|\| !sessionId\) return null/u);
+  assert.equal(capture.match(/return null/gu)?.length, 1);
+  assert.doesNotMatch(capture, /dialog\[open\]|!focused|!text\.value/u);
   assert.match(restore, /activeSession\?\.id !== snapshot\.sessionId/u);
   assert.match(restore, /boundTransientControlValue\(snapshot\.text, IMPORT_LIMITS\.crumbText\)/u);
   assert.match(restore, /Object\.hasOwn\(CRUMB_LABELS, snapshot\.type\)/u);
   assert.match(restore, /setSelectionRange/u);
+  assert.match(storeRender, /preserveCaptureDraft: this\.#inlineCaptureDraftGate\.shouldPreserve\(source\)/u);
+  assert.match(consumingBlock, /this\.#store\.update/u);
+  assert.equal(captureCrumb.match(/this\.#store\.update/gu)?.length, 1);
+  assert.match(acknowledge, /this\.render\(\{ preserveCaptureDraft: true \}\)/u);
+  assert.match(timeline, /this\.render\(\{ preserveCaptureDraft: true \}\)/u);
+  assert.equal(importData.match(/this\.render\(\{ preserveCaptureDraft: true \}\)/gu)?.length, 1);
+  assert.equal(confirmImport.match(/this\.render\(\{ preserveCaptureDraft: true \}\)/gu)?.length, 2);
 });
 
 test("quick checkpoint review is an accessible explicit upgrade flow", async () => {
@@ -537,7 +558,7 @@ test("command availability reuses workspace counts and disables ambiguous dockin
 
 test("rendering never selects an arbitrary session when the active invariant is broken", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
-  const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
+  const render = source.match(RENDER_BODY_PATTERN)?.[1] ?? "";
 
   assert.match(render, /buildWorkspaceFrame\(state, route\.name === "project" \? route\.id : null, now\)/u);
   assert.match(render, /counts: workspaceCounts, currentProject, activeSession, activeProject/u);
@@ -625,7 +646,7 @@ test("quick checkpoint review targets a programmatically focusable heading", asy
   assert.match(source, /<h2 id="reentry-card-heading" tabindex="-1">60 秒复航卡<\/h2>/u);
   assert.match(review, /this\.#localCommitFocusGate\.run\("#reentry-card-heading", \(\) => \{/u);
   assert.ok(review.indexOf("#localCommitFocusGate.run") < review.indexOf("#store.update"));
-  assert.match(storeRender, /this\.#localCommitFocusGate\.consume\(event\?\.source\)/u);
+  assert.match(storeRender, /const source = event\?\.source[\s\S]*?this\.#localCommitFocusGate\.consume\(source\)/u);
   assert.match(storeRender, /if \(focusSelector\) this\.#focusSelector = focusSelector/u);
   assert.ok(storeRender.indexOf("#focusSelector") < storeRender.indexOf("this.render"));
 });
@@ -638,7 +659,8 @@ test("failed quick checkpoint review cannot leak a later focus request", async (
   assert.match(review, /this\.#localCommitFocusGate\.run\("#reentry-card-heading", \(\) => \{[\s\S]*?this\.#store\.update/u);
   assert.doesNotMatch(review, /this\.#focusSelector\s*=/u);
   assert.doesNotMatch(storeRender, /event\?\.source === "external"[\s\S]*?this\.#focusSelector/u);
-  assert.match(storeRender, /this\.render\(\{ preserveDialog: event\?\.source === "external" \}\)/u);
+  assert.match(storeRender, /preserveDialog: source === "external"/u);
+  assert.match(storeRender, /preserveCaptureDraft: this\.#inlineCaptureDraftGate\.shouldPreserve\(source\)/u);
 });
 
 test("inline capture focus is armed only for a successful local commit", async () => {
@@ -649,8 +671,9 @@ test("inline capture focus is armed only for a successful local commit", async (
   assert.match(capture, /this\.#localCommitFocusGate\.run\('\[data-form="capture-crumb"\] textarea', \(\) => \{/u);
   assert.ok(capture.indexOf("#localCommitFocusGate.run") < capture.indexOf("#store.update"));
   assert.doesNotMatch(capture, /this\.#focusSelector\s*=/u);
-  assert.match(storeRender, /this\.#localCommitFocusGate\.consume\(event\?\.source\)/u);
-  assert.match(storeRender, /this\.render\(\{ preserveDialog: event\?\.source === "external" \}\)/u);
+  assert.match(storeRender, /const source = event\?\.source[\s\S]*?this\.#localCommitFocusGate\.consume\(source\)/u);
+  assert.match(storeRender, /preserveDialog: source === "external"/u);
+  assert.match(storeRender, /preserveCaptureDraft: this\.#inlineCaptureDraftGate\.shouldPreserve\(source\)/u);
 });
 
 test("quick capture focus is armed only for its successful local commit", async () => {
@@ -713,6 +736,9 @@ test("import focus and preview refresh are bound to the actual commit outcome", 
   const handler = source.match(/#confirmImport\(\) \{([\s\S]*?)\n  \}\n\n  #announce/u)?.[1] ?? "";
   const failure = handler.slice(handler.indexOf("} catch (error)"));
   const refresh = failure.match(/if \(latestState !== pending\.baseState\) \{([\s\S]*?)\n      \}/u)?.[1] ?? "";
+  const failureRenderIndex = failure.indexOf("this.render({ preserveCaptureDraft: true })");
+  const failureOpenIndex = failure.indexOf('this.#openDialog("import-preview-dialog")');
+  const failureToastIndex = failure.indexOf("this.#toast");
 
   assert.match(handler, /this\.#localCommitFocusGate\.run\("#main-content", \(\) => \{[\s\S]*?this\.#store\.importSnapshot\(pending\.value\)/u);
   assert.ok(handler.indexOf("this.#pendingImport = null") < handler.indexOf("#localCommitFocusGate.run"));
@@ -726,8 +752,45 @@ test("import focus and preview refresh are bound to the actual commit outcome", 
   assert.match(refresh, /pending\.baseState = latestState/u);
   assert.match(refresh, /pending\.refreshed = true/u);
   assert.equal(failure.match(/pending\.refreshed = true/gu)?.length, 1);
-  assert.ok(failure.indexOf("this.render()") < failure.indexOf('this.#openDialog("import-preview-dialog")'));
-  assert.ok(failure.indexOf('this.#openDialog("import-preview-dialog")') < failure.indexOf("this.#toast"));
+  assert.ok([failureRenderIndex, failureOpenIndex, failureToastIndex].every((index) => index >= 0));
+  assert.ok(failureRenderIndex < failureOpenIndex);
+  assert.ok(failureOpenIndex < failureToastIndex);
+});
+
+test("a completed import read cannot replace a dialog opened while it was pending", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const render = source.match(RENDER_BODY_PATTERN)?.[1] ?? "";
+  const destroy = source.match(/destroy\(\) \{([\s\S]*?)\n  \}\n\n  #renderStoreUpdate/u)?.[1] ?? "";
+  const importData = source.match(/async #importData\(file, input\) \{([\s\S]*?)\n  \}\n\n  #confirmImport/u)?.[1] ?? "";
+  const notice = source.match(/#showDialogNotice\(dialog, message\) \{([\s\S]*?)\n  \}\n\n  #openDialog/u)?.[1] ?? "";
+  const guard = importData.match(/const openDialog = this\.#root\.querySelector\("dialog\[open\]"\);\s+if \(openDialog \|\| this\.#transientDialogRestoreGate\.hasPending\(\)\) \{([\s\S]*?)\n      \}/u)?.[1] ?? "";
+
+  assert.match(guard, /const message = "导入文件已读取，但当前对话框正在编辑；请完成或关闭后重新选择文件。"/u);
+  assert.match(guard, /if \(openDialog\) this\.#showDialogNotice\(openDialog, message\)/u);
+  assert.match(guard, /else this\.#transientDialogRestoreGate\.addNotice\(message\)/u);
+  assert.match(guard, /return;/u);
+  assert.doesNotMatch(guard, /#pendingImport|\.render\(|#openDialog/u);
+  assert.match(notice, /dialog\?\.querySelector\("\.dialog-body"\)/u);
+  assert.match(notice, /notice\.dataset\.importReadNotice = ""/u);
+  assert.match(notice, /notice\.setAttribute\("role", "alert"\)/u);
+  assert.match(notice, /body\.querySelector\("\[data-import-read-notice\]"\)/u);
+  assert.match(notice, /body\.prepend\(notice\)/u);
+  assert.match(notice, /notice\.textContent = compactText\(message, MAX_TOAST_MESSAGE_LENGTH\)/u);
+  assert.ok(importData.indexOf("const openDialog =") < importData.indexOf("this.#pendingImport ="));
+  assert.ok(importData.indexOf("const openDialog =") < importData.indexOf("this.render({ preserveCaptureDraft: true })"));
+  assert.match(render, /const preserveTransientDialog = preserveDialog \|\| reopenImportPreview/u);
+  assert.match(render, /const transientDialog = preserveTransientDialog \? this\.#captureTransientDialog\(\) : null/u);
+  assert.match(render, /const dialogRestoreRequest = this\.#transientDialogRestoreGate\.prepare\(\s*renderSequence,\s*transientDialog,\s*preserveTransientDialog\s*\)/u);
+  const prepareRestoreIndex = render.indexOf("this.#transientDialogRestoreGate.prepare");
+  const replaceRootIndex = render.indexOf("this.#root.innerHTML");
+  assert.ok(prepareRestoreIndex >= 0);
+  assert.ok(replaceRootIndex >= 0);
+  assert.ok(prepareRestoreIndex < replaceRootIndex);
+  assert.match(render, /const restoreRequest = this\.#transientDialogRestoreGate\.consume\(dialogRestoreRequest\)/u);
+  assert.match(render, /if \(!restoreRequest\) return/u);
+  assert.match(render, /this\.#restoreTransientDialog\(restoreRequest\.snapshot\)/u);
+  assert.match(render, /if \(restoreRequest\.notice\)/u);
+  assert.match(destroy, /this\.#transientDialogRestoreGate\.clear\(\)/u);
 });
 
 test("manual checkpoint focus is armed only for its successful local commit", async () => {
@@ -808,7 +871,7 @@ test("home recommendations rank only the requested visible window", async () => 
 test("pagination memory resets with workspace identity and stays bounded across project history", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const destroy = source.match(/destroy\(\) \{([\s\S]*?)\n  \}\n\n  render/u)?.[1] ?? "";
-  const render = source.match(/render\(\{ preserveDialog = false \} = \{\}\) \{([\s\S]*?)\n  \}\n\n  #captureTransientDialog/u)?.[1] ?? "";
+  const render = source.match(RENDER_BODY_PATTERN)?.[1] ?? "";
   const expand = source.match(/#showMoreTimeline\(projectId\) \{([\s\S]*?)\n  \}\n\n  #showMoreProjects/u)?.[1] ?? "";
 
   assert.match(source, /const MAX_REMEMBERED_TIMELINES = 24/u);
