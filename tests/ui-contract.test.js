@@ -296,7 +296,9 @@ test("dialog redraw restoration preserves controls only while their entity conte
   assert.match(source, /active === controls\[snapshot\.activeControlIndex\]/u);
   assert.match(source, /transientDialog\?\.id === "import-preview-dialog"/u);
   assert.match(capture, /contextKey: this\.#dialogContextKey\(dialog\)/u);
+  assert.match(capture, /dataControl: control\.dataset\.control \?\? ""/u);
   assert.match(restore, /if \(!this\.#validateTransientDialogContext\(snapshot, dialog\)\) return/u);
+  assert.match(restore, /this\.#restoreQuickCaptureProjectWindow\(snapshot, dialog\)/u);
   assert.match(validate, /prepareSessionDialog\(this\.#store\.getState\(\), projectId\)/u);
   assert.match(validate, /if \(plan\.activeSession\) throw new Error/u);
   assert.match(validate, /prepareProjectEdit\(this\.#store\.getState\(\), pending\.projectId, pending\.editToken\)/u);
@@ -305,6 +307,25 @@ test("dialog redraw restoration preserves controls only while their entity conte
   assert.match(source, /quick-review-dialog"\) return `\$\{dialog\.id\}:\$\{value\("projectId"\)\}:\$\{value\("sourceCheckpointId"\)\}`/u);
   assert.match(source, /<dialog id="checkpoint-dialog" data-context-id="\$\{attr\(activeSession\?\.id \?\? ""\)\}"/u);
   assert.match(source, /<dialog id="archive-confirm-dialog" data-context-id="\$\{attr\(pendingArchiveProject\?\.id \?\? ""\)\}"/u);
+});
+
+test("quick capture redraw restores its filtered target or requires reselection", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const restore = source.match(/#restoreQuickCaptureProjectWindow\(snapshot, dialog\) \{([\s\S]*?)\n  \}\n\n  #captureInlineCaptureDraft/u)?.[1] ?? "";
+
+  assert.match(restore, /buildQuickCaptureRestorePlan\(state,/u);
+  assert.match(restore, /targetProjectId: savedProject\.value/u);
+  assert.match(restore, /requireSelection: !savedProject\.value/u);
+  assert.match(restore, /plan\.selectedProjectId/u);
+  assert.match(restore, /plan\.requiresSelection/u);
+  assert.match(restore, /plan\.targetUnavailable/u);
+  assert.match(restore, /请重新选择/u);
+  const genericRestore = source.match(/#restoreTransientDialog\(snapshot\) \{([\s\S]*?)\n  \}\n\n  #validateTransientDialogContext/u)?.[1] ?? "";
+  const refreshIndex = genericRestore.indexOf("#restoreQuickCaptureProjectWindow");
+  const controlRestoreIndex = genericRestore.indexOf("snapshot.controls.forEach");
+  assert.ok(refreshIndex >= 0 && refreshIndex < controlRestoreIndex);
+  assert.match(source, /requireSelection \? '<option value="" selected>请重新选择目标项目<\/option>'/u);
+  assert.match(restore, /select\.disabled = plan\.captureWindow\.items\.length === 0 && !plan\.requiresSelection/u);
 });
 
 test("external redraw preserves an inline capture draft only for the same session", async () => {

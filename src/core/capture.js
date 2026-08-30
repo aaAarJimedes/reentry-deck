@@ -14,6 +14,7 @@ export function buildQuickCaptureProjectWindow(state, options = {}) {
   const limit = Number.isSafeInteger(requestedLimit) && requestedLimit > 0
     ? Math.min(requestedLimit, QUICK_CAPTURE_PROJECT_LIMIT)
     : QUICK_CAPTURE_PROJECT_LIMIT;
+  const requiredProjectId = typeof options.requiredProjectId === "string" ? options.requiredProjectId : "";
   const preferredRanks = new Map();
   const preferredIds = Array.isArray(options.preferredIds) ? options.preferredIds : [];
   for (let index = 0; index < preferredIds.length && index < QUICK_CAPTURE_PREFERRED_ID_LIMIT; index += 1) {
@@ -32,6 +33,7 @@ export function buildQuickCaptureProjectWindow(state, options = {}) {
     matched += 1;
     const candidate = {
       project,
+      requiredRank: project.id === requiredProjectId ? 0 : 1,
       matchRank,
       preferredRank: preferredRanks.get(project.id) ?? Number.POSITIVE_INFINITY,
       activityAt: finiteDate(project.lastOpenedAt) ?? finiteDate(project.updatedAt) ?? Number.NEGATIVE_INFINITY
@@ -48,6 +50,36 @@ export function buildQuickCaptureProjectWindow(state, options = {}) {
   const items = [];
   for (const candidate of candidates) items.push(candidate.project);
   return Object.freeze({ items: Object.freeze(items), total, matched, query, queryRejected: false });
+}
+
+export function buildQuickCaptureRestorePlan(state, options = {}) {
+  const targetProjectId = typeof options.targetProjectId === "string" ? options.targetProjectId : "";
+  const requireSelection = options.requireSelection === true;
+  const restorableTargetId = requireSelection ? "" : targetProjectId;
+  const preferredIds = restorableTargetId ? [restorableTargetId] : [];
+  const requestedPreferredIds = Array.isArray(options.preferredIds) ? options.preferredIds : [];
+  for (let index = 0; index < requestedPreferredIds.length && preferredIds.length < QUICK_CAPTURE_PREFERRED_ID_LIMIT; index += 1) {
+    const id = requestedPreferredIds[index];
+    if (typeof id === "string" && id && !preferredIds.includes(id)) preferredIds.push(id);
+  }
+  const captureWindow = buildQuickCaptureProjectWindow(state, {
+    query: options.query,
+    preferredIds,
+    requiredProjectId: restorableTargetId
+  });
+  let targetAvailable = false;
+  for (const project of captureWindow.items) {
+    if (project.id !== restorableTargetId) continue;
+    targetAvailable = true;
+    break;
+  }
+  const targetUnavailable = Boolean(restorableTargetId) && !targetAvailable;
+  return Object.freeze({
+    captureWindow,
+    selectedProjectId: targetAvailable ? restorableTargetId : "",
+    requiresSelection: requireSelection || targetUnavailable,
+    targetUnavailable
+  });
 }
 
 export function projectNextActionFromCrumb(crumb) {
@@ -103,6 +135,7 @@ function quickCaptureMatchRank(project, query) {
 }
 
 function compareQuickCaptureCandidate(left, right) {
+  if (left.requiredRank !== right.requiredRank) return left.requiredRank - right.requiredRank;
   if (left.matchRank !== right.matchRank) return left.matchRank - right.matchRank;
   if (left.preferredRank !== right.preferredRank) return left.preferredRank - right.preferredRank;
   if (left.activityAt !== right.activityAt) return right.activityAt - left.activityAt;

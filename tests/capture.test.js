@@ -6,6 +6,7 @@ import {
   QUICK_CAPTURE_PREFERRED_ID_LIMIT,
   QUICK_CAPTURE_QUERY_LIMIT,
   buildQuickCaptureProjectWindow,
+  buildQuickCaptureRestorePlan,
   prepareQuickCapture,
   projectNextActionFromCrumb
 } from "../src/core/capture.js";
@@ -189,5 +190,99 @@ describe("buildQuickCaptureProjectWindow", () => {
 
     assert.equal(window.items[0].id, "preferred");
     assert.equal(window.items.length, 2);
+  });
+});
+
+describe("buildQuickCaptureRestorePlan", () => {
+  test("restores a filtered target outside the default project window", () => {
+    const state = createEmptyState(NOW);
+    for (let index = 0; index < QUICK_CAPTURE_PROJECT_LIMIT; index += 1) {
+      state.projects.push(createProject({
+        id: `recent-${index}`,
+        title: `Recent ${index}`,
+        lastOpenedAt: new Date(NOW - index).toISOString()
+      }, NOW));
+    }
+    state.projects.push(createProject({
+      id: "filtered-target",
+      title: "Needle project",
+      lastOpenedAt: new Date(NOW - 100_000).toISOString()
+    }, NOW));
+    const initial = buildQuickCaptureProjectWindow(state);
+    assert.equal(initial.items.some((project) => project.id === "filtered-target"), false);
+
+    const plan = buildQuickCaptureRestorePlan(state, {
+      query: "needle",
+      targetProjectId: "filtered-target",
+      preferredIds: ["recent-0"]
+    });
+
+    assert.equal(plan.selectedProjectId, "filtered-target");
+    assert.equal(plan.requiresSelection, false);
+    assert.equal(plan.targetUnavailable, false);
+    assert.deepEqual(plan.captureWindow.items.map((project) => project.id), ["filtered-target"]);
+  });
+
+  test("requires a new selection when the saved target is no longer eligible", () => {
+    const state = createEmptyState(NOW);
+    state.projects.push(
+      createProject({ id: "target", title: "Needle project" }, NOW),
+      createProject({ id: "alternative", title: "Needle alternative" }, NOW)
+    );
+    state.projects[0].status = "archived";
+
+    const archived = buildQuickCaptureRestorePlan(state, {
+      query: "needle",
+      targetProjectId: "target"
+    });
+    assert.equal(archived.selectedProjectId, "");
+    assert.equal(archived.requiresSelection, true);
+    assert.equal(archived.targetUnavailable, true);
+    assert.deepEqual(archived.captureWindow.items.map((project) => project.id), ["alternative"]);
+
+    state.projects[0].status = "paused";
+    state.projects[0].title = "Renamed project";
+    const renamed = buildQuickCaptureRestorePlan(state, {
+      query: "needle",
+      targetProjectId: "target"
+    });
+    assert.equal(renamed.selectedProjectId, "");
+    assert.equal(renamed.requiresSelection, true);
+    assert.equal(renamed.targetUnavailable, true);
+    assert.deepEqual(renamed.captureWindow.items.map((project) => project.id), ["alternative"]);
+
+    const redrawnAgain = buildQuickCaptureRestorePlan(state, {
+      query: "needle",
+      targetProjectId: renamed.selectedProjectId,
+      requireSelection: renamed.requiresSelection
+    });
+    assert.equal(redrawnAgain.selectedProjectId, "");
+    assert.equal(redrawnAgain.requiresSelection, true);
+    assert.equal(redrawnAgain.targetUnavailable, false);
+    assert.deepEqual(redrawnAgain.captureWindow.items.map((project) => project.id), ["alternative"]);
+  });
+
+  test("retains an eligible target when stronger matches fill the bounded window", () => {
+    const state = createEmptyState(NOW);
+    for (let index = 0; index < QUICK_CAPTURE_PROJECT_LIMIT; index += 1) {
+      state.projects.push(createProject({ id: `exact-${index}`, title: "Needle" }, NOW));
+    }
+    state.projects.push(createProject({
+      id: "context-target",
+      title: "Different title",
+      description: "Contains the needle context"
+    }, NOW));
+
+    const plan = buildQuickCaptureRestorePlan(state, {
+      query: "needle",
+      targetProjectId: "context-target"
+    });
+
+    assert.equal(plan.captureWindow.matched, QUICK_CAPTURE_PROJECT_LIMIT + 1);
+    assert.equal(plan.captureWindow.items.length, QUICK_CAPTURE_PROJECT_LIMIT);
+    assert.equal(plan.captureWindow.items[0].id, "context-target");
+    assert.equal(plan.selectedProjectId, "context-target");
+    assert.equal(plan.requiresSelection, false);
+    assert.equal(plan.targetUnavailable, false);
   });
 });

@@ -8,7 +8,7 @@ import {
   createSession,
   isoAtOrAfter
 } from "../core/model.js";
-import { QUICK_CAPTURE_QUERY_LIMIT, buildQuickCaptureProjectWindow, prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture.js";
+import { QUICK_CAPTURE_QUERY_LIMIT, buildQuickCaptureProjectWindow, buildQuickCaptureRestorePlan, prepareQuickCapture, projectNextActionFromCrumb } from "../core/capture.js";
 import { createLatestRequestGate, readBackupFile } from "../core/backup-file.js";
 import { formatLocalDownloadDate, triggerBlobDownload } from "../core/download.js";
 import { safeDiagnosticMessage } from "../core/diagnostic.js";
@@ -371,6 +371,8 @@ export class ReentryApp {
         return {
           tag: control.tagName,
           type: control.type,
+          name: control.name,
+          dataControl: control.dataset.control ?? "",
           value,
           checked: control.checked,
           selectionStart: selection?.[0] ?? null,
@@ -388,6 +390,40 @@ export class ReentryApp {
     if (dialog.id === "edit-project-dialog") return `${dialog.id}:${value("projectId")}`;
     if (dialog.id === "archive-confirm-dialog") return `${dialog.id}:${dialog.dataset.contextId ?? ""}`;
     return dialog.id;
+  }
+
+  #restoreQuickCaptureProjectWindow(snapshot, dialog) {
+    if (snapshot.id !== "quick-capture-dialog") return;
+    const filter = dialog.querySelector('[data-control="quick-project-filter"]');
+    const form = dialog.querySelector('[data-form="quick-capture"]');
+    const select = form?.elements?.projectId;
+    const status = form?.querySelector("[data-quick-project-status]");
+    const savedFilter = snapshot.controls.find((control) => control.dataControl === "quick-project-filter");
+    const savedProject = snapshot.controls.find((control) => control.name === "projectId");
+    if (!filter || !select || !savedFilter || !savedProject) return;
+    const state = this.#store.getState();
+    const activeSession = this.#activeSession;
+    const plan = buildQuickCaptureRestorePlan(state, {
+      query: boundTransientControlValue(savedFilter.value, filter.maxLength),
+      targetProjectId: savedProject.value,
+      requireSelection: !savedProject.value,
+      preferredIds: [activeSession?.projectId, state.ui.selectedProjectId]
+    });
+    select.innerHTML = renderQuickCaptureProjectOptions(
+      plan.captureWindow.items,
+      plan.selectedProjectId,
+      activeSession?.projectId,
+      plan.requiresSelection
+    );
+    select.disabled = plan.captureWindow.items.length === 0 && !plan.requiresSelection;
+    if (status) {
+      const windowStatus = quickCaptureProjectStatus(plan.captureWindow);
+      status.textContent = plan.targetUnavailable
+        ? `原目标项目不再是当前筛选结果，请重新选择。${windowStatus}`
+        : plan.requiresSelection
+          ? `请选择目标项目。${windowStatus}`
+          : windowStatus;
+    }
   }
 
   #captureInlineCaptureDraft() {
@@ -429,6 +465,7 @@ export class ReentryApp {
     const dialog = this.#root.querySelector(`#${CSS.escape(snapshot.id)}`);
     if (!dialog) return;
     if (!this.#validateTransientDialogContext(snapshot, dialog)) return;
+    this.#restoreQuickCaptureProjectWindow(snapshot, dialog);
     const controls = [...dialog.querySelectorAll("input, select, textarea")]
       .filter((control) => control.type !== "file" && control.type !== "hidden");
     const focusables = [...dialog.querySelectorAll("button, input, select, textarea")]
@@ -2093,8 +2130,8 @@ function renderChangedProjectList(projects, total) {
   return `<section data-kind="changed"><h3>同 ID 更新 <span>${total}</span></h3><ul>${projects.map((project) => `<li><strong>${escapeHTML(project.beforeTitle === project.afterTitle ? project.afterTitle : `${project.beforeTitle} → ${project.afterTitle}`)}</strong><small>${escapeHTML(project.beforeStatus === project.afterStatus ? PROJECT_STATUS_LABELS[project.afterStatus] ?? project.afterStatus : `${PROJECT_STATUS_LABELS[project.beforeStatus] ?? project.beforeStatus} → ${PROJECT_STATUS_LABELS[project.afterStatus] ?? project.afterStatus}`)}</small></li>`).join("")}</ul>${hidden ? `<p>另有 ${hidden} 个项目未逐项展开</p>` : ""}</section>`;
 }
 
-function renderQuickCaptureProjectOptions(projects, selectedId, activeProjectId) {
-  let html = "";
+function renderQuickCaptureProjectOptions(projects, selectedId, activeProjectId, requireSelection = false) {
+  let html = requireSelection ? '<option value="" selected>请重新选择目标项目</option>' : "";
   for (const project of projects) {
     html += `<option value="${attr(project.id)}" ${project.id === selectedId ? "selected" : ""}>${escapeHTML(project.title)}${project.id === activeProjectId ? " · 会话中" : ""}</option>`;
   }
