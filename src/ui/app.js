@@ -1930,7 +1930,7 @@ export class ReentryApp {
     if (this.#store.getState().projects.length) return;
     const now = Date.now();
     const visual = createProject({ title: "重构研究结果图", description: "让六张结果图使用一致的视觉语法，并能直接进入论文终稿。", nextAction: "打开 figure_03.ipynb，核对第三组图例顺序", color: "amber", createdAt: new Date(now - 5 * 86_400_000).toISOString(), updatedAt: new Date(now - 22 * 3_600_000).toISOString(), lastOpenedAt: new Date(now - 22 * 3_600_000).toISOString() }, now);
-    const session = createSession({ projectId: visual.id, intention: "统一图例顺序和颜色映射", status: "completed", startedAt: new Date(now - 24 * 3_600_000).toISOString(), endedAt: new Date(now - 22 * 3_600_000).toISOString() }, now);
+    const session = createSession({ projectId: visual.id, intention: "统一图例顺序和颜色映射", status: "completed", closeReason: "checkpoint", startedAt: new Date(now - 24 * 3_600_000).toISOString(), endedAt: new Date(now - 22 * 3_600_000).toISOString() }, now);
     const crumbs = [
       createCrumb({ projectId: visual.id, sessionId: session.id, type: "decision", text: "主结果统一采用实验组在前、基线组在后的顺序。", createdAt: new Date(now - 23.5 * 3_600_000).toISOString() }, now),
       createCrumb({ projectId: visual.id, sessionId: session.id, type: "discovery", text: "Figure 3 的配色映射与 Figure 1 相反，是正文描述不一致的来源。", createdAt: new Date(now - 23 * 3_600_000).toISOString() }, now),

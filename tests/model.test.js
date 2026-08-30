@@ -217,6 +217,25 @@ describe("model factories", () => {
       createdAt: NOW_ISO
     });
   });
+
+  test("session factories retain only closure reasons compatible with the normalized status", () => {
+    const cases = [
+      { status: "active", closeReason: null, expectedStatus: "active", expectedReason: null },
+      { status: "active", closeReason: "checkpoint", expectedStatus: "active", expectedReason: null },
+      { status: "completed", closeReason: "checkpoint", expectedStatus: "completed", expectedReason: "checkpoint" },
+      { status: "completed", closeReason: "quick-dock", expectedStatus: "completed", expectedReason: null },
+      { status: "abandoned", closeReason: "quick-dock", expectedStatus: "abandoned", expectedReason: "quick-dock" },
+      { status: "abandoned", closeReason: "interrupted", expectedStatus: "abandoned", expectedReason: "interrupted" },
+      { status: "abandoned", closeReason: "checkpoint", expectedStatus: "abandoned", expectedReason: null },
+      { status: "unknown", closeReason: "checkpoint", expectedStatus: "active", expectedReason: null }
+    ];
+
+    for (const item of cases) {
+      const session = createSession({ projectId: "p1", status: item.status, closeReason: item.closeReason }, NOW);
+      assert.equal(session.status, item.expectedStatus, item.status);
+      assert.equal(session.closeReason, item.expectedReason, `${item.status}/${item.closeReason}`);
+    }
+  });
 });
 
 describe("normalizeState", () => {
@@ -294,6 +313,39 @@ describe("normalizeState", () => {
     assert.equal(normalized.checkpoints[0].summary, "State");
     assert.equal(normalized.checkpoints[0].sessionId, "s1");
     assert.equal(normalized.ui.selectedProjectId, "p1");
+  });
+
+  test("normalizes legacy missing and null session closure reasons without inventing history", () => {
+    const legacy = createEmptyState(NOW);
+    legacy.projects.push(createProject({ id: "p1" }, NOW));
+    legacy.sessions.push(
+      {
+        id: "completed-legacy",
+        projectId: "p1",
+        intention: "",
+        status: "completed",
+        startedAt: NOW_ISO,
+        endedAt: NOW_ISO,
+        checkpointId: null,
+        sourceCheckpointId: null
+      },
+      {
+        id: "abandoned-legacy",
+        projectId: "p1",
+        intention: "",
+        status: "abandoned",
+        startedAt: NOW_ISO,
+        endedAt: NOW_ISO,
+        checkpointId: null,
+        sourceCheckpointId: null,
+        closeReason: null
+      }
+    );
+
+    const normalized = normalizeState(legacy, NOW);
+
+    assert.equal(normalized.schemaVersion, SCHEMA_VERSION);
+    assert.deepEqual(normalized.sessions.map((session) => session.closeReason), [null, null]);
   });
 
   test("drops orphaned records and clears dangling optional session references", () => {
@@ -413,7 +465,7 @@ describe("validateState", () => {
     ]);
   });
 
-  test("rejects multiple simultaneous active sessions", () => {
+  test("rejects multiple simultaneous active sessions including omitted legacy statuses", () => {
     const state = createEmptyState(NOW);
     state.projects.push(createProject({ id: "p1" }, NOW));
     state.sessions.push(
@@ -422,6 +474,10 @@ describe("validateState", () => {
     );
 
     assert.deepEqual(validateState(state), ["同一时间只能有一个活动会话"]);
+
+    const legacy = createEmptyState(NOW);
+    legacy.sessions.push({ id: "legacy-1" }, { id: "legacy-2" });
+    assert.deepEqual(validateState(legacy), ["同一时间只能有一个活动会话"]);
   });
 
   test("caps structural errors before a large invalid workspace can amplify diagnostics", () => {
@@ -465,6 +521,132 @@ describe("validateImportCandidate", () => {
       "面包屑引用了不存在的会话：c1",
       "面包屑类型无效：mystery"
     ]);
+  });
+
+  test("accepts only compatible session status and closure-reason pairs", () => {
+    const accepted = [
+      {},
+      { status: "active" },
+      { status: "active", closeReason: null },
+      { status: "completed" },
+      { status: "completed", closeReason: null },
+      { status: "completed", closeReason: "checkpoint" },
+      { status: "abandoned" },
+      { status: "abandoned", closeReason: null },
+      { status: "abandoned", closeReason: "quick-dock" },
+      { status: "abandoned", closeReason: "interrupted" }
+    ];
+    const rejected = [
+      { status: "active", closeReason: "checkpoint" },
+      { status: "active", closeReason: "quick-dock" },
+      { status: "active", closeReason: "interrupted" },
+      { status: "completed", closeReason: "quick-dock" },
+      { status: "completed", closeReason: "interrupted" },
+      { status: "abandoned", closeReason: "checkpoint" },
+      { closeReason: "checkpoint" }
+    ];
+
+    function candidate(input) {
+      const state = createEmptyState(NOW);
+      state.projects.push(createProject({ id: "p1" }, NOW));
+      const session = {
+        id: "s1",
+        projectId: "p1",
+        intention: "",
+        startedAt: NOW_ISO,
+        endedAt: input.status === "active" || input.status === undefined ? null : NOW_ISO,
+        checkpointId: null,
+        sourceCheckpointId: null
+      };
+      if (input.status !== undefined) session.status = input.status;
+      if (Object.hasOwn(input, "closeReason")) session.closeReason = input.closeReason;
+      state.sessions.push(session);
+      return state;
+    }
+
+    for (const input of accepted) {
+      assert.deepEqual(validateImportCandidate(candidate(input)), [], `${input.status}/${input.closeReason}`);
+    }
+    for (const input of rejected) {
+      assert.deepEqual(
+        validateImportCandidate(candidate(input)),
+        ["会话状态与关闭原因不匹配：s1"],
+        `${input.status}/${input.closeReason}`
+      );
+    }
+  });
+
+  test("applies the missing-status active default to every strict lifecycle check", () => {
+    const state = createEmptyState(NOW);
+    state.projects.push(createProject({ id: "p1", status: "archived" }, NOW));
+    state.sessions.push({
+      id: "legacy-active",
+      projectId: "p1",
+      intention: "",
+      startedAt: NOW_ISO,
+      endedAt: NOW_ISO,
+      checkpointId: "ending",
+      sourceCheckpointId: null,
+      closeReason: null
+    });
+    state.checkpoints.push(createCheckpoint({
+      id: "ending",
+      projectId: "p1",
+      sessionId: "legacy-active",
+      createdAt: NOW_ISO
+    }, NOW));
+
+    const errors = validateImportCandidate(state);
+
+    assert.match(errors.join("；"), /活动会话不能包含结束时间：legacy-active/u);
+    assert.match(errors.join("；"), /归档项目不能包含活动会话：legacy-active/u);
+    assert.match(errors.join("；"), /活动会话不能包含结束检查点：legacy-active/u);
+
+    const linkedCheckpointState = createEmptyState(NOW);
+    linkedCheckpointState.projects.push(createProject({ id: "p2" }, NOW));
+    linkedCheckpointState.sessions.push({
+      id: "legacy-linked",
+      projectId: "p2",
+      intention: "",
+      startedAt: NOW_ISO,
+      endedAt: null,
+      checkpointId: null,
+      sourceCheckpointId: null,
+      closeReason: null
+    });
+    linkedCheckpointState.checkpoints.push(createCheckpoint({
+      id: "linked-only",
+      projectId: "p2",
+      sessionId: "legacy-linked",
+      createdAt: NOW_ISO
+    }, NOW));
+    assert.deepEqual(validateImportCandidate(linkedCheckpointState), [
+      "活动会话不能包含结束检查点：legacy-linked"
+    ]);
+  });
+
+  test("rejects every non-null non-enum session closure reason without duplicate lifecycle errors", () => {
+    const invalidReasons = ["", false, 0, {}, "not-a-reason"];
+    for (const closeReason of invalidReasons) {
+      const state = createEmptyState(NOW);
+      state.projects.push(createProject({ id: "p1" }, NOW));
+      const session = createSession({ id: "s1", projectId: "p1", status: "completed", endedAt: NOW_ISO }, NOW);
+      session.closeReason = closeReason;
+      state.sessions.push(session);
+
+      const errors = validateImportCandidate(state);
+
+      assert.equal(errors.length, 1, String(closeReason));
+      assert.match(errors[0], /^会话关闭原因无效/u, String(closeReason));
+    }
+
+    const invalidStatus = createEmptyState(NOW);
+    invalidStatus.projects.push(createProject({ id: "p1" }, NOW));
+    const session = createSession({ id: "s1", projectId: "p1" }, NOW);
+    session.status = "unknown";
+    session.closeReason = "checkpoint";
+    invalidStatus.sessions.push(session);
+    assert.deepEqual(validateImportCandidate(invalidStatus), ["会话状态无效：unknown"]);
   });
 
   test("rejects broken session lifecycle and checkpoint references", () => {

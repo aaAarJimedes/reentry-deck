@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { IMPORT_LIMITS, createCrumb, createProject } from "../src/core/model.js";
+import { IMPORT_LIMITS, createCrumb, createProject, createSession } from "../src/core/model.js";
 import {
   APP_VERSION,
   AppStore,
@@ -16,6 +16,24 @@ const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 const T0 = Date.parse("2026-08-28T00:00:00.000Z");
 const T1 = Date.parse("2026-08-28T01:00:00.000Z");
 const T2 = Date.parse("2026-08-28T02:00:00.000Z");
+
+class MutationTrackingStorage extends MemoryStorage {
+  mutations = [];
+
+  setItem(key, value) {
+    this.mutations.push(["set", key]);
+    super.setItem(key, value);
+  }
+
+  removeItem(key) {
+    this.mutations.push(["remove", key]);
+    super.removeItem(key);
+  }
+
+  resetMutations() {
+    this.mutations.length = 0;
+  }
+}
 
 function persisted(storage, key = STORAGE_KEY) {
   const text = storage.getItem(key);
@@ -434,6 +452,72 @@ describe("AppStore updates and persistence", () => {
     assert.strictEqual(store.getState(), beforeState);
     assert.equal(storage.getItem(STORAGE_KEY), beforeStorage);
     assert.equal(emissions, 0);
+  });
+
+  test("an incompatible session closure update fails before revision, storage, snapshot, lock, or emission changes", () => {
+    const storage = new MutationTrackingStorage();
+    const store = new AppStore(storage, T0, null);
+    store.update((draft) => {
+      draft.projects.push(createProject({ id: "p1" }, T0));
+      draft.sessions.push(createSession({ id: "s1", projectId: "p1" }, T0));
+    }, T0);
+    store.update((draft) => { draft.projects[0].title = "Seeded snapshot"; }, T0);
+    const beforeState = store.getState();
+    const beforeRevision = beforeState.meta.revision;
+    const beforeCurrent = storage.getItem(STORAGE_KEY);
+    const beforePrevious = storage.getItem(PREVIOUS_KEY);
+    let emissions = 0;
+    store.subscribe(() => emissions += 1);
+    storage.resetMutations();
+
+    assert.throws(
+      () => store.update((draft) => { draft.sessions[0].closeReason = "checkpoint"; }, T1),
+      /会话状态与关闭原因不匹配：s1/u
+    );
+
+    assert.strictEqual(store.getState(), beforeState);
+    assert.equal(store.getState().meta.revision, beforeRevision);
+    assert.equal(storage.getItem(STORAGE_KEY), beforeCurrent);
+    assert.equal(storage.getItem(PREVIOUS_KEY), beforePrevious);
+    assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
+    assert.deepEqual(storage.mutations, []);
+    assert.equal(emissions, 0);
+  });
+
+  test("legacy closed sessions without a reason remain loadable, writable, and uninferred", () => {
+    const storage = new MemoryStorage();
+    const legacy = stateWithProject("p1", "Legacy");
+    legacy.sessions.push(
+      {
+        id: "completed-legacy",
+        projectId: "p1",
+        intention: "",
+        status: "completed",
+        startedAt: new Date(T0).toISOString(),
+        endedAt: new Date(T0).toISOString(),
+        checkpointId: null,
+        sourceCheckpointId: null
+      },
+      {
+        id: "abandoned-legacy",
+        projectId: "p1",
+        intention: "",
+        status: "abandoned",
+        startedAt: new Date(T0).toISOString(),
+        endedAt: new Date(T0).toISOString(),
+        checkpointId: null,
+        sourceCheckpointId: null,
+        closeReason: null
+      }
+    );
+    storage.setItem(STORAGE_KEY, JSON.stringify(legacy));
+
+    const store = new AppStore(storage, T0, null);
+
+    assert.deepEqual(store.getState().sessions.map((session) => session.closeReason), [null, null]);
+    assert.deepEqual(store.drainNotices(), []);
+    store.update((draft) => { draft.settings.reducedMotion = true; }, T1);
+    assert.deepEqual(persisted(storage).sessions.map((session) => session.closeReason), [null, null]);
   });
 
   test("a local update cannot cross the shared 50,000-record safety boundary", () => {
@@ -1281,6 +1365,40 @@ describe("AppStore replacement, snapshots, and reset", () => {
 
     assert.equal(storage.getItem(STORAGE_KEY), before);
     assert.deepEqual(store.getState().projects.map((item) => item.id), ["safe"]);
+  });
+
+  test("replace rejects an incompatible explicit session closure without changing current data", () => {
+    const storage = new MutationTrackingStorage();
+    const store = new AppStore(storage, T0, null);
+    store.update((draft) => draft.projects.push(createProject({ id: "safe" }, T0)), T0);
+    store.update((draft) => { draft.projects[0].title = "Seeded snapshot"; }, T0);
+    const beforeState = store.getState();
+    const beforeCurrent = storage.getItem(STORAGE_KEY);
+    const beforePrevious = storage.getItem(PREVIOUS_KEY);
+    let emissions = 0;
+    store.subscribe(() => emissions += 1);
+    storage.resetMutations();
+    const incoming = stateWithProject("incoming");
+    incoming.sessions.push({
+      id: "contradiction",
+      projectId: "incoming",
+      intention: "",
+      status: "completed",
+      startedAt: new Date(T0).toISOString(),
+      endedAt: new Date(T0).toISOString(),
+      checkpointId: null,
+      sourceCheckpointId: null,
+      closeReason: "quick-dock"
+    });
+
+    assert.throws(() => store.replace(incoming, T1), /会话状态与关闭原因不匹配：contradiction/u);
+
+    assert.strictEqual(store.getState(), beforeState);
+    assert.equal(storage.getItem(STORAGE_KEY), beforeCurrent);
+    assert.equal(storage.getItem(PREVIOUS_KEY), beforePrevious);
+    assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
+    assert.deepEqual(storage.mutations, []);
+    assert.equal(emissions, 0);
   });
 
   test("importSnapshot accepts both backup envelopes and raw state", () => {

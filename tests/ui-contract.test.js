@@ -920,11 +920,24 @@ test("quick docking focuses only after its own local commit", async () => {
   assert.match(handler, /this\.#localCommitFocusGate\.run\(focusSelector, \(\) => \{[\s\S]*?this\.#store\.update/u);
   assert.ok(handler.indexOf("#localCommitFocusGate.run") < handler.indexOf("#store.update"));
   assert.doesNotMatch(handler, /this\.#focusSelector\s*=/u);
+  assert.match(handler, /current\.status = "abandoned"[\s\S]*?current\.closeReason = continueAfter \? "interrupted" : "quick-dock"/u);
   assert.match(handler, /current\.closeReason = continueAfter \? "interrupted" : "quick-dock"/u);
   assert.match(handler, /if \(followUp\) \{[\s\S]*?next\.sessions\.push\(followUp\)/u);
   assert.ok(handler.indexOf("#store.update") < handler.indexOf("this.#announce"));
   assert.match(handler, /this\.#announce\(continueAfter \? "旧会话已标记中断，并已开始接续会话" : "会话已快速停靠"\)/u);
   assert.match(handler, /this\.#toast\(continueAfter \? "旧现场已保留，接续会话已经开始。" : "已用现有证据生成低置信度检查点。 ", "success", false\)/u);
+});
+
+test("session closure producers write compatible explicit status and reason pairs", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const checkpoint = source.match(/#saveCheckpoint\(data, form\) \{([\s\S]*?)\n  \}\n\n  #reviewQuickCheckpoint/u)?.[1] ?? "";
+  const sample = source.match(/#loadSample\(\) \{([\s\S]*?)\n  \}\n\n  #exportData/u)?.[1] ?? "";
+
+  assert.match(checkpoint, /currentSession\.status = "completed"[\s\S]*?currentSession\.closeReason = "checkpoint"/u);
+  assert.match(
+    sample,
+    /createSession\(\{[^}]*status: "completed"[^}]*closeReason: "checkpoint"[^}]*\}, now\)/u
+  );
 });
 
 test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {

@@ -6,6 +6,12 @@ export const SESSION_STATUSES = Object.freeze(["active", "completed", "abandoned
 export const SESSION_CLOSE_REASONS = Object.freeze(["checkpoint", "quick-dock", "interrupted"]);
 export const CHECKPOINT_CAPTURE_MODES = Object.freeze(["manual", "quick"]);
 
+const SESSION_CLOSE_REASONS_BY_STATUS = Object.freeze({
+  active: Object.freeze([]),
+  completed: Object.freeze(["checkpoint"]),
+  abandoned: Object.freeze(["quick-dock", "interrupted"])
+});
+
 const COLOR_PALETTE = ["fern", "amber", "clay", "sky", "plum", "slate"];
 const UNSAFE_TEXT_CONTROL_PATTERN = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b\u200e\u200f\u202a-\u202e\u2060-\u206f\ufeff]/u;
 const UNSAFE_ID_CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/u;
@@ -162,16 +168,18 @@ export function createProject(input = {}, now = Date.now()) {
 
 export function createSession(input = {}, now = Date.now()) {
   const timestamp = isoNow(now);
+  const status = SESSION_STATUSES.includes(input.status) ? input.status : "active";
   return {
     id: input.id ?? makeId("session"),
     projectId: input.projectId,
     intention: cleanText(input.intention),
-    status: SESSION_STATUSES.includes(input.status) ? input.status : "active",
+    status,
     startedAt: input.startedAt ?? timestamp,
     endedAt: input.endedAt ?? null,
     checkpointId: input.checkpointId ?? null,
     sourceCheckpointId: input.sourceCheckpointId ?? null,
-    closeReason: SESSION_CLOSE_REASONS.includes(input.closeReason) ? input.closeReason : null
+    closeReason: SESSION_CLOSE_REASONS.includes(input.closeReason)
+      && isSessionCloseReasonCompatible(status, input.closeReason) ? input.closeReason : null
   };
 }
 
@@ -296,7 +304,7 @@ function validateStateWithOverflow(state, overflowMessage) {
   }
   let activeSessions = 0;
   for (const session of Array.isArray(state?.sessions) ? state.sessions : []) {
-    if (session?.status !== "active") continue;
+    if (effectiveSessionStatus(session) !== "active") continue;
     activeSessions += 1;
     if (activeSessions > 1) {
       if (!addBoundedError(errors, "同一时间只能有一个活动会话", overflowMessage)) return errors;
@@ -362,22 +370,29 @@ export function validateImportCandidate(value) {
     if (typeof session?.id !== "string" || !session.id) addImportError(errors, "存在无效的会话 ID");
     else validateImportId(errors, session.id, "会话");
     if (!projectsById.has(session?.projectId)) addImportError(errors, `会话引用了不存在的项目：${session?.id ?? "未知"}`);
-    if (session?.status !== undefined && !SESSION_STATUSES.includes(session.status)) addImportError(errors, `会话状态无效：${session.status}`);
-    if (session?.closeReason && !SESSION_CLOSE_REASONS.includes(session.closeReason)) addImportError(errors, `会话关闭原因无效：${session.closeReason}`);
+    const sessionStatus = effectiveSessionStatus(session);
+    const validSessionStatus = SESSION_STATUSES.includes(sessionStatus);
+    if (session.status !== undefined && !validSessionStatus) addImportError(errors, `会话状态无效：${session.status}`);
+    const hasCloseReason = session.closeReason !== undefined && session.closeReason !== null;
+    const validCloseReason = !hasCloseReason || SESSION_CLOSE_REASONS.includes(session.closeReason);
+    if (!validCloseReason) addImportError(errors, `会话关闭原因无效：${session.closeReason}`);
+    if (validSessionStatus && validCloseReason && !isSessionCloseReasonCompatible(sessionStatus, session.closeReason)) {
+      addImportError(errors, `会话状态与关闭原因不匹配：${session.id ?? "未知"}`);
+    }
     if (session?.checkpointId && !checkpointsById.has(session.checkpointId)) addImportError(errors, `会话引用了不存在的检查点：${session.id ?? "未知"}`);
     if (session?.sourceCheckpointId && !checkpointsById.has(session.sourceCheckpointId)) addImportError(errors, `会话来源检查点不存在：${session.id ?? "未知"}`);
     if (session?.checkpointId && checkpointsById.has(session.checkpointId) && checkpointsById.get(session.checkpointId)?.projectId !== session.projectId) addImportError(errors, `会话结束检查点属于其他项目：${session.id ?? "未知"}`);
     if (session?.checkpointId && checkpointsById.has(session.checkpointId) && checkpointsById.get(session.checkpointId)?.sessionId && checkpointsById.get(session.checkpointId).sessionId !== session.id) addImportError(errors, `会话结束检查点属于其他会话：${session.id ?? "未知"}`);
     if (session?.sourceCheckpointId && checkpointsById.has(session.sourceCheckpointId) && checkpointsById.get(session.sourceCheckpointId)?.projectId !== session.projectId) addImportError(errors, `会话来源检查点属于其他项目：${session.id ?? "未知"}`);
-    if (session?.status === "active" && session?.endedAt) addImportError(errors, `活动会话不能包含结束时间：${session.id ?? "未知"}`);
-    if (session?.status === "active" && projectsById.get(session.projectId)?.status === "archived") addImportError(errors, `归档项目不能包含活动会话：${session.id ?? "未知"}`);
+    if (sessionStatus === "active" && session?.endedAt) addImportError(errors, `活动会话不能包含结束时间：${session.id ?? "未知"}`);
+    if (sessionStatus === "active" && projectsById.get(session.projectId)?.status === "archived") addImportError(errors, `归档项目不能包含活动会话：${session.id ?? "未知"}`);
     validateText(errors, session, "intention", "会话意图", IMPORT_LIMITS.sessionIntention);
     validateDates(errors, session, ["startedAt", "endedAt"], "会话", session.id);
     validateRecordProjectWindow(errors, session, ["startedAt", "endedAt"], "会话", projectsById.get(session?.projectId));
     if (isValidDate(session?.startedAt) && isValidDate(session?.endedAt) && Date.parse(session.endedAt) < Date.parse(session.startedAt)) {
       addImportError(errors, `会话结束时间早于开始时间：${session.id ?? "未知"}`);
     }
-    if (session?.status === "active" && session?.checkpointId) {
+    if (sessionStatus === "active" && session?.checkpointId) {
       addImportError(errors, `活动会话不能包含结束检查点：${session.id ?? "未知"}`);
     }
     const sourceCheckpoint = checkpointsById.get(session?.sourceCheckpointId);
@@ -438,7 +453,7 @@ export function validateImportCandidate(value) {
     validateDates(errors, checkpoint, ["createdAt"], "检查点", checkpoint.id);
     validateRecordProjectWindow(errors, checkpoint, ["createdAt"], "检查点", projectsById.get(checkpoint?.projectId));
     const checkpointSession = sessionsById.get(checkpoint?.sessionId);
-    if (checkpointSession?.status === "active") addImportError(errors, `活动会话不能包含结束检查点：${checkpointSession.id ?? "未知"}`);
+    if (checkpointSession && effectiveSessionStatus(checkpointSession) === "active") addImportError(errors, `活动会话不能包含结束检查点：${checkpointSession.id ?? "未知"}`);
     if (checkpointSession && isValidDate(checkpoint?.createdAt) && isValidDate(checkpointSession.startedAt) && Date.parse(checkpoint.createdAt) < Date.parse(checkpointSession.startedAt)) {
       addImportError(errors, `检查点早于所属会话开始：${checkpoint.id ?? "未知"}`);
     }
@@ -544,6 +559,16 @@ function validateKnownFields(errors, value, allowedFields, label) {
   for (const field of Object.keys(value)) {
     if (!allowedFields.has(field)) addImportError(errors, `${label}包含未知字段：${field}`);
   }
+}
+
+function isSessionCloseReasonCompatible(status, closeReason) {
+  if (closeReason === undefined || closeReason === null) return true;
+  return SESSION_CLOSE_REASONS_BY_STATUS[status]?.includes(closeReason) === true;
+}
+
+function effectiveSessionStatus(session) {
+  if (!isObject(session)) return session?.status;
+  return session.status === undefined ? "active" : session.status;
 }
 
 function cleanText(value) {
