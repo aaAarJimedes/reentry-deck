@@ -178,7 +178,9 @@ test("settings expose an accessible persistent-storage result and a race-safe re
   assert.match(request, /this\.#announce\(message\)/u);
   assert.match(source, /this\.render\(\);\n      this\.#inspectPersistentStorage\(\);/u);
   assert.match(source, /await inspectPersistentStorage\(navigator\.storage\)/u);
-  assert.match(source, /if \(location\.hash !== "#\/settings"\) return/u);
+  assert.match(source, /export function isSettingsRoute\(hash\) \{[\s\S]*?parseRoute\(hash\)\.name === "settings"/u);
+  assert.match(inspect, /if \(!isSettingsRoute\(location\.hash\)\) return/u);
+  assert.doesNotMatch(source, /location\.hash !== "#\/settings"/u);
   assert.match(inspect, /this\.#syncStorageDurabilityView\(\)/u);
   assert.doesNotMatch(inspect, /this\.render\(/u);
   assert.match(inspect, /this\.#announce\(message\)/u);
@@ -197,10 +199,11 @@ test("persistent-storage request feedback cannot redraw or steal focus from late
   assert.match(syncView, /status\.textContent = durability\.message/u);
   assert.match(syncView, /action\.textContent = durability\.action/u);
   assert.match(syncView, /control\.disabled = durabilityUnavailable/u);
+  assert.doesNotMatch(syncView, /root(?:\?|\.)[^\n]*innerHTML\s*=/u);
   assert.match(syncDelegate, /return syncStorageDurabilityView\(this\.#root, this\.#storageDurabilityStatus\)/u);
   assert.doesNotMatch(request, /this\.render\(/u);
   assert.doesNotMatch(request, /#focusSelector/u);
-  assert.match(request, /if \(!report \|\| location\.hash !== "#\/settings"\) return/u);
+  assert.match(request, /if \(!report \|\| !isSettingsRoute\(location\.hash\)\) return/u);
   assert.match(request, /this\.#syncStorageDurabilityView\(\)/u);
   assert.ok(request.indexOf("#syncStorageDurabilityView") < request.indexOf("if (!report"));
   assert.match(request, /!reportControl\?\.isConnected \|\| this\.#root\.querySelector\("dialog\[open\]"\)/u);

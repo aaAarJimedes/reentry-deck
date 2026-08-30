@@ -4,11 +4,12 @@ import { describe, test } from "node:test";
 import { ROUTE_HASH_LIMIT, localDaySignature, parseRoute } from "../src/ui/app.js";
 
 describe("parseRoute", () => {
-  test("accepts only the canonical top-level routes", () => {
+  test("accepts the supported top-level routes and legacy short hashes", () => {
     assert.deepEqual(parseRoute(""), { name: "home" });
     assert.deepEqual(parseRoute("#/"), { name: "home" });
     assert.deepEqual(parseRoute("#/archive"), { name: "archive" });
     assert.deepEqual(parseRoute("#/settings"), { name: "settings" });
+    assert.deepEqual(parseRoute("#settings"), { name: "settings" });
     assert.deepEqual(parseRoute(null), { name: "home" });
   });
 

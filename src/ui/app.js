@@ -2044,7 +2044,7 @@ export class ReentryApp {
     this.#storageDurabilityStatus = result;
     try {
       const updated = this.#syncStorageDurabilityView();
-      if (!report || location.hash !== "#/settings") return;
+      if (!report || !isSettingsRoute(location.hash)) return;
       const message = STORAGE_DURABILITY_DETAILS[result]?.message ?? STORAGE_DURABILITY_DETAILS.error.message;
       if (!updated || !reportControl?.isConnected || this.#root.querySelector("dialog[open]")) return;
       this.#announce(message);
@@ -2066,7 +2066,7 @@ export class ReentryApp {
     }
     if (!isCurrentRequest()) return;
     this.#storageDurabilityStatus = result;
-    if (location.hash !== "#/settings") return;
+    if (!isSettingsRoute(location.hash)) return;
     try {
       const message = STORAGE_DURABILITY_DETAILS[result]?.message ?? STORAGE_DURABILITY_DETAILS.error.message;
       const updated = this.#syncStorageDurabilityView();
@@ -2115,6 +2115,10 @@ export function parseRoute(hash) {
   if (name === "archive" && segments.length === 1) return { name: "archive" };
   if (name === "settings" && segments.length === 1) return { name: "settings" };
   return { name: "notFound" };
+}
+
+export function isSettingsRoute(hash) {
+  return parseRoute(hash).name === "settings";
 }
 
 function routeTitle(route) {
