@@ -59,6 +59,31 @@ test("project mutations enforce lifecycle-specific core plans", async () => {
   for (const handler of [edit, status, restore]) assert.doesNotMatch(handler, /state\.projects\.find/u);
 });
 
+test("project mutation focus is armed only for the matching successful local commit", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const edit = source.match(/#editProject\(data, form\) \{([\s\S]*?)\n  \}\n\n  #prepareProjectEditDialog/u)?.[1] ?? "";
+  const status = source.match(/#changeProjectStatus\(projectId, status\) \{([\s\S]*?)\n  \}\n\n  #toggleCrumbResolution/u)?.[1] ?? "";
+  const resolution = source.match(/#toggleCrumbResolution\(crumbId, context\) \{([\s\S]*?)\n  \}\n\n  #toggleCrumbPin/u)?.[1] ?? "";
+  const pin = source.match(/#toggleCrumbPin\(crumbId\) \{([\s\S]*?)\n  \}\n\n  #prepareArchive/u)?.[1] ?? "";
+  const restore = source.match(/#restoreProject\(projectId\) \{([\s\S]*?)\n  \}\n\n  #setTheme/u)?.[1] ?? "";
+
+  for (const handler of [edit, status, resolution, pin, restore]) {
+    assert.match(handler, /this\.#localCommitFocusGate\.run\([\s\S]*?\(\) => \{\s*this\.#store\.update\(/u);
+    assert.doesNotMatch(handler, /this\.#focusSelector\s*=/u);
+  }
+  assert.match(edit, /this\.#localCommitFocusGate\.run\('\[data-action="edit-project"\]',/u);
+  assert.match(status, /this\.#localCommitFocusGate\.run\('\[data-control="project-status"\]',/u);
+  assert.match(
+    resolution,
+    /const focusSelector = `\[data-action="toggle-crumb-resolution"\][\s\S]*?this\.#localCommitFocusGate\.run\(focusSelector,/u
+  );
+  assert.match(
+    pin,
+    /const focusSelector = `\[data-action="toggle-crumb-pin"\][\s\S]*?this\.#localCommitFocusGate\.run\(focusSelector,/u
+  );
+  assert.match(restore, /this\.#localCommitFocusGate\.run\("#main-content",/u);
+});
+
 test("existing projects seed a bounded new-project draft without copying history", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const prepare = source.match(/#prepareProjectTemplateDialog\(projectId\) \{([\s\S]*?)\n  \}\n\n  #openNewProjectDialog/u)?.[1] ?? "";

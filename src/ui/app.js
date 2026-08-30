@@ -1606,16 +1606,17 @@ export class ReentryApp {
     if (!title) throw new Error("项目名称不能只包含空格。 ");
     const pending = this.#pendingProjectEdit;
     if (!pending || pending.projectId !== data.projectId) throw new Error("编辑上下文已失效，请重新打开表单。 ");
-    this.#focusSelector = '[data-action="edit-project"]';
-    this.#store.update((state) => {
-      const { project } = prepareProjectEdit(state, pending.projectId, pending.editToken);
-      const changedAt = isoAtOrAfter(Date.now(), project.updatedAt);
-      project.title = title;
-      project.description = String(data.description ?? "").trim();
-      project.descriptionUpdatedAt = changedAt;
-      project.nextAction = String(data.nextAction ?? "").trim();
-      project.nextActionUpdatedAt = project.nextAction ? project.descriptionUpdatedAt : null;
-      project.updatedAt = project.descriptionUpdatedAt;
+    this.#localCommitFocusGate.run('[data-action="edit-project"]', () => {
+      this.#store.update((state) => {
+        const { project } = prepareProjectEdit(state, pending.projectId, pending.editToken);
+        const changedAt = isoAtOrAfter(Date.now(), project.updatedAt);
+        project.title = title;
+        project.description = String(data.description ?? "").trim();
+        project.descriptionUpdatedAt = changedAt;
+        project.nextAction = String(data.nextAction ?? "").trim();
+        project.nextActionUpdatedAt = project.nextAction ? project.descriptionUpdatedAt : null;
+        project.updatedAt = project.descriptionUpdatedAt;
+      });
     });
     this.#pendingProjectEdit = null;
     form.closest("dialog")?.close();
@@ -1677,11 +1678,12 @@ export class ReentryApp {
   #changeProjectStatus(projectId, status) {
     if (!["active", "paused", "blocked"].includes(status)) return;
     try {
-      this.#focusSelector = '[data-control="project-status"]';
-      this.#store.update((state) => {
-        const { project } = prepareProjectStatusChange(state, projectId, status);
-        project.status = status;
-        project.updatedAt = isoAtOrAfter(Date.now(), project.updatedAt);
+      this.#localCommitFocusGate.run('[data-control="project-status"]', () => {
+        this.#store.update((state) => {
+          const { project } = prepareProjectStatusChange(state, projectId, status);
+          project.status = status;
+          project.updatedAt = isoAtOrAfter(Date.now(), project.updatedAt);
+        });
       });
       this.#toast(`项目已标记为“${PROJECT_STATUS_LABELS[status]}”。`);
     } catch (error) {
@@ -1690,31 +1692,35 @@ export class ReentryApp {
   }
 
   #toggleCrumbResolution(crumbId, context) {
-    this.#focusSelector = `[data-action="toggle-crumb-resolution"][data-resolution-context="${CSS.escape(context || "timeline")}"][data-crumb-id="${CSS.escape(crumbId)}"]`;
+    const focusSelector = `[data-action="toggle-crumb-resolution"][data-resolution-context="${CSS.escape(context || "timeline")}"][data-crumb-id="${CSS.escape(crumbId)}"]`;
     let resolved = false;
-    this.#store.update((state) => {
-      const crumb = state.crumbs.find((item) => item.id === crumbId);
-      if (!crumb || !["question", "blocker"].includes(crumb.type)) throw new Error("找不到可处理的问题或阻塞。 ");
-      const changedAt = isoAtOrAfter(Date.now(), crumb.createdAt, crumb.resolvedAt);
-      crumb.resolvedAt = crumb.resolvedAt ? null : changedAt;
-      resolved = Boolean(crumb.resolvedAt);
-      const project = state.projects.find((item) => item.id === crumb.projectId);
-      if (project) project.updatedAt = isoAtOrAfter(changedAt, project.updatedAt);
+    this.#localCommitFocusGate.run(focusSelector, () => {
+      this.#store.update((state) => {
+        const crumb = state.crumbs.find((item) => item.id === crumbId);
+        if (!crumb || !["question", "blocker"].includes(crumb.type)) throw new Error("找不到可处理的问题或阻塞。 ");
+        const changedAt = isoAtOrAfter(Date.now(), crumb.createdAt, crumb.resolvedAt);
+        crumb.resolvedAt = crumb.resolvedAt ? null : changedAt;
+        resolved = Boolean(crumb.resolvedAt);
+        const project = state.projects.find((item) => item.id === crumb.projectId);
+        if (project) project.updatedAt = isoAtOrAfter(changedAt, project.updatedAt);
+      });
     });
     this.#announce(resolved ? "事项已标记为解决" : "事项已重新打开");
     this.#toast(resolved ? "已从待解决清单移除。" : "已重新加入待解决清单。", "success", false);
   }
 
   #toggleCrumbPin(crumbId) {
-    this.#focusSelector = `[data-action="toggle-crumb-pin"][data-crumb-id="${CSS.escape(crumbId)}"]`;
+    const focusSelector = `[data-action="toggle-crumb-pin"][data-crumb-id="${CSS.escape(crumbId)}"]`;
     let pinned = false;
-    this.#store.update((state) => {
-      const crumb = state.crumbs.find((item) => item.id === crumbId);
-      if (!crumb) throw new Error("找不到要置顶的轨迹。 ");
-      crumb.pinned = !crumb.pinned;
-      pinned = crumb.pinned;
-      const project = state.projects.find((item) => item.id === crumb.projectId);
-      if (project) project.updatedAt = isoAtOrAfter(Date.now(), project.updatedAt, crumb.createdAt);
+    this.#localCommitFocusGate.run(focusSelector, () => {
+      this.#store.update((state) => {
+        const crumb = state.crumbs.find((item) => item.id === crumbId);
+        if (!crumb) throw new Error("找不到要置顶的轨迹。 ");
+        crumb.pinned = !crumb.pinned;
+        pinned = crumb.pinned;
+        const project = state.projects.find((item) => item.id === crumb.projectId);
+        if (project) project.updatedAt = isoAtOrAfter(Date.now(), project.updatedAt, crumb.createdAt);
+      });
     });
     this.#announce(pinned ? "轨迹已设为置顶航标" : "轨迹已取消置顶");
     this.#toast(pinned ? "已加入复航卡的置顶航标。" : "已从置顶航标移除。 ", "success", false);
@@ -1755,12 +1761,13 @@ export class ReentryApp {
   }
 
   #restoreProject(projectId) {
-    this.#focusSelector = "#main-content";
-    this.#store.update((state) => {
-      const { project } = prepareProjectRestore(state, projectId);
-      project.status = "paused";
-      project.archivedAt = null;
-      project.updatedAt = isoAtOrAfter(Date.now(), project.updatedAt);
+    this.#localCommitFocusGate.run("#main-content", () => {
+      this.#store.update((state) => {
+        const { project } = prepareProjectRestore(state, projectId);
+        project.status = "paused";
+        project.archivedAt = null;
+        project.updatedAt = isoAtOrAfter(Date.now(), project.updatedAt);
+      });
     });
     this.#toast("项目已恢复为暂泊状态。 ");
   }
