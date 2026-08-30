@@ -16,6 +16,7 @@ export const PUBLIC_FILES = Object.freeze(new Map([
   ["/src/styles.css", "src/styles.css"],
   ["/src/main.js", "src/main.js"],
   ["/src/ui/app.js", "src/ui/app.js"],
+  ["/src/core/app-install.js", "src/core/app-install.js"],
   ["/src/core/capture.js", "src/core/capture.js"],
   ["/src/core/backup-file.js", "src/core/backup-file.js"],
   ["/src/core/download.js", "src/core/download.js"],

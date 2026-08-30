@@ -414,6 +414,7 @@ svg {
 .icon-button:disabled,
 .ghost-button:disabled,
 .secondary-button:disabled,
+.secondary-button[aria-disabled="true"],
 .danger-button:disabled { cursor: not-allowed; opacity: .42; transform: none; }
 
 .ghost-button,
@@ -1226,6 +1227,7 @@ dialog::backdrop { background: rgb(10 25 23 / 58%); backdrop-filter: blur(4px); 
 .muted { color: var(--ink-soft); }
 .danger-text { color: var(--danger); }
 .nowrap { white-space: nowrap; }
+[hidden],
 .hidden { display: none !important; }
 
 @keyframes toast-in {

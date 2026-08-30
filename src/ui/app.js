@@ -17,6 +17,7 @@ import { buildReentryCard, buildReentryCards, buildReentryCardWithStats, prepare
 import { WORKSPACE_HANDOFF_PROJECT_LIMIT, buildReentryBrief, buildReentryMarkdown, buildWorkspaceHandoff, buildWorkspaceHandoffMarkdown, copyPlainText } from "../core/share.js";
 import { SEARCH_QUERY_LIMIT, buildWorkspaceSearchIndex, getProjectResources, searchWorkspaceIndexWindow } from "../core/search.js";
 import { QUICK_DOCK_NOT_RECORDED, inspectSession, locateActiveSessionContext, prepareQuickCheckpointReview, prepareQuickDock } from "../core/session.js";
+import { APP_INSTALL_STATUS, createAppInstallController } from "../core/app-install.js";
 import { STORAGE_DURABILITY_STATUS, inspectPersistentStorage, requestPersistentStorage } from "../core/storage-durability.js";
 import { STORE_NOTICE_LIMIT } from "../core/store.js";
 import {
@@ -62,6 +63,63 @@ const STORAGE_DURABILITY_DETAILS = Object.freeze({
   [STORAGE_DURABILITY_STATUS.UNSUPPORTED]: Object.freeze({ message: "当前浏览器不支持持久存储请求；请依靠 JSON 备份恢复。", action: "浏览器不支持" }),
   [STORAGE_DURABILITY_STATUS.ERROR]: Object.freeze({ message: "无法检查浏览器保护状态；请稍后重试并保留 JSON 备份。", action: "重新检查" })
 });
+
+const APP_INSTALL_DETAILS = Object.freeze({
+  [APP_INSTALL_STATUS.UNAVAILABLE]: Object.freeze({
+    message: "浏览器尚未提供站内安装按钮；如支持，可从浏览器菜单选择安装或添加到主屏幕。",
+    action: "安装复航台",
+    hidden: true
+  }),
+  [APP_INSTALL_STATUS.AVAILABLE]: Object.freeze({
+    message: "浏览器已确认可以安装；安装只增加独立入口，不上传或改写工作区。",
+    action: "安装复航台",
+    hidden: false
+  }),
+  [APP_INSTALL_STATUS.PROMPTING]: Object.freeze({
+    message: "浏览器安装窗口已打开，请在其中确认。",
+    action: "等待浏览器确认",
+    hidden: false
+  }),
+  [APP_INSTALL_STATUS.ACCEPTED]: Object.freeze({
+    message: "浏览器已接受安装请求，但本页尚未确认安装完成。",
+    action: "等待安装完成",
+    hidden: false
+  }),
+  [APP_INSTALL_STATUS.DISMISSED]: Object.freeze({
+    message: "本次没有安装；需要等待浏览器再次提供入口，也可使用浏览器菜单。",
+    action: "等待再次可用",
+    hidden: false
+  }),
+  [APP_INSTALL_STATUS.INSTALLED]: Object.freeze({
+    message: "复航台已安装，可从独立入口打开；工作区仍只保存在当前浏览器来源。",
+    action: "已安装",
+    hidden: false
+  }),
+  [APP_INSTALL_STATUS.ERROR]: Object.freeze({
+    message: "无法打开浏览器安装提示；可等待浏览器再次提供入口，或使用浏览器菜单。",
+    action: "暂不可用",
+    hidden: false
+  })
+});
+
+export function syncAppInstallView(root, installStatus) {
+  const details = APP_INSTALL_DETAILS[installStatus] ?? APP_INSTALL_DETAILS[APP_INSTALL_STATUS.UNAVAILABLE];
+  const status = root?.querySelector?.("#app-install-status") ?? null;
+  const control = root?.querySelector?.('[data-action="install-app"]') ?? null;
+  const action = control?.querySelector?.("[data-app-install-action]") ?? null;
+  if (!status || !control || !action) return false;
+  status.textContent = details.message;
+  action.textContent = details.action;
+  control.hidden = details.hidden;
+  if (installStatus === APP_INSTALL_STATUS.AVAILABLE) {
+    control.removeAttribute("aria-disabled");
+    control.tabIndex = 0;
+  } else {
+    control.setAttribute("aria-disabled", "true");
+    control.tabIndex = -1;
+  }
+  return true;
+}
 
 export function syncStorageDurabilityView(root, durabilityStatus) {
   const durability = STORAGE_DURABILITY_DETAILS[durabilityStatus] ?? STORAGE_DURABILITY_DETAILS.error;
@@ -221,6 +279,9 @@ export class ReentryApp {
   #backupSizeState = null;
   #backupSizeLabel = "0 B";
   #storageDurabilityStatus = "checking";
+  #appInstallController = null;
+  #displayModeQuery = null;
+  #displayModeListener = null;
   #eventController = new AbortController();
   #unsubscribeStore = null;
   #toastTimers = new Map();
@@ -263,6 +324,14 @@ export class ReentryApp {
       window.addEventListener("pageshow", (event) => {
         if (event.persisted) this.#refreshAfterResume();
       }, listenerOptions);
+      this.#displayModeQuery = window.matchMedia?.("(display-mode: standalone)") ?? null;
+      this.#appInstallController = createAppInstallController({ installed: Boolean(this.#displayModeQuery?.matches) });
+      this.#displayModeListener = () => {
+        if (this.#displayModeQuery?.matches) this.#markAppInstalled();
+      };
+      this.#displayModeQuery?.addEventListener?.("change", this.#displayModeListener);
+      window.addEventListener("beforeinstallprompt", (event) => this.#captureAppInstallPrompt(event), listenerOptions);
+      window.addEventListener("appinstalled", (event) => this.#markAppInstalled(event), listenerOptions);
       this.#colorSchemeQuery = window.matchMedia?.("(prefers-color-scheme: dark)") ?? null;
       this.#colorSchemeListener = () => {
         if (this.#colorSchemeQuery) this.#syncThemeColor();
@@ -307,6 +376,11 @@ export class ReentryApp {
     this.#workspaceCreatedAt = null;
     this.#searchIndexState = null;
     this.#searchIndex = null;
+    this.#appInstallController?.destroy();
+    this.#appInstallController = null;
+    this.#displayModeQuery?.removeEventListener?.("change", this.#displayModeListener);
+    this.#displayModeQuery = null;
+    this.#displayModeListener = null;
     this.#eventController.abort();
     this.#colorSchemeQuery?.removeEventListener?.("change", this.#colorSchemeListener);
     this.#colorSchemeQuery = null;
@@ -988,6 +1062,9 @@ export class ReentryApp {
     const durabilityUnavailable = this.#storageDurabilityStatus === STORAGE_DURABILITY_STATUS.GRANTED
       || this.#storageDurabilityStatus === STORAGE_DURABILITY_STATUS.UNSUPPORTED
       || this.#storageDurabilityStatus === "checking";
+    const appInstallStatus = this.#appInstallController?.getStatus() ?? APP_INSTALL_STATUS.UNAVAILABLE;
+    const appInstall = APP_INSTALL_DETAILS[appInstallStatus] ?? APP_INSTALL_DETAILS[APP_INSTALL_STATUS.UNAVAILABLE];
+    const appInstallAvailable = appInstallStatus === APP_INSTALL_STATUS.AVAILABLE;
     return `
       <section class="page-heading"><div><p class="eyebrow">数据保险箱</p><h1>你的工作轨迹，只属于你。</h1><p class="lede">复航台没有账户和云端数据库。请主动导出备份，尤其是在清理浏览器数据之前。</p></div></section>
       <div class="settings-grid">
@@ -995,6 +1072,7 @@ export class ReentryApp {
           <div class="setting-row"><div class="setting-copy"><h3>界面主题</h3><p>跟随系统，或固定使用明亮/深色外观。</p></div><div class="segmented-control" role="group" aria-label="界面主题">${[["system", "跟随系统"], ["light", "明亮"], ["dark", "深色"]].map(([value, label]) => `<button type="button" data-action="set-theme" data-theme="${value}" aria-pressed="${theme === value}">${label}</button>`).join("")}</div></div>
           <div class="setting-row"><div class="setting-copy"><h3>动态效果</h3><p>默认跟随系统辅助功能偏好，也可以在复航台内始终减少动画与平滑滚动。</p></div><div class="segmented-control" role="group" aria-label="动态效果">${[["system", "跟随系统"], ["reduce", "减少动效"]].map(([value, label]) => `<button type="button" data-action="set-motion" data-reduced-motion="${value}" aria-pressed="${state.settings.reducedMotion === (value === "reduce")}">${label}</button>`).join("")}</div></div>
           <div class="setting-row"><div class="setting-copy"><h3>离开提醒阈值</h3><p>项目超过这段时间没有新现场时，关注清单会提示核对。</p></div><label class="field"><span class="sr-only">离开提醒阈值</span><select data-control="stale-days" aria-label="离开提醒阈值">${staleOptions.map((days) => `<option value="${days}" ${days === state.settings.staleAfterDays ? "selected" : ""}>${days} 天</option>`).join("")}</select></label></div>
+          <div class="setting-row"><div class="setting-copy"><h3>安装复航台</h3><p id="app-install-status">${appInstall.message}</p></div><button class="secondary-button" type="button" data-action="install-app" aria-describedby="app-install-status" ${appInstall.hidden ? "hidden " : ""}${appInstallAvailable ? "" : 'aria-disabled="true" tabindex="-1"'}>${icon("box")} <span data-app-install-action>${appInstall.action}</span></button></div>
           <div class="setting-row"><div class="setting-copy"><h3>本机数据保护</h3><p id="storage-durability-status">${durability.message}</p></div><button class="secondary-button" type="button" data-action="request-persistent-storage" aria-describedby="storage-durability-status" ${durabilityUnavailable ? "disabled" : ""}>${icon("shield")} <span data-storage-durability-action>${durability.action}</span></button></div>
           <div class="setting-row"><div class="setting-copy"><h3>导出完整备份</h3><p>包含项目、会话、轨迹、检查点和设置。当前约 ${size}。</p></div><button class="secondary-button" type="button" data-action="export-data">${icon("download")} 导出 JSON</button></div>
           <div class="setting-row"><div class="setting-copy"><h3>从备份恢复</h3><p>文件会先在本机校验；有效备份将替换当前工作区。</p></div><button class="secondary-button" type="button" data-action="choose-import">${icon("upload")} 选择文件</button><input class="sr-only" id="import-file" type="file" accept="application/json,.json" data-control="import-file" aria-label="选择 JSON 备份文件" /></div>
@@ -1203,6 +1281,7 @@ export class ReentryApp {
     if (action === "choose-import") this.#root.querySelector("#import-file")?.click();
     if (action === "set-theme") this.#setTheme(control.dataset.theme);
     if (action === "set-motion") this.#setReducedMotion(control.dataset.reducedMotion);
+    if (action === "install-app") this.#promptAppInstall(control);
     if (action === "request-persistent-storage") this.#requestPersistentStorage(true, control);
     if (action === "toggle-crumb-resolution") this.#toggleCrumbResolution(control.dataset.crumbId, control.dataset.resolutionContext);
     if (action === "toggle-crumb-pin") this.#toggleCrumbPin(control.dataset.crumbId);
@@ -2104,6 +2183,51 @@ export class ReentryApp {
 
   #syncStorageDurabilityView() {
     return syncStorageDurabilityView(this.#root, this.#storageDurabilityStatus);
+  }
+
+  #captureAppInstallPrompt(event) {
+    if (!this.#appInstallController?.capture(event)) return;
+    this.#syncAppInstallView();
+  }
+
+  #markAppInstalled(event = null) {
+    if (event && event.isTrusted !== true) return;
+    const changed = this.#appInstallController?.markInstalled() ?? false;
+    const updated = this.#syncAppInstallView();
+    if (!changed || !updated || !isSettingsRoute(location.hash) || this.#root.querySelector("dialog[open]")) return;
+    const message = "复航台已安装，可以从独立入口打开。";
+    this.#announce(message);
+    this.#toast(message, "success", false);
+  }
+
+  async #promptAppInstall(reportControl) {
+    const controller = this.#appInstallController;
+    if (!controller || controller.getStatus() !== APP_INSTALL_STATUS.AVAILABLE) return;
+    try {
+      const pendingResult = controller.prompt();
+      this.#syncAppInstallView();
+      const result = await pendingResult;
+      if (this.#destroyed) return;
+      const updated = this.#syncAppInstallView();
+      if (!updated || !isSettingsRoute(location.hash) || !reportControl?.isConnected || this.#root.querySelector("dialog[open]")) return;
+      if (result.status === APP_INSTALL_STATUS.ACCEPTED) {
+        const message = "浏览器已接受安装请求；仍等待安装完成确认。";
+        this.#announce(message);
+      }
+      if (result.status === APP_INSTALL_STATUS.DISMISSED) {
+        const message = "本次没有安装；浏览器再次提供入口后可以重试。";
+        this.#announce(message);
+      }
+    } catch (error) {
+      if (this.#destroyed) return;
+      const updated = this.#syncAppInstallView();
+      if (!updated || !isSettingsRoute(location.hash) || !reportControl?.isConnected || this.#root.querySelector("dialog[open]")) return;
+      this.#toast(userFacingErrorMessage(error, "无法打开浏览器安装提示，请稍后重试。"), "error");
+    }
+  }
+
+  #syncAppInstallView() {
+    return syncAppInstallView(this.#root, this.#appInstallController?.getStatus());
   }
 
   async #requestPersistentStorage(report = false, reportControl = null) {

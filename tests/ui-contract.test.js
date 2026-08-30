@@ -239,7 +239,7 @@ test("persistent-storage request feedback cannot redraw or steal focus from late
   const request = source.match(/async #requestPersistentStorage\(report = false, reportControl = null\) \{([\s\S]*?)\n  \}\n\n  async #inspectPersistentStorage/u)?.[1] ?? "";
   const inspect = source.match(/async #inspectPersistentStorage\(\) \{([\s\S]*?)\n  \}\n\}/u)?.[1] ?? "";
   const syncView = source.match(/export function syncStorageDurabilityView\(root, durabilityStatus\) \{([\s\S]*?)\n\}\n\nconst MAX_TOAST_MESSAGE_LENGTH/u)?.[1] ?? "";
-  const syncDelegate = source.match(/#syncStorageDurabilityView\(\) \{([\s\S]*?)\n  \}\n\n  async #requestPersistentStorage/u)?.[1] ?? "";
+  const syncDelegate = source.match(/#syncStorageDurabilityView\(\) \{([\s\S]*?)\n  \}\n\n  #captureAppInstallPrompt/u)?.[1] ?? "";
 
   assert.match(source, /if \(action === "request-persistent-storage"\) this\.#requestPersistentStorage\(true, control\)/u);
   assert.match(source, /data-storage-durability-action/u);
@@ -257,6 +257,68 @@ test("persistent-storage request feedback cannot redraw or steal focus from late
   assert.doesNotMatch(inspect, /this\.render\(/u);
   assert.match(inspect, /this\.#syncStorageDurabilityView\(\)/u);
   assert.match(inspect, /!updated \|\| this\.#root\.querySelector\("dialog\[open\]"\)/u);
+});
+
+test("app installation is browser-truthful, transient, and updates only its stable settings row", async () => {
+  const [source, styles] = await Promise.all([
+    readFile(APP_SOURCE_URL, "utf8"),
+    readFile(STYLE_SOURCE_URL, "utf8")
+  ]);
+  const settings = source.match(/#renderSettings\(state\) \{([\s\S]*?)\n  \}\n\n  #getBackupSize/u)?.[1] ?? "";
+  const capture = source.match(/#captureAppInstallPrompt\(event\) \{([\s\S]*?)\n  \}\n\n  #markAppInstalled/u)?.[1] ?? "";
+  const installed = source.match(/#markAppInstalled\(event = null\) \{([\s\S]*?)\n  \}\n\n  async #promptAppInstall/u)?.[1] ?? "";
+  const prompt = source.match(/async #promptAppInstall\(reportControl\) \{([\s\S]*?)\n  \}\n\n  #syncAppInstallView/u)?.[1] ?? "";
+  const accepted = prompt.match(/if \(result\.status === APP_INSTALL_STATUS\.ACCEPTED\) \{([\s\S]*?)\n      \}\n      if \(result\.status === APP_INSTALL_STATUS\.DISMISSED/u)?.[1] ?? "";
+  const dismissed = prompt.match(/if \(result\.status === APP_INSTALL_STATUS\.DISMISSED\) \{([\s\S]*?)\n      \}\n    \} catch/u)?.[1] ?? "";
+  const promptError = prompt.match(/\} catch \(error\) \{([\s\S]*?)\n    \}/u)?.[1] ?? "";
+  const sync = source.match(/#syncAppInstallView\(\) \{([\s\S]*?)\n  \}\n\n  async #requestPersistentStorage/u)?.[1] ?? "";
+  const destroy = source.match(/destroy\(\) \{([\s\S]*?)\n  \}\n\n  #renderStoreUpdate/u)?.[1] ?? "";
+
+  assert.match(source, /from "\.\.\/core\/app-install\.js"/u);
+  assert.match(source, /window\.addEventListener\("beforeinstallprompt", \(event\) => this\.#captureAppInstallPrompt\(event\), listenerOptions\)/u);
+  assert.match(source, /window\.addEventListener\("appinstalled", \(event\) => this\.#markAppInstalled\(event\), listenerOptions\)/u);
+  assert.match(source, /window\.matchMedia\?\.\("\(display-mode: standalone\)"\)/u);
+  assert.match(source, /this\.#appInstallController = createAppInstallController\(\{ installed: Boolean\(this\.#displayModeQuery\?\.matches\) \}\)/u);
+  assert.match(source, /this\.#displayModeListener = \(\) => \{\s+if \(this\.#displayModeQuery\?\.matches\) this\.#markAppInstalled\(\);\s+\}/u);
+  assert.match(source, /this\.#displayModeQuery\?\.addEventListener\?\.\("change", this\.#displayModeListener\)/u);
+  assert.match(source, /if \(action === "install-app"\) this\.#promptAppInstall\(control\)/u);
+  assert.match(source, /id="app-install-status"/u);
+  assert.match(source, /data-action="install-app"[\s\S]*?data-app-install-action/u);
+  assert.match(styles, /\[hidden\],\s*\.hidden \{ display: none !important; \}/u);
+  assert.match(settings, /const appInstallStatus = this\.#appInstallController\?\.getStatus\(\) \?\? APP_INSTALL_STATUS\.UNAVAILABLE/u);
+  assert.match(settings, /const appInstall = APP_INSTALL_DETAILS\[appInstallStatus\] \?\? APP_INSTALL_DETAILS\[APP_INSTALL_STATUS\.UNAVAILABLE\]/u);
+  assert.match(settings, /const appInstallAvailable = appInstallStatus === APP_INSTALL_STATUS\.AVAILABLE/u);
+  assert.match(settings, /\$\{appInstall\.hidden \? "hidden " : ""\}\$\{appInstallAvailable \? "" : 'aria-disabled="true" tabindex="-1"'\}/u);
+  assert.match(settings, /id="app-install-status">\$\{appInstall\.message\}/u);
+  assert.match(settings, /data-app-install-action>\$\{appInstall\.action\}/u);
+  assert.match(capture, /this\.#appInstallController\?\.capture\(event\)/u);
+  assert.match(capture, /this\.#syncAppInstallView\(\)/u);
+  assert.match(installed, /event && event\.isTrusted !== true/u);
+  assert.match(installed, /this\.#appInstallController\?\.markInstalled\(\)/u);
+  assert.match(installed, /!changed \|\| !updated \|\| !isSettingsRoute\(location\.hash\) \|\| this\.#root\.querySelector\("dialog\[open\]"\)/u);
+  assert.ok(installed.indexOf("if (!changed") < installed.indexOf("this.#announce"));
+  assert.match(installed, /this\.#toast\(message, "success", false\)/u);
+  assert.match(prompt, /const pendingResult = controller\.prompt\(\);\s+this\.#syncAppInstallView\(\);\s+const result = await pendingResult/u);
+  assert.match(prompt, /result\.status === APP_INSTALL_STATUS\.ACCEPTED/u);
+  assert.match(accepted, /仍等待安装完成确认/u);
+  assert.doesNotMatch(accepted, /this\.#toast|APP_INSTALL_STATUS\.INSTALLED|安装完成。/u);
+  assert.doesNotMatch(dismissed, /this\.#toast/u);
+  assert.match(prompt, /!reportControl\?\.isConnected \|\| this\.#root\.querySelector\("dialog\[open\]"\)/u);
+  assert.ok(prompt.indexOf("if (!updated") < prompt.indexOf("if (result.status === APP_INSTALL_STATUS.ACCEPTED"));
+  assert.match(promptError, /!updated \|\| !isSettingsRoute\(location\.hash\) \|\| !reportControl\?\.isConnected \|\| this\.#root\.querySelector\("dialog\[open\]"\)/u);
+  assert.ok(promptError.indexOf("if (!updated") < promptError.indexOf("this.#toast"));
+  assert.match(sync, /return syncAppInstallView\(this\.#root, this\.#appInstallController\?\.getStatus\(\)\)/u);
+  assert.match(destroy, /this\.#appInstallController\?\.destroy\(\)/u);
+  assert.match(destroy, /this\.#displayModeQuery\?\.removeEventListener\?\.\("change", this\.#displayModeListener\)/u);
+  assert.match(destroy, /this\.#appInstallController = null/u);
+  assert.match(destroy, /this\.#displayModeQuery = null/u);
+  assert.match(destroy, /this\.#displayModeListener = null/u);
+  for (const handler of [capture, installed, prompt, sync]) {
+    assert.doesNotMatch(handler, /this\.#store\.(?:update|importSnapshot|restorePrevious)/u);
+    assert.doesNotMatch(handler, /(?:localStorage|sessionStorage|navigator\.storage|#requestPersistentStorage)/u);
+    assert.doesNotMatch(handler, /this\.render\(/u);
+    assert.doesNotMatch(handler, /this\.#focusSelector\s*=/u);
+  }
 });
 
 test("toast output is text-bounded, count-bounded, and timer-bounded", async () => {

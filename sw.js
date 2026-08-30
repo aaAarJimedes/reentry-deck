@@ -4,7 +4,7 @@
 // network-first strategy without mutating the installed version cache, so
 // online clients stay fresh while the cached release remains one complete,
 // internally consistent offline fallback.
-const BUILD_ID = "0.245.0";
+const BUILD_ID = "0.246.0";
 const CACHE_PREFIX = "reentry-deck-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const NETWORK_TIMEOUT_MS = 4_000;
@@ -18,6 +18,7 @@ const SHELL_PATHS = Object.freeze([
   "./src/styles.css",
   "./src/main.js",
   "./src/ui/app.js",
+  "./src/core/app-install.js",
   "./src/core/capture.js",
   "./src/core/backup-file.js",
   "./src/core/download.js",
