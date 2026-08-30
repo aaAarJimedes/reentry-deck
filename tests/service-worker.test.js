@@ -17,7 +17,7 @@ function createHarness() {
   let claimed = false;
   let failRuntimeOpen = false;
   let failRuntimeMatch = false;
-  let failRuntimePut = false;
+  let runtimePutCalls = 0;
   let stallRuntimeOpen = false;
   let failCacheKeys = false;
   const failedCacheDeletes = new Set();
@@ -38,7 +38,7 @@ function createHarness() {
     }
 
     async put(request, response) {
-      if (failRuntimePut) throw new Error("cache quota");
+      runtimePutCalls += 1;
       this.entries.set(cacheKey(request), response.clone());
     }
 
@@ -99,10 +99,10 @@ function createHarness() {
     stores,
     cacheStorage,
     get claimed() { return claimed; },
+    get runtimePutCalls() { return runtimePutCalls; },
     setFetch(next) { fetchImplementation = next; },
     setRuntimeOpenFailure(value) { failRuntimeOpen = value; },
     setRuntimeMatchFailure(value) { failRuntimeMatch = value; },
-    setRuntimePutFailure(value) { failRuntimePut = value; },
     setRuntimeOpenStall(value) { stallRuntimeOpen = value; },
     setCacheKeysFailure(value) { failCacheKeys = value; },
     setCacheDeleteFailure(name) { failedCacheDeletes.add(name); },
@@ -235,39 +235,46 @@ describe("service worker lifecycle", () => {
     assert.equal(await unknownAsset.text(), "temporary failure");
   });
 
-  test("runtime cache quota failure never hides a successful network response", async () => {
+  test("successful navigation leaves the installed offline document unchanged", async () => {
     await lifecyclePromise(harness.handlers.get("install"));
-    harness.setRuntimePutFailure(true);
-    harness.setFetch(async () => new Response("fresh network copy", { status: 200 }));
+    const fetchHandler = harness.handlers.get("fetch");
+    const lifetimes = [];
+    harness.setFetch(async () => new Response("next deployment document", { status: 200 }));
 
-    const response = await interceptedResponse(harness.handlers.get("fetch"), {
-      method: "GET",
-      mode: "cors",
-      url: `${scope}src/main.js`
+    const online = await interceptedResponse(fetchHandler, {
+      method: "GET", mode: "navigate", url: scope
+    }, lifetimes);
+    assert.equal(await online.text(), "next deployment document");
+    await Promise.all(lifetimes);
+    await new Promise(setImmediate);
+    assert.equal(harness.runtimePutCalls, 0);
+
+    harness.setFetch(async () => { throw new Error("offline"); });
+    const offline = await interceptedResponse(fetchHandler, {
+      method: "GET", mode: "navigate", url: scope
     });
-
-    assert.equal(response.status, 200);
-    assert.equal(await response.text(), "fresh network copy");
-    assert.equal(harness.pendingTimers, 0);
+    assert.equal(await offline.text(), "online:/index.html");
   });
 
-  test("runtime response clone failure never replaces a successful network response with stale cache", async () => {
+  test("successful shell response leaves the installed offline asset unchanged", async () => {
     await lifecyclePromise(harness.handlers.get("install"));
-    harness.setFetch(async (request) => {
-      const response = new Response(`fresh:${new URL(request.url).pathname}`, { status: 200 });
-      Object.defineProperty(response, "clone", {
-        value() { throw new Error("body cannot be cloned"); }
-      });
-      return response;
-    });
     const fetchHandler = harness.handlers.get("fetch");
+    const lifetimes = [];
+    harness.setFetch(async () => new Response("next deployment module", { status: 200 }));
 
-    const navigation = await interceptedResponse(fetchHandler, { method: "GET", mode: "navigate", url: scope });
-    const asset = await interceptedResponse(fetchHandler, { method: "GET", mode: "cors", url: `${scope}src/main.js` });
+    const online = await interceptedResponse(fetchHandler, {
+      method: "GET", mode: "cors", url: `${scope}src/main.js`
+    }, lifetimes);
+    assert.equal(await online.text(), "next deployment module");
+    await Promise.all(lifetimes);
+    await new Promise(setImmediate);
+    assert.equal(harness.runtimePutCalls, 0);
 
-    assert.equal(await navigation.text(), "fresh:/");
-    assert.equal(await asset.text(), "fresh:/src/main.js");
-    assert.equal(harness.pendingTimers, 0);
+    harness.setFetch(async () => { throw new Error("offline"); });
+    const offline = await interceptedResponse(fetchHandler, {
+      method: "GET", mode: "cors", url: `${scope}src/main.js`
+    });
+    assert.equal(await offline.text(), "online:/src/main.js");
   });
 
   test("runtime cache open or read denial never hides the network and has an explicit offline failure", async () => {
@@ -314,10 +321,9 @@ describe("service worker lifecycle", () => {
 
     assert.equal(response.status, 200);
     assert.equal(await response.text(), "fast network");
-    assert.equal(lifetimes.length, 1);
+    assert.equal(lifetimes.length, 0);
     assert.equal(harness.pendingTimers, 1, "only the bounded cache-open timer remains");
     harness.fireTimers();
-    await Promise.all(lifetimes);
     assert.equal(harness.pendingTimers, 0);
   });
 
@@ -361,7 +367,7 @@ describe("service worker lifecycle", () => {
     controller.abort();
 
     await assert.rejects(responsePromise, { name: "AbortError" });
-    await Promise.all(lifetimes);
+    assert.equal(lifetimes.length, 0);
     assert.equal(forwardedAbort, true);
     assert.equal(harness.pendingTimers, 0);
   });

@@ -1,9 +1,10 @@
 "use strict";
 
-// The build id provides a clean release boundary. Runtime requests also use a
-// network-first strategy, so a forgotten bump cannot strand online clients on
-// an old shell; the cached release remains the complete offline fallback.
-const BUILD_ID = "0.231.0";
+// The build id provides a clean release boundary. Runtime requests use a
+// network-first strategy without mutating the installed version cache, so
+// online clients stay fresh while the cached release remains one complete,
+// internally consistent offline fallback.
+const BUILD_ID = "0.232.0";
 const CACHE_PREFIX = "reentry-deck-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const NETWORK_TIMEOUT_MS = 4_000;
@@ -107,26 +108,6 @@ async function matchRuntimeCache(cache, request) {
   }
 }
 
-async function refreshRuntimeCache(cachePromise, request, response) {
-  const cache = await cachePromise;
-  if (!cache) return;
-  try {
-    await cache.put(request, response);
-  } catch {
-    // A successful network response must not fail because an optional runtime
-    // cache refresh exceeded capacity or lost permission.
-  }
-}
-
-function deferRuntimeRefresh(defer, cachePromise, request, response) {
-  try {
-    defer(refreshRuntimeCache(cachePromise, request, response.clone()));
-  } catch {
-    // Response cloning is part of the optional cache refresh. A valid network
-    // response remains usable even if the host refuses to clone its body.
-  }
-}
-
 self.addEventListener("install", (event) => {
   event.waitUntil(precacheShell());
   // Deliberately do not call skipWaiting(): open tabs keep using their complete
@@ -162,13 +143,11 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-async function serveNavigation(request, defer) {
+async function serveNavigation(request) {
   const cachePromise = openRuntimeCache();
   try {
     const response = await fetchWithTimeout(request);
-    if (isUsableResponse(response)) {
-      deferRuntimeRefresh(defer, cachePromise, documentURL, response);
-    } else {
+    if (!isUsableResponse(response)) {
       const cache = await cachePromise;
       const cachedDocument = await matchRuntimeCache(cache, documentURL);
       if (cachedDocument) return cachedDocument;
@@ -190,13 +169,11 @@ async function serveNavigation(request, defer) {
   }
 }
 
-async function serveShellAsset(request, canonicalURL, defer) {
+async function serveShellAsset(request, canonicalURL) {
   const cachePromise = openRuntimeCache();
   try {
     const response = await fetchWithTimeout(request);
-    if (isUsableResponse(response)) {
-      deferRuntimeRefresh(defer, cachePromise, canonicalURL, response);
-    } else {
+    if (!isUsableResponse(response)) {
       const cache = await cachePromise;
       const cachedResponse = await matchRuntimeCache(cache, canonicalURL);
       if (cachedResponse) return cachedResponse;
@@ -214,20 +191,6 @@ async function serveShellAsset(request, canonicalURL, defer) {
   }
 }
 
-function respondWithLifetime(event, serve) {
-  const backgroundTasks = [];
-  let finishResponse;
-  const responseFinished = new Promise((resolve) => {
-    finishResponse = resolve;
-  });
-  event.waitUntil((async () => {
-    await responseFinished;
-    await Promise.all(backgroundTasks);
-  })());
-  const responsePromise = serve((promise) => backgroundTasks.push(promise));
-  event.respondWith(responsePromise.finally(finishResponse));
-}
-
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") {
@@ -240,7 +203,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    respondWithLifetime(event, (defer) => serveNavigation(request, defer));
+    event.respondWith(serveNavigation(request));
     return;
   }
 
@@ -250,6 +213,6 @@ self.addEventListener("fetch", (event) => {
     || requestURL.pathname.startsWith(`${scopePath}assets/`)
     || requestURL.pathname === `${scopePath}app.webmanifest`;
   if (shellURLs.has(canonicalURL) || isRuntimeAsset) {
-    respondWithLifetime(event, (defer) => serveShellAsset(request, canonicalURL, defer));
+    event.respondWith(serveShellAsset(request, canonicalURL));
   }
 });
