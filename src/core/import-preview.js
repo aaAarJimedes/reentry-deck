@@ -1,8 +1,7 @@
-import { compactText, containsUnsafeTextControl, normalizeState, validateImportCandidate, validateState } from "./model.js";
+import { compactText, containsUnsafeTextControl, isCanonicalSnapshotChecksum, normalizeState, validateImportCandidate, validateState } from "./model.js";
 
 const COLLECTION_NAMES = Object.freeze(["projects", "sessions", "crumbs", "checkpoints"]);
 const DETAIL_LIMIT = 6;
-const CHECKSUM_PATTERN = /^fnv1a32:[0-9a-f]{8}$/u;
 export const IMPORT_METADATA_SCAN_LIMIT = 320;
 const CANONICAL_ISO_LENGTH = 24;
 
@@ -53,7 +52,7 @@ export function readImportSnapshot(value, now = Date.now()) {
     }
     let checksumVerified = null;
     if ("checksum" in value) {
-      if (typeof value.checksum !== "string" || !CHECKSUM_PATTERN.test(value.checksum)) {
+      if (!isCanonicalSnapshotChecksum(value.checksum)) {
         throw new Error("导入失败：备份校验码格式无效。 ");
       }
       if (checksumSnapshotData(value.data) !== value.checksum) {

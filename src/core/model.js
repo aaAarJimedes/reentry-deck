@@ -15,6 +15,7 @@ const SESSION_CLOSE_REASONS_BY_STATUS = Object.freeze({
 const COLOR_PALETTE = ["fern", "amber", "clay", "sky", "plum", "slate"];
 const UNSAFE_TEXT_CONTROL_PATTERN = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200b\u200e\u200f\u202a-\u202e\u2060-\u206f\ufeff]/u;
 const UNSAFE_ID_CONTROL_PATTERN = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/u;
+const PREVIOUS_CHECKSUM_PATTERN = /^fnv1a32:[0-9a-f]{8}$/u;
 const STATE_FIELDS = new Set(["schemaVersion", "meta", "settings", "projects", "sessions", "crumbs", "checkpoints", "ui"]);
 const META_FIELDS = new Set(["createdAt", "updatedAt", "revision"]);
 const SETTINGS_FIELDS = new Set(["theme", "staleAfterDays", "reducedMotion"]);
@@ -37,6 +38,10 @@ export const IMPORT_LIMITS = Object.freeze({
   returnHint: 400,
   reportedErrors: 50
 });
+
+export function isCanonicalSnapshotChecksum(value) {
+  return typeof value === "string" && PREVIOUS_CHECKSUM_PATTERN.test(value);
+}
 
 let fallbackIdSequence = 0;
 

@@ -1144,7 +1144,7 @@ export class ReentryApp {
           <div class="setting-row"><div class="setting-copy"><h3>本机数据保护</h3><p id="storage-durability-status">${durability.message}</p></div><button class="secondary-button" type="button" data-action="request-persistent-storage" aria-describedby="storage-durability-status" ${durabilityUnavailable ? "disabled" : ""}>${icon("shield")} <span data-storage-durability-action>${durability.action}</span></button></div>
           <div class="setting-row"><div class="setting-copy"><h3>导出完整备份</h3><p>包含项目、会话、轨迹、检查点和设置。当前约 ${size}。</p></div><button class="secondary-button" type="button" data-action="export-data">${icon("download")} 导出 JSON</button></div>
           <div class="setting-row"><div class="setting-copy"><h3>从备份恢复</h3><p>文件会先在本机校验；有效备份将替换当前工作区。</p></div><button class="secondary-button" type="button" data-action="choose-import">${icon("upload")} 选择文件</button><input class="sr-only" id="import-file" type="file" accept="application/json,.json" data-control="import-file" aria-label="选择 JSON 备份文件" /></div>
-          <div class="setting-row"><div class="setting-copy"><h3>滚动安全快照</h3><p>只保留上一次保存；恢复后再次切换可返回当前版本。重要历史仍应导出备份。</p></div><button class="secondary-button" type="button" data-action="undo-last" data-undo-context="settings" ${this.#store.hasPreviousSnapshot() ? "" : "disabled"}>${icon("undo")} 回到上次保存</button></div>
+          <div class="setting-row"><div class="setting-copy"><h3>滚动安全快照</h3><p>只保留上一次保存；恢复后若新快照成功建立，可再次切换返回恢复前版本。重要历史仍应导出备份。</p></div><button class="secondary-button" type="button" data-action="undo-last" data-undo-context="settings" ${this.#store.hasPreviousSnapshot() ? "" : "disabled"}>${icon("undo")} 回到上次保存</button></div>
         </div></section>
         <aside class="panel storage-visual" data-pressure="${attr(storageUsage.status)}">${brandMark()}<strong>本地优先</strong><p>${state.projects.length} 个项目 · ${state.crumbs.length} 条轨迹<br>${escapeHTML(storageSummary)}<br>${escapeHTML(storagePressure)}<br>没有任何数据被发送到外部服务。</p></aside>
       </div>`;
@@ -1296,7 +1296,7 @@ export class ReentryApp {
           <div class="import-table-wrap"><table class="import-diff-table"><caption class="sr-only">当前工作区与导入结果的记录差异</caption><thead><tr><th scope="col">记录</th><th scope="col">当前</th><th scope="col">导入后</th><th scope="col">新增</th><th scope="col">移除</th><th scope="col">更新</th></tr></thead><tbody>${rows}</tbody></table></div>
           ${projectSections ? `<div class="import-project-changes">${projectSections}</div>` : ""}
           ${(preview.settingsChanged || preview.selectionChanged || preview.orderChangedCollections.length) ? `<p class="import-meta-note">${icon("info")}<span>${preview.settingsChanged ? "界面设置会采用备份版本。" : ""}${preview.selectionChanged ? " 当前选中的项目也会更新。" : ""}${preview.orderChangedCollections.length ? " 同 ID 记录的排列顺序存在变化。" : ""}</span></p>` : ""}
-          <p class="import-rollback-note">当前工作区会自动成为滚动安全快照；导入后可使用“撤销上一次保存”切回。</p>
+          <p class="import-rollback-note">系统会尝试将当前工作区保存为滚动安全快照；快照成功建立后，导入结果才可撤销切回。</p>
           <div class="dialog-actions"><button class="ghost-button" type="button" data-action="close-dialog">取消</button><button class="danger-button" type="button" data-action="confirm-import" ${preview.hasContentChanges ? "" : "disabled"}>确认替换工作区</button></div>
         </div>
       </dialog>`;
@@ -1959,8 +1959,14 @@ export class ReentryApp {
         this.#store.restorePrevious();
       });
       this.#requestPersistentStorage();
-      this.#announce("已恢复到上一次保存；再次操作可切换回来");
-      this.#toast("已恢复上一次保存；需要时可再次撤销。 ", "success", false);
+      const canToggleBack = this.#store.hasPreviousSnapshot();
+      this.#announce(canToggleBack
+        ? "已恢复到上一次保存；再次操作可切换回来"
+        : "已恢复到上一次保存；本次未建立可再次切换的快照");
+      const restoreMessage = canToggleBack
+        ? "已恢复上一次保存；需要时可再次撤销。 "
+        : "已恢复上一次保存；本次无法再次切换，请尽快导出完整备份。 ";
+      this.#toast(restoreMessage, "success", false);
     } catch (error) {
       this.#toast(userFacingErrorMessage(error), "error");
     }
@@ -2134,7 +2140,11 @@ export class ReentryApp {
       });
       this.#requestPersistentStorage();
       if (location.hash !== "#/") location.hash = "#/";
-      this.#toast("备份已按预览结果恢复；上一个工作区仍可撤销回来。 ");
+      const canUndoImport = this.#store.hasPreviousSnapshot();
+      this.#toast(canUndoImport
+        ? "备份已按预览结果恢复；上一个工作区仍可撤销回来。 "
+        : "备份已按预览结果恢复；本次未建立可撤销快照，请立即导出完整备份。 ",
+        canUndoImport ? "success" : "error");
     } catch (error) {
       this.#pendingImport = pending;
       const latestState = this.#store.getState();

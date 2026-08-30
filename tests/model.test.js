@@ -16,6 +16,7 @@ import {
   createEmptyState,
   createProject,
   createSession,
+  isCanonicalSnapshotChecksum,
   isoAtOrAfter,
   isoNow,
   makeId,
@@ -313,6 +314,16 @@ describe("normalizeState", () => {
     assert.equal(normalized.checkpoints[0].summary, "State");
     assert.equal(normalized.checkpoints[0].sessionId, "s1");
     assert.equal(normalized.ui.selectedProjectId, "p1");
+  });
+
+  test("recognizes only canonical snapshot checksums without adding them to workspace metadata", () => {
+    for (const checksum of ["fnv1a32:00000000", "fnv1a32:deadbeef"]) {
+      assert.equal(isCanonicalSnapshotChecksum(checksum), true, checksum);
+    }
+    for (const invalid of [null, "", "fnv1a32:DEADBEEF", "fnv1a32:deadbee", "sha256:deadbeef", 42, false]) {
+      assert.equal(isCanonicalSnapshotChecksum(invalid), false, String(invalid));
+    }
+    assert.deepEqual(normalizeState({ meta: {} }, NOW).meta, createEmptyState(NOW).meta);
   });
 
   test("normalizes legacy missing and null session closure reasons without inventing history", () => {
@@ -734,6 +745,14 @@ describe("validateImportCandidate", () => {
       const state = createEmptyState(NOW);
       state.settings.staleAfterDays = staleAfterDays;
       assert.deepEqual(validateImportCandidate(state), [], String(staleAfterDays));
+    }
+  });
+
+  test("keeps rollback provenance outside strict workspace metadata for cached-client compatibility", () => {
+    for (const previousChecksum of [null, "fnv1a32:00000000", "", 42, false]) {
+      const state = createEmptyState(NOW);
+      state.meta.previousChecksum = previousChecksum;
+      assert.match(validateImportCandidate(state).join("；"), /元数据包含未知字段：previousChecksum/u, String(previousChecksum));
     }
   });
 

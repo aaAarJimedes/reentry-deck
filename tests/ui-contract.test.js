@@ -731,6 +731,22 @@ test("undo focus is armed only for its successful local restore", async () => {
   assert.ok(restore.indexOf("this.#toast") < restore.indexOf("} catch (error)"));
 });
 
+test("rollback messaging promises a reverse switch only after the new snapshot is verified", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const restore = source.match(/#restorePrevious\(context = "topbar"\) \{([\s\S]*?)\n  \}\n\n  #showMoreTimeline/u)?.[1] ?? "";
+  const confirmImport = source.match(/#confirmImport\(\) \{([\s\S]*?)\n  \}\n\n  #closeDialog/u)?.[1] ?? "";
+
+  assert.match(source, /恢复后若新快照成功建立，可再次切换返回恢复前版本/u);
+  assert.match(source, /系统会尝试将当前工作区保存为滚动安全快照；快照成功建立后/u);
+  assert.match(restore, /const canToggleBack = this\.#store\.hasPreviousSnapshot\(\)/u);
+  assert.ok(restore.indexOf("this.#store.restorePrevious") < restore.indexOf("const canToggleBack"));
+  assert.match(restore, /canToggleBack[\s\S]*?本次无法再次切换/u);
+  assert.match(confirmImport, /const canUndoImport = this\.#store\.hasPreviousSnapshot\(\)/u);
+  assert.ok(confirmImport.indexOf("this.#store.importSnapshot") < confirmImport.indexOf("const canUndoImport"));
+  assert.match(confirmImport, /canUndoImport[\s\S]*?本次未建立可撤销快照/u);
+  assert.doesNotMatch(source, /当前工作区会自动成为滚动安全快照/u);
+});
+
 test("import focus and preview refresh are bound to the actual commit outcome", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const handler = source.match(/#confirmImport\(\) \{([\s\S]*?)\n  \}\n\n  #announce/u)?.[1] ?? "";
