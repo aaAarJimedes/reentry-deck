@@ -50,33 +50,38 @@ test("clearing the gate invalidates an armed request", () => {
   });
 });
 
-test("a real stale-tab rejection cannot transfer capture focus to the adopted workspace", () => {
-  const storage = new MemoryStorage();
-  const writer = new AppStore(storage, Date.parse("2026-08-30T00:00:00.000Z"), null);
-  const stale = new AppStore(storage, Date.parse("2026-08-30T00:00:00.000Z"), null);
-  const gate = createLocalCommitFocusGate();
-  const focused = [];
-  const sources = [];
-  stale.subscribe((_state, event) => {
-    sources.push(event.source);
-    const selector = gate.consume(event.source);
-    if (selector) focused.push(selector);
+for (const [label, focusSelector] of [
+  ["main content", "#main-content"],
+  ["follow-up capture", '[data-form="capture-crumb"] textarea']
+]) {
+  test(`a real stale-tab rejection cannot transfer ${label} focus to the adopted workspace`, () => {
+    const storage = new MemoryStorage();
+    const writer = new AppStore(storage, Date.parse("2026-08-30T00:00:00.000Z"), null);
+    const stale = new AppStore(storage, Date.parse("2026-08-30T00:00:00.000Z"), null);
+    const gate = createLocalCommitFocusGate();
+    const focused = [];
+    const sources = [];
+    stale.subscribe((_state, event) => {
+      sources.push(event.source);
+      const selector = gate.consume(event.source);
+      if (selector) focused.push(selector);
+    });
+
+    writer.update((state) => { state.settings.theme = "dark"; }, Date.parse("2026-08-30T00:01:00.000Z"));
+    assert.throws(() => gate.run(focusSelector, () => {
+      stale.update((state) => { state.settings.staleAfterDays = 14; }, Date.parse("2026-08-30T00:02:00.000Z"));
+    }), /另一个标签页刚刚更新/u);
+
+    assert.deepEqual(sources, ["external"]);
+    assert.deepEqual(focused, []);
+    assert.equal(stale.getState().settings.theme, "dark");
+    stale.update((state) => { state.settings.staleAfterDays = 14; }, Date.parse("2026-08-30T00:03:00.000Z"));
+    assert.deepEqual(sources, ["external", "local"]);
+    assert.deepEqual(focused, []);
+
+    gate.run(focusSelector, () => {
+      stale.update((state) => { state.settings.staleAfterDays = 21; }, Date.parse("2026-08-30T00:04:00.000Z"));
+    });
+    assert.deepEqual(focused, [focusSelector]);
   });
-
-  writer.update((state) => { state.settings.theme = "dark"; }, Date.parse("2026-08-30T00:01:00.000Z"));
-  assert.throws(() => gate.run('[data-form="capture-crumb"] textarea', () => {
-    stale.update((state) => { state.settings.staleAfterDays = 14; }, Date.parse("2026-08-30T00:02:00.000Z"));
-  }), /另一个标签页刚刚更新/u);
-
-  assert.deepEqual(sources, ["external"]);
-  assert.deepEqual(focused, []);
-  assert.equal(stale.getState().settings.theme, "dark");
-  stale.update((state) => { state.settings.staleAfterDays = 14; }, Date.parse("2026-08-30T00:03:00.000Z"));
-  assert.deepEqual(sources, ["external", "local"]);
-  assert.deepEqual(focused, []);
-
-  gate.run('[data-form="capture-crumb"] textarea', () => {
-    stale.update((state) => { state.settings.staleAfterDays = 21; }, Date.parse("2026-08-30T00:04:00.000Z"));
-  });
-  assert.deepEqual(focused, ['[data-form="capture-crumb"] textarea']);
-});
+}

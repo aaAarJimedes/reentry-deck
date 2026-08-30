@@ -709,6 +709,23 @@ test("quick docking reuses the core plan's active-context positions", async () =
   assert.doesNotMatch(handler, /(?:state|next)\.(?:sessions|projects)\.find/u);
 });
 
+test("quick docking focuses only after its own local commit", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const handler = source.match(/#quickDock\(sessionId, continueAfter\) \{([\s\S]*?)\n  \}\n\n  #editProject/u)?.[1] ?? "";
+
+  assert.match(source, /if \(action === "quick-dock"\) this\.#quickDock\(control\.dataset\.sessionId, false\)/u);
+  assert.match(source, /if \(action === "interrupt-and-continue"\) this\.#quickDock\(control\.dataset\.sessionId, true\)/u);
+  assert.match(handler, /const focusSelector = continueAfter \? '\[data-form="capture-crumb"\] textarea' : "#main-content"/u);
+  assert.match(handler, /this\.#localCommitFocusGate\.run\(focusSelector, \(\) => \{[\s\S]*?this\.#store\.update/u);
+  assert.ok(handler.indexOf("#localCommitFocusGate.run") < handler.indexOf("#store.update"));
+  assert.doesNotMatch(handler, /this\.#focusSelector\s*=/u);
+  assert.match(handler, /current\.closeReason = continueAfter \? "interrupted" : "quick-dock"/u);
+  assert.match(handler, /if \(followUp\) \{[\s\S]*?next\.sessions\.push\(followUp\)/u);
+  assert.ok(handler.indexOf("#store.update") < handler.indexOf("this.#announce"));
+  assert.match(handler, /this\.#announce\(continueAfter \? "旧会话已标记中断，并已开始接续会话" : "会话已快速停靠"\)/u);
+  assert.match(handler, /this\.#toast\(continueAfter \? "旧现场已保留，接续会话已经开始。" : "已用现有证据生成低置信度检查点。 ", "success", false\)/u);
+});
+
 test("reentry brief copy is accessible and ignores stale asynchronous completions", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
 

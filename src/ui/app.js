@@ -1530,30 +1530,32 @@ export class ReentryApp {
         sourceCheckpointId: checkpoint.id
       }, Date.parse(eventTime) + 1) : null;
 
-      this.#focusSelector = continueAfter ? '[data-form="capture-crumb"] textarea' : "#main-content";
-      this.#store.update((next) => {
-        const current = next.sessions[sessionIndex];
-        const currentProject = next.projects[projectIndex];
-        if (current?.id !== targetSessionId || current.status !== "active"
-          || currentProject?.id !== current.projectId || currentProject.status === "archived") {
-          throw new Error("会话状态刚刚发生变化，请重新确认。 ");
-        }
-        next.checkpoints.push(checkpoint);
-        current.status = "abandoned";
-        current.endedAt = checkpoint.createdAt;
-        current.checkpointId = checkpoint.id;
-        current.closeReason = continueAfter ? "interrupted" : "quick-dock";
-        currentProject.updatedAt = checkpoint.createdAt;
-        if (recordedNextAction) {
-          currentProject.nextAction = input.nextAction;
-          currentProject.nextActionUpdatedAt = checkpoint.createdAt;
-        }
-        if (followUp) {
-          next.sessions.push(followUp);
-          currentProject.lastOpenedAt = followUp.startedAt;
-          currentProject.updatedAt = followUp.startedAt;
-        }
-      }, followUp ? Date.parse(followUp.startedAt) : now);
+      const focusSelector = continueAfter ? '[data-form="capture-crumb"] textarea' : "#main-content";
+      this.#localCommitFocusGate.run(focusSelector, () => {
+        this.#store.update((next) => {
+          const current = next.sessions[sessionIndex];
+          const currentProject = next.projects[projectIndex];
+          if (current?.id !== targetSessionId || current.status !== "active"
+            || currentProject?.id !== current.projectId || currentProject.status === "archived") {
+            throw new Error("会话状态刚刚发生变化，请重新确认。 ");
+          }
+          next.checkpoints.push(checkpoint);
+          current.status = "abandoned";
+          current.endedAt = checkpoint.createdAt;
+          current.checkpointId = checkpoint.id;
+          current.closeReason = continueAfter ? "interrupted" : "quick-dock";
+          currentProject.updatedAt = checkpoint.createdAt;
+          if (recordedNextAction) {
+            currentProject.nextAction = input.nextAction;
+            currentProject.nextActionUpdatedAt = checkpoint.createdAt;
+          }
+          if (followUp) {
+            next.sessions.push(followUp);
+            currentProject.lastOpenedAt = followUp.startedAt;
+            currentProject.updatedAt = followUp.startedAt;
+          }
+        }, followUp ? Date.parse(followUp.startedAt) : now);
+      });
 
       if (this.#acknowledgedStaleSessionId === targetSessionId) this.#acknowledgedStaleSessionId = null;
       this.#announce(continueAfter ? "旧会话已标记中断，并已开始接续会话" : "会话已快速停靠");
