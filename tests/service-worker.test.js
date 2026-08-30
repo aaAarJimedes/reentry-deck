@@ -17,11 +17,13 @@ function createHarness() {
   let claimed = false;
   let failRuntimeOpen = false;
   let failRuntimeMatch = false;
+  let stallRuntimeMatch = false;
   let runtimePutCalls = 0;
   let stallRuntimeOpen = false;
   let failCacheKeys = false;
   const failedCacheDeletes = new Set();
   const timers = new Map();
+  const timerDelays = new Map();
   let timerSequence = 0;
   let fetchImplementation = async (request) => new Response(`online:${new URL(request.url).pathname}`, { status: 200 });
 
@@ -43,6 +45,7 @@ function createHarness() {
     }
 
     async match(request) {
+      if (stallRuntimeMatch) return new Promise(() => {});
       if (failRuntimeMatch) throw new Error("cache read denied");
       return this.entries.get(cacheKey(request))?.clone();
     }
@@ -83,13 +86,15 @@ function createHarness() {
     DOMException,
     caches: cacheStorage,
     fetch: (request, options) => fetchImplementation(request, options),
-    setTimeout(callback) {
+    setTimeout(callback, delay) {
       const id = ++timerSequence;
       timers.set(id, callback);
+      timerDelays.set(id, delay);
       return id;
     },
     clearTimeout(id) {
       timers.delete(id);
+      timerDelays.delete(id);
     },
     self
   });
@@ -103,16 +108,19 @@ function createHarness() {
     setFetch(next) { fetchImplementation = next; },
     setRuntimeOpenFailure(value) { failRuntimeOpen = value; },
     setRuntimeMatchFailure(value) { failRuntimeMatch = value; },
+    setRuntimeMatchStall(value) { stallRuntimeMatch = value; },
     setRuntimeOpenStall(value) { stallRuntimeOpen = value; },
     setCacheKeysFailure(value) { failCacheKeys = value; },
     setCacheDeleteFailure(name) { failedCacheDeletes.add(name); },
     fireTimers() {
       for (const [id, callback] of [...timers]) {
         timers.delete(id);
+        timerDelays.delete(id);
         callback();
       }
     },
-    get pendingTimers() { return timers.size; }
+    get pendingTimers() { return timers.size; },
+    get pendingTimerDelays() { return [...timerDelays.values()]; }
   };
 }
 
@@ -346,6 +354,40 @@ describe("service worker lifecycle", () => {
     harness.fireTimers();
     const asset = await assetPromise;
     assert.equal(await asset.text(), "online:/src/main.js");
+    assert.equal(harness.pendingTimers, 0);
+  });
+
+  test("a stalled runtime cache read resolves offline fallbacks within its own bound", async () => {
+    await lifecyclePromise(harness.handlers.get("install"));
+    harness.setRuntimeMatchStall(true);
+    harness.setFetch(async () => { throw new Error("offline"); });
+    const fetchHandler = harness.handlers.get("fetch");
+
+    const navigationPromise = interceptedResponse(fetchHandler, {
+      method: "GET",
+      mode: "navigate",
+      url: scope
+    });
+    for (let attempt = 0; attempt < 10 && harness.pendingTimers !== 1; attempt += 1) await Promise.resolve();
+    assert.equal(harness.pendingTimers, 1, "the bounded cache-match timer must own the stalled fallback");
+    assert.deepEqual(harness.pendingTimerDelays, [750]);
+    harness.fireTimers();
+    const navigation = await navigationPromise;
+    assert.equal(navigation.status, 503);
+    assert.match(await navigation.text(), /离线状态下无法载入复航台/u);
+
+    const assetPromise = interceptedResponse(fetchHandler, {
+      method: "GET",
+      mode: "cors",
+      url: `${scope}src/main.js`
+    });
+    for (let attempt = 0; attempt < 10 && harness.pendingTimers !== 1; attempt += 1) await Promise.resolve();
+    assert.equal(harness.pendingTimers, 1);
+    assert.deepEqual(harness.pendingTimerDelays, [750]);
+    harness.fireTimers();
+    const asset = await assetPromise;
+    assert.equal(asset.status, 503);
+    assert.equal(await asset.text(), "Offline asset unavailable");
     assert.equal(harness.pendingTimers, 0);
   });
 

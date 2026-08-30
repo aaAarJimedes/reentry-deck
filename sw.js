@@ -4,7 +4,7 @@
 // network-first strategy without mutating the installed version cache, so
 // online clients stay fresh while the cached release remains one complete,
 // internally consistent offline fallback.
-const BUILD_ID = "0.235.0";
+const BUILD_ID = "0.236.0";
 const CACHE_PREFIX = "reentry-deck-shell-";
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_ID}`;
 const NETWORK_TIMEOUT_MS = 4_000;
@@ -101,10 +101,18 @@ async function openRuntimeCache() {
 
 async function matchRuntimeCache(cache, request) {
   if (!cache) return null;
+  let timeoutId;
   try {
-    return await cache.match(request) ?? null;
+    return await Promise.race([
+      cache.match(request),
+      new Promise((resolve) => {
+        timeoutId = setTimeout(() => resolve(null), RUNTIME_CACHE_TIMEOUT_MS);
+      })
+    ]) ?? null;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
