@@ -138,6 +138,7 @@ export class ReentryApp {
   #store;
   #timerId;
   #focusSelector = null;
+  #pendingLocalCommitFocusSelector = null;
   #workspaceCounts = null;
   #activeSession = null;
   #noticeQueue = [];
@@ -207,7 +208,7 @@ export class ReentryApp {
         if (this.#colorSchemeQuery) this.#syncThemeColor();
       };
       this.#colorSchemeQuery?.addEventListener?.("change", this.#colorSchemeListener);
-      this.#unsubscribeStore = this.#store.subscribe((_state, event) => this.render({ preserveDialog: event?.source === "external" }));
+      this.#unsubscribeStore = this.#store.subscribe((_state, event) => this.#renderStoreUpdate(event));
 
       this.#timerId = window.setInterval(() => this.#refreshTimers(), 1000);
       this.render();
@@ -237,6 +238,7 @@ export class ReentryApp {
     this.#pendingProjectEdit = null;
     this.#newProjectTemplate = null;
     this.#pendingCheckpointSessionId = null;
+    this.#pendingLocalCommitFocusSelector = null;
     this.#activeSession = null;
     this.#acknowledgedStaleSessionId = null;
     this.#timelineLimits.clear();
@@ -254,6 +256,14 @@ export class ReentryApp {
     this.#toastTimers.clear();
     this.#toasts = [];
     this.#store?.destroy?.();
+  }
+
+  #renderStoreUpdate(event) {
+    if (event?.source === "local" && this.#pendingLocalCommitFocusSelector) {
+      this.#focusSelector = this.#pendingLocalCommitFocusSelector;
+      this.#pendingLocalCommitFocusSelector = null;
+    }
+    this.render({ preserveDialog: event?.source === "external" });
   }
 
   render({ preserveDialog = false } = {}) {
@@ -730,7 +740,7 @@ export class ReentryApp {
     const decisionRemaining = decisionTotal - card.decisions.length;
     return `
       <section class="panel reentry-card" aria-labelledby="reentry-card-heading">
-        <div class="panel-header inline-between"><div><h2 id="reentry-card-heading">60 秒复航卡</h2><p>${card.checkpoint ? (card.checkpoint.captureMode === "quick" ? `快速停靠 · ${formatDateTime(card.checkpoint.createdAt)} · 请先复核` : `来自 ${formatDateTime(card.checkpoint.createdAt)} 的可靠检查点`) : "信息不足时，从三问校准开始"}</p></div>${this.#renderReentryExportTools(card)}</div>
+        <div class="panel-header inline-between"><div><h2 id="reentry-card-heading" tabindex="-1">60 秒复航卡</h2><p>${card.checkpoint ? (card.checkpoint.captureMode === "quick" ? `快速停靠 · ${formatDateTime(card.checkpoint.createdAt)} · 请先复核` : `来自 ${formatDateTime(card.checkpoint.createdAt)} 的可靠检查点`) : "信息不足时，从三问校准开始"}</p></div>${this.#renderReentryExportTools(card)}</div>
         <div class="panel-body">
           ${contextGapTotal ? `<div class="evidence-warning" role="status">${icon("alert")} 检查点之后还有 ${contextGapTotal} 段未收拢或中断的会话，完整度已下调；请先核对现场。</div>` : ""}
           ${card.readinessGaps.length ? `<div class="reentry-gaps" role="note"><strong>${icon("compass")} 复航缺口</strong><ul>${card.readinessGaps.map((gap) => `<li>${escapeHTML(gap)}</li>`).join("")}</ul>${card.checkpoint?.captureMode === "quick" ? '<button class="secondary-button" type="button" data-action="review-quick-checkpoint">复核并升级检查点</button>' : ""}</div>` : ""}
@@ -770,7 +780,7 @@ export class ReentryApp {
             <label class="field"><span>留下工作面包屑</span><textarea name="text" rows="3" maxlength="${IMPORT_LIMITS.crumbText}" placeholder="一句话就够：刚发现了什么、做了什么决定、卡在哪里…" required></textarea></label>
             <div class="capture-row">
               <label class="field"><span class="sr-only">记录类型</span><select name="type" aria-label="记录类型">${Object.entries(CRUMB_LABELS).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></label>
-              <span class="muted capture-shortcut-hint">快捷键 C 可随时回到输入框</span>
+              <span class="muted capture-context-hint">记录会归入当前活动会话</span>
               <button class="primary-button" type="submit">${icon("plus")} 记录</button>
             </div>
           </form>
@@ -1275,24 +1285,6 @@ export class ReentryApp {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z" && !isTypingTarget(event.target)) {
       event.preventDefault();
       this.#restorePrevious("topbar");
-      return;
-    }
-    if (event.ctrlKey || event.metaKey || event.altKey) return;
-    if (isTypingTarget(event.target)) return;
-    if (event.key.toLowerCase() === "n") {
-      event.preventDefault();
-      this.#openNewProjectDialog();
-    }
-    if (event.key.toLowerCase() === "c") {
-      const capture = this.#root.querySelector('[data-form="capture-crumb"] textarea');
-      if (capture) {
-        event.preventDefault();
-        capture.focus();
-      }
-    }
-    if (event.key === "/" || event.key === "?") {
-      event.preventDefault();
-      this.#openDialog("search-dialog");
     }
   }
 
@@ -1459,17 +1451,23 @@ export class ReentryApp {
 
   #reviewQuickCheckpoint(data, form) {
     const { checkpoint, projectIndex, projectTitle } = prepareQuickCheckpointReview(this.#store.getState(), data);
-    this.#focusSelector = "#reentry-card-heading";
-    this.#store.update((state) => {
-      const project = state.projects[projectIndex];
-      if (!project || project.id !== checkpoint.projectId || project.status === "archived") {
-        throw new Error("项目在保存前已不可用。");
-      }
-      state.checkpoints.push(checkpoint);
-      project.nextAction = checkpoint.nextAction;
-      project.nextActionUpdatedAt = checkpoint.createdAt;
-      project.updatedAt = checkpoint.createdAt;
-    }, Date.parse(checkpoint.createdAt));
+    const focusSelector = "#reentry-card-heading";
+    this.#pendingLocalCommitFocusSelector = focusSelector;
+    try {
+      this.#store.update((state) => {
+        const project = state.projects[projectIndex];
+        if (!project || project.id !== checkpoint.projectId || project.status === "archived") {
+          throw new Error("项目在保存前已不可用。");
+        }
+        state.checkpoints.push(checkpoint);
+        project.nextAction = checkpoint.nextAction;
+        project.nextActionUpdatedAt = checkpoint.createdAt;
+        project.updatedAt = checkpoint.createdAt;
+      }, Date.parse(checkpoint.createdAt));
+    } catch (error) {
+      if (this.#pendingLocalCommitFocusSelector === focusSelector) this.#pendingLocalCommitFocusSelector = null;
+      throw error;
+    }
     form.closest("dialog")?.close();
     this.#announce("快速检查点已复核为可靠检查点");
     this.#toast(`“${projectTitle}”已建立新的可靠检查点。`, "success", false);

@@ -982,7 +982,7 @@ textarea:focus { border-color: var(--forest-soft); box-shadow: 0 0 0 3px color-m
 }
 
 .spaced-panel { margin-top: 18px; }
-.capture-shortcut-hint { align-self: center; font-size: 12px; }
+.capture-context-hint { align-self: center; font-size: 12px; }
 .project-archive-actions { margin-top: 14px; }
 .color-fieldset { margin: 0; padding: 0; border: 0; }
 .clipboard-fallback-control { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; }

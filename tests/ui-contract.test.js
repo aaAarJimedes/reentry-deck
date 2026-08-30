@@ -236,6 +236,7 @@ test("session lifecycle warnings refresh after time boundaries without erasing a
   const visibilityRefresh = source.match(/document\.addEventListener\("visibilitychange", \(\) => \{([\s\S]*?)\n      \}, listenerOptions\)/u)?.[1] ?? "";
   const pageRestore = source.match(/window\.addEventListener\("pageshow", \(event\) => \{([\s\S]*?)\n      \}, listenerOptions\)/u)?.[1] ?? "";
   const resume = source.match(/#refreshAfterResume\(\) \{([\s\S]*?)\n  \}\n\n  #refreshTimers/u)?.[1] ?? "";
+  const storeRender = source.match(/#renderStoreUpdate\(event\) \{([\s\S]*?)\n  \}\n\n  render/u)?.[1] ?? "";
 
   assert.match(source, /#sessionHealthSignature = "none"/u);
   assert.match(source, /#calendarDaySignature = "invalid"/u);
@@ -249,7 +250,8 @@ test("session lifecycle warnings refresh after time boundaries without erasing a
   assert.match(visibilityRefresh, /this\.#refreshAfterResume\(\)/u);
   assert.match(pageRestore, /if \(event\.persisted\) this\.#refreshAfterResume\(\)/u);
   assert.ok(resume.indexOf("this.#store.refreshFromStorage()") < resume.indexOf("this.#refreshTimers()"));
-  assert.match(source, /this\.#store\.subscribe\(\(_state, event\) => this\.render\(\{ preserveDialog: event\?\.source === "external" \}\)\)/u);
+  assert.match(source, /this\.#store\.subscribe\(\(_state, event\) => this\.#renderStoreUpdate\(event\)\)/u);
+  assert.match(storeRender, /this\.render\(\{ preserveDialog: event\?\.source === "external" \}\)/u);
 });
 
 test("stale-session acknowledgement is single-use and bound to the current active session", async () => {
@@ -464,6 +466,43 @@ test("global keyboard shortcuts do not escape an open modal boundary", async () 
   assert.match(handler, /if \(event\.defaultPrevented\) return;\s+if \(this\.#root\.querySelector\("dialog\[open\]"\)\) return;/u);
   assert.match(handler, /this\.#restorePrevious\("topbar"\)/);
   assert.ok(handler.indexOf('querySelector("dialog[open]")') < handler.indexOf("#restorePrevious") || handler.indexOf('querySelector("dialog[open]")') < handler.indexOf("this.#restorePrevious"));
+});
+
+test("global character keys remain available to assistive input", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const handler = source.match(/#onKeydown\(event\) \{([\s\S]*?)\n  \}\n\n  #runCommand/u)?.[1] ?? "";
+
+  assert.match(handler, /\(event\.ctrlKey \|\| event\.metaKey\) && event\.key\.toLowerCase\(\) === "k"/u);
+  assert.match(handler, /\(event\.ctrlKey \|\| event\.metaKey\) && event\.shiftKey && event\.key\.toLowerCase\(\) === "c"/u);
+  assert.doesNotMatch(handler, /if \(event\.key\.toLowerCase\(\) === "n"\)/u);
+  assert.doesNotMatch(handler, /if \(event\.key\.toLowerCase\(\) === "c"\)/u);
+  assert.doesNotMatch(handler, /event\.key === "\/" \|\| event\.key === "\?"/u);
+  assert.doesNotMatch(source, /快捷键 C 可随时回到输入框/u);
+});
+
+test("quick checkpoint review targets a programmatically focusable heading", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const review = source.match(/#reviewQuickCheckpoint\(data, form\) \{([\s\S]*?)\n  \}\n\n  #continueStaleSession/u)?.[1] ?? "";
+  const storeRender = source.match(/#renderStoreUpdate\(event\) \{([\s\S]*?)\n  \}\n\n  render/u)?.[1] ?? "";
+
+  assert.match(source, /<h2 id="reentry-card-heading" tabindex="-1">60 秒复航卡<\/h2>/u);
+  assert.match(review, /const focusSelector = "#reentry-card-heading"/u);
+  assert.match(review, /this\.#pendingLocalCommitFocusSelector = focusSelector/u);
+  assert.ok(review.indexOf("#pendingLocalCommitFocusSelector") < review.indexOf("#store.update"));
+  assert.match(storeRender, /event\?\.source === "local" && this\.#pendingLocalCommitFocusSelector/u);
+  assert.match(storeRender, /this\.#focusSelector = this\.#pendingLocalCommitFocusSelector/u);
+  assert.ok(storeRender.indexOf("#focusSelector") < storeRender.indexOf("this.render"));
+});
+
+test("failed quick checkpoint review cannot leak a later focus request", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const review = source.match(/#reviewQuickCheckpoint\(data, form\) \{([\s\S]*?)\n  \}\n\n  #continueStaleSession/u)?.[1] ?? "";
+  const storeRender = source.match(/#renderStoreUpdate\(event\) \{([\s\S]*?)\n  \}\n\n  render/u)?.[1] ?? "";
+
+  assert.match(review, /try \{[\s\S]*?this\.#store\.update/u);
+  assert.match(review, /catch \(error\) \{[\s\S]*?this\.#pendingLocalCommitFocusSelector === focusSelector[\s\S]*?this\.#pendingLocalCommitFocusSelector = null[\s\S]*?throw error/u);
+  assert.doesNotMatch(storeRender, /event\?\.source === "external"[\s\S]*?#focusSelector/u);
+  assert.match(storeRender, /this\.render\(\{ preserveDialog: event\?\.source === "external" \}\)/u);
 });
 
 test("emergency docking is discoverable, modal-safe, and project-contextual", async () => {
