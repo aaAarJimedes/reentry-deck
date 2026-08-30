@@ -1762,8 +1762,9 @@ export class ReentryApp {
   #restorePrevious(context = "topbar") {
     try {
       if (!this.#store.hasPreviousSnapshot()) throw new Error("没有可恢复的上一次保存。 ");
-      this.#focusSelector = `[data-action="undo-last"][data-undo-context="${CSS.escape(context)}"]`;
-      this.#store.restorePrevious();
+      this.#localCommitFocusGate.run(`[data-action="undo-last"][data-undo-context="${CSS.escape(context)}"]`, () => {
+        this.#store.restorePrevious();
+      });
       this.#requestPersistentStorage();
       this.#announce("已恢复到上一次保存；再次操作可切换回来");
       this.#toast("已恢复上一次保存；需要时可再次撤销。 ", "success", false);
@@ -1927,15 +1928,22 @@ export class ReentryApp {
     }
 
     this.#pendingImport = null;
-    this.#focusSelector = "#main-content";
     try {
-      this.#store.importSnapshot(pending.value);
+      this.#localCommitFocusGate.run("#main-content", () => {
+        this.#store.importSnapshot(pending.value);
+      });
       this.#requestPersistentStorage();
       if (location.hash !== "#/") location.hash = "#/";
       this.#toast("备份已按预览结果恢复；上一个工作区仍可撤销回来。 ");
     } catch (error) {
       this.#pendingImport = pending;
-      pending.refreshed = true;
+      const latestState = this.#store.getState();
+      if (latestState !== pending.baseState) {
+        pending.preview = { ...this.#store.previewImport(pending.value), source: pending.source };
+        pending.value = pending.preview.normalizedSnapshot;
+        pending.baseState = latestState;
+        pending.refreshed = true;
+      }
       this.render();
       this.#openDialog("import-preview-dialog");
       this.#toast(`无法导入：${userFacingErrorMessage(error)}`, "error");

@@ -3,7 +3,7 @@ import { buildImportPreview, checksumSerializedSnapshotData, readImportSnapshot 
 import { safeDiagnosticMessage } from "./diagnostic.js";
 
 export const STORAGE_KEY = "reentry-deck/state/v1";
-export const APP_VERSION = "0.241.0";
+export const APP_VERSION = "0.242.0";
 export const STORAGE_REFERENCE_BYTES = 5 * 1024 * 1024;
 const PREVIOUS_KEY = `${STORAGE_KEY}/previous`;
 export const WRITE_LOCK_KEY = `${STORAGE_KEY}/write-lock`;
@@ -106,8 +106,15 @@ export class AppStore {
         }
         sameRevisionCollision = next.meta.revision === this.#state.meta.revision;
       } else {
+        if (this.#state.meta.revision === Number.MAX_SAFE_INTEGER) {
+          this.#rejectedRaw = current;
+          this.#hasRejectedRaw = true;
+          this.#addNotice("检测到本地数据已被清空，但当前修订号已达到安全上限，无法安全生成空白后继；本页仍保留清空前的内存状态。请立即导出完整备份，再刷新确认实际存储状态。 ");
+          this.#emit("external");
+          return false;
+        }
         next = createEmptyState(isoAtOrAfter(now, this.#state.meta.updatedAt));
-        next.meta.revision = this.#state.meta.revision + 1;
+        next.meta.revision = nextSafeRevision(this.#state.meta.revision);
       }
       const serializedNext = JSON.stringify(next);
       if (serializedNext === this.#serializedState) {
@@ -122,7 +129,9 @@ export class AppStore {
       this.#hasRejectedRaw = false;
       this.#state = freezeState(next);
       if (sameRevisionCollision) {
-        this.#addNotice("检测到另一个标签页写入了相同修订号的不同内容；已采用实际持久化版本，下一次保存将继续递增修订号。 ");
+        this.#addNotice(next.meta.revision === Number.MAX_SAFE_INTEGER
+          ? "检测到另一个标签页写入了相同修订号的不同内容；已采用实际持久化版本，但修订号已达到安全上限。请立即导出完整备份。 "
+          : "检测到另一个标签页写入了相同修订号的不同内容；已采用实际持久化版本，下一次保存将继续递增修订号。 ");
       }
       this.#emit("external");
       return true;
@@ -138,10 +147,10 @@ export class AppStore {
   update(recipe, now = Date.now()) {
     const next = structuredClone(this.#state);
     recipe(next);
-    next.meta.updatedAt = isoAtOrAfter(now, this.#state.meta.updatedAt);
-    next.meta.revision = Math.max(next.meta.revision, this.#state.meta.revision) + 1;
     const errors = validateImportCandidate(next);
     if (errors.length) throw new Error(`无法保存：${errors.join("；")}`);
+    next.meta.updatedAt = isoAtOrAfter(now, this.#state.meta.updatedAt);
+    next.meta.revision = nextSafeRevision(next.meta.revision, this.#state.meta.revision);
     this.#persist(next);
     this.#state = freezeState(next);
     this.#emit();
@@ -155,7 +164,7 @@ export class AppStore {
     const errors = validateState(next);
     if (errors.length) throw new Error(`导入失败：${errors.join("；")}`);
     next.meta.updatedAt = isoAtOrAfter(now, this.#state.meta.updatedAt, next.meta.updatedAt);
-    next.meta.revision = Math.max(next.meta.revision, this.#state.meta.revision) + 1;
+    next.meta.revision = nextSafeRevision(next.meta.revision, this.#state.meta.revision);
     this.#persist(next);
     this.#state = freezeState(next);
     this.#emit();
@@ -164,7 +173,7 @@ export class AppStore {
 
   reset(now = Date.now()) {
     const next = createEmptyState(isoAtOrAfter(now, this.#state.meta.updatedAt));
-    next.meta.revision = this.#state.meta.revision + 1;
+    next.meta.revision = nextSafeRevision(this.#state.meta.revision);
     this.#persist(next);
     this.#state = freezeState(next);
     this.#emit();
@@ -208,7 +217,7 @@ export class AppStore {
   restorePrevious(now = Date.now()) {
     const restored = this.#readPrevious(now);
     restored.meta.updatedAt = isoAtOrAfter(now, this.#state.meta.updatedAt, restored.meta.updatedAt);
-    restored.meta.revision = this.#state.meta.revision + 1;
+    restored.meta.revision = nextSafeRevision(this.#state.meta.revision, restored.meta.revision);
     this.#persist(restored);
     this.#state = freezeState(restored);
     this.#emit();
@@ -412,6 +421,21 @@ export class AppStore {
       }
     }
   }
+}
+
+function nextSafeRevision(...revisions) {
+  let highest = -1;
+  for (const revision of revisions) {
+    if (!Number.isSafeInteger(revision) || revision < 0) {
+      throw new Error("修订号无效，无法安全提交这次操作。 ");
+    }
+    if (revision > highest) highest = revision;
+  }
+  if (highest < 0) throw new Error("缺少可用修订号，无法安全提交这次操作。 ");
+  if (highest === Number.MAX_SAFE_INTEGER) {
+    throw new Error("当前修订号已达到安全上限，无法安全提交这次操作。请先导出完整备份。 ");
+  }
+  return highest + 1;
 }
 
 function freezeState(state) {

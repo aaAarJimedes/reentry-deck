@@ -1442,3 +1442,246 @@ describe("AppStore replacement, snapshots, and reset", () => {
     assert.deepEqual(persisted(storage, PREVIOUS_KEY), beforeReset);
   });
 });
+
+describe("AppStore revision ceiling", () => {
+  test("an import stops before persisting a revision without a safe successor", () => {
+    const storage = new MemoryStorage();
+    const store = new AppStore(storage, T0, null);
+    const incoming = stateWithProject("ceiling-import", "Ceiling import");
+    incoming.meta.revision = Number.MAX_SAFE_INTEGER;
+    const before = store.getState();
+    let emissions = 0;
+    store.subscribe(() => emissions += 1);
+
+    assert.doesNotThrow(() => store.previewImport(incoming, T1));
+    assert.throws(() => store.importSnapshot(incoming, T1), /修订号已达到安全上限/u);
+
+    assert.strictEqual(store.getState(), before);
+    assert.equal(storage.getItem(STORAGE_KEY), null);
+    assert.equal(storage.getItem(PREVIOUS_KEY), null);
+    assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
+    assert.equal(emissions, 0);
+  });
+
+  test("a penultimate import commits the final safe revision and survives reload", () => {
+    const storage = new MemoryStorage();
+    const store = new AppStore(storage, T0, null);
+    const incoming = stateWithProject("final-safe-import", "Final safe import");
+    incoming.meta.revision = Number.MAX_SAFE_INTEGER - 1;
+
+    const imported = store.importSnapshot(incoming, T1);
+    const reloaded = new AppStore(storage, T2, null);
+
+    assert.equal(imported.meta.revision, Number.MAX_SAFE_INTEGER);
+    assert.equal(Number.isSafeInteger(imported.meta.revision), true);
+    assert.equal(reloaded.getState().meta.revision, Number.MAX_SAFE_INTEGER);
+    assert.equal(reloaded.getState().projects[0].id, "final-safe-import");
+    assert.deepEqual(reloaded.drainNotices(), []);
+  });
+
+  test("restoring a snapshot advances beyond every revision anchor", () => {
+    const storage = new MemoryStorage();
+    const current = stateWithProject("current-anchor", "Current anchor");
+    const previous = stateWithProject("previous-anchor", "Previous anchor");
+    current.meta.revision = 4;
+    previous.meta.revision = 9;
+    storage.setItem(STORAGE_KEY, JSON.stringify(current));
+    storage.setItem(PREVIOUS_KEY, JSON.stringify(previous));
+    const store = new AppStore(storage, T0, null);
+
+    const restored = store.restorePrevious(T1);
+
+    assert.equal(restored.meta.revision, 10);
+    assert.equal(restored.projects[0].id, "previous-anchor");
+    assert.equal(persisted(storage, PREVIOUS_KEY).projects[0].id, "current-anchor");
+  });
+
+  test("every local successor path can commit the final safe revision", () => {
+    const cases = [
+      {
+        label: "update",
+        run: (store) => store.update((draft) => { draft.projects[0].title = "Changed"; }, T1)
+      },
+      { label: "replace", run: (store) => store.replace(stateWithProject("replacement", "Replacement"), T1) },
+      { label: "reset", run: (store) => store.reset(T1) },
+      { label: "restore", run: (store) => store.restorePrevious(T1), needsPrevious: true }
+    ];
+
+    for (const item of cases) {
+      const storage = new MemoryStorage();
+      const current = stateWithProject(`penultimate-${item.label}`, `Penultimate ${item.label}`);
+      current.meta.revision = Number.MAX_SAFE_INTEGER - 1;
+      storage.setItem(STORAGE_KEY, JSON.stringify(current));
+      if (item.needsPrevious) {
+        const previous = stateWithProject("previous", "Previous");
+        previous.meta.revision = Number.MAX_SAFE_INTEGER - 2;
+        storage.setItem(PREVIOUS_KEY, JSON.stringify(previous));
+      }
+      const store = new AppStore(storage, T0, null);
+
+      item.run(store);
+
+      assert.equal(store.getState().meta.revision, Number.MAX_SAFE_INTEGER, item.label);
+      assert.equal(Number.isSafeInteger(store.getState().meta.revision), true, item.label);
+      assert.equal(persisted(storage).meta.revision, Number.MAX_SAFE_INTEGER, item.label);
+      const reloaded = new AppStore(storage, T2, null);
+      assert.equal(reloaded.getState().meta.revision, Number.MAX_SAFE_INTEGER, item.label);
+      assert.deepEqual(reloaded.drainNotices(), [], item.label);
+    }
+  });
+
+  test("every local successor path fails atomically at the safe ceiling", () => {
+    const cases = [
+      {
+        label: "update",
+        run: (store) => store.update((draft) => { draft.projects[0].title = "Changed"; }, T1)
+      },
+      { label: "replace", run: (store) => store.replace(stateWithProject("replacement", "Replacement"), T1) },
+      { label: "reset", run: (store) => store.reset(T1) },
+      { label: "restore", run: (store) => store.restorePrevious(T1), needsPrevious: true }
+    ];
+
+    for (const item of cases) {
+      const storage = new MemoryStorage();
+      const current = stateWithProject(`ceiling-${item.label}`, `Ceiling ${item.label}`);
+      current.meta.revision = Number.MAX_SAFE_INTEGER;
+      storage.setItem(STORAGE_KEY, JSON.stringify(current));
+      if (item.needsPrevious) {
+        const previous = stateWithProject("previous", "Previous");
+        previous.meta.revision = Number.MAX_SAFE_INTEGER - 1;
+        storage.setItem(PREVIOUS_KEY, JSON.stringify(previous));
+      }
+      const store = new AppStore(storage, T0, null);
+      const beforeState = store.getState();
+      const beforeCurrent = storage.getItem(STORAGE_KEY);
+      const beforePrevious = storage.getItem(PREVIOUS_KEY);
+      let emissions = 0;
+      store.subscribe(() => emissions += 1);
+
+      assert.throws(() => item.run(store), /修订号已达到安全上限/u, item.label);
+      assert.strictEqual(store.getState(), beforeState, item.label);
+      assert.equal(storage.getItem(STORAGE_KEY), beforeCurrent, item.label);
+      assert.equal(storage.getItem(PREVIOUS_KEY), beforePrevious, item.label);
+      assert.equal(storage.getItem(WRITE_LOCK_KEY), null, item.label);
+      assert.equal(emissions, 0, item.label);
+    }
+  });
+
+  test("an invalid revision anchor is rejected before persistence", () => {
+    const storage = new MemoryStorage();
+    const current = stateWithProject("invalid-anchor", "Invalid anchor");
+    storage.setItem(STORAGE_KEY, JSON.stringify(current));
+    const store = new AppStore(storage, T0, null);
+    const beforeState = store.getState();
+    const beforeCurrent = storage.getItem(STORAGE_KEY);
+    let emissions = 0;
+    store.subscribe(() => emissions += 1);
+
+    assert.throws(
+      () => store.update((draft) => { draft.meta.revision = "4"; }, T1),
+      /修订号无效/u
+    );
+
+    assert.strictEqual(store.getState(), beforeState);
+    assert.equal(storage.getItem(STORAGE_KEY), beforeCurrent);
+    assert.equal(storage.getItem(PREVIOUS_KEY), null);
+    assert.equal(storage.getItem(WRITE_LOCK_KEY), null);
+    assert.equal(emissions, 0);
+  });
+
+  test("external clear at the safe ceiling preserves live data and emits one warning", () => {
+    const storage = new MemoryStorage();
+    const eventTarget = new EventTarget();
+    const current = stateWithProject("ceiling-clear", "Ceiling clear");
+    current.meta.revision = Number.MAX_SAFE_INTEGER;
+    storage.setItem(STORAGE_KEY, JSON.stringify(current));
+    const store = new AppStore(storage, T0, eventTarget);
+    const before = store.getState();
+    const sources = [];
+    store.subscribe((_state, event) => sources.push(event.source));
+    storage.clear();
+    const event = new Event("storage");
+    Object.defineProperty(event, "key", { value: null });
+
+    eventTarget.dispatchEvent(event);
+    eventTarget.dispatchEvent(event);
+
+    assert.strictEqual(store.getState(), before);
+    assert.equal(storage.getItem(STORAGE_KEY), null);
+    assert.deepEqual(sources, ["external"]);
+    assert.equal(store.notices.length, 1);
+    assert.match(store.notices[0], /本地数据已被清空.*修订号已达到安全上限.*仍保留清空前的内存状态.*立即导出完整备份/u);
+    assert.equal(store.exportSnapshot(T1).data.projects[0].id, "ceiling-clear");
+    assert.throws(
+      () => store.update((draft) => { draft.projects[0].title = "Must not return"; }, T2),
+      /修订号已达到安全上限/u
+    );
+    assert.strictEqual(store.getState(), before);
+    assert.equal(storage.getItem(STORAGE_KEY), null);
+  });
+
+  test("external clear from the penultimate revision adopts an empty final-safe state", () => {
+    const storage = new MemoryStorage();
+    const eventTarget = new EventTarget();
+    const current = stateWithProject("penultimate-clear", "Penultimate clear");
+    current.meta.revision = Number.MAX_SAFE_INTEGER - 1;
+    storage.setItem(STORAGE_KEY, JSON.stringify(current));
+    const store = new AppStore(storage, T0, eventTarget);
+    const sources = [];
+    store.subscribe((_state, event) => sources.push(event.source));
+    storage.clear();
+    const event = new Event("storage");
+    Object.defineProperty(event, "key", { value: null });
+
+    eventTarget.dispatchEvent(event);
+
+    assert.deepEqual(store.getState().projects, []);
+    assert.equal(store.getState().meta.revision, Number.MAX_SAFE_INTEGER);
+    assert.equal(Number.isSafeInteger(store.getState().meta.revision), true);
+    assert.deepEqual(sources, ["external"]);
+    assert.deepEqual(store.drainNotices(), []);
+  });
+
+  test("a same-revision collision at the ceiling is adopted with an actionable warning", () => {
+    const storage = new MemoryStorage();
+    const current = stateWithProject("collision", "Current");
+    current.meta.revision = Number.MAX_SAFE_INTEGER;
+    storage.setItem(STORAGE_KEY, JSON.stringify(current));
+    const store = new AppStore(storage, T0, null);
+    const external = stateWithProject("collision", "External");
+    external.meta.revision = Number.MAX_SAFE_INTEGER;
+    external.meta.updatedAt = new Date(T1).toISOString();
+    external.projects[0].updatedAt = new Date(T1).toISOString();
+    storage.setItem(STORAGE_KEY, JSON.stringify(external));
+
+    assert.equal(store.refreshFromStorage(T1), true);
+
+    assert.equal(store.getState().projects[0].title, "External");
+    assert.match(store.notices.at(-1), /相同修订号.*已达到安全上限.*导出完整备份/u);
+    assert.throws(() => store.update(() => {}, T2), /修订号已达到安全上限/u);
+    assert.equal(persisted(storage).projects[0].title, "External");
+  });
+
+  test("two penultimate tabs converge on the final safe revision before further writes stop", () => {
+    const storage = new MemoryStorage();
+    const initial = stateWithProject("shared", "Shared");
+    initial.meta.revision = Number.MAX_SAFE_INTEGER - 1;
+    storage.setItem(STORAGE_KEY, JSON.stringify(initial));
+    const winner = new AppStore(storage, T0, null);
+    const stale = new AppStore(storage, T0, null);
+
+    winner.update((draft) => { draft.projects[0].title = "Winner"; }, T1);
+    assert.equal(winner.getState().meta.revision, Number.MAX_SAFE_INTEGER);
+    assert.throws(
+      () => stale.update((draft) => { draft.projects[0].title = "Stale"; }, T1),
+      /另一个标签页刚刚更新了数据/u
+    );
+    assert.equal(stale.getState().projects[0].title, "Winner");
+    assert.equal(stale.getState().meta.revision, Number.MAX_SAFE_INTEGER);
+    assert.throws(
+      () => stale.update((draft) => { draft.projects[0].title = "Retry"; }, T2),
+      /修订号已达到安全上限/u
+    );
+    assert.equal(persisted(storage).projects[0].title, "Winner");
+  });
+});

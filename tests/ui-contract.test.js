@@ -557,6 +557,41 @@ test("quick capture focus is armed only for its successful local commit", async 
   assert.ok(capture.indexOf("this.#announce") < capture.indexOf("this.#toast"));
 });
 
+test("undo focus is armed only for its successful local restore", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const restore = source.match(/#restorePrevious\(context = "topbar"\) \{([\s\S]*?)\n  \}\n\n  #showMoreTimeline/u)?.[1] ?? "";
+
+  assert.match(restore, /this\.#localCommitFocusGate\.run\(`\[data-action="undo-last"\]\[data-undo-context="\$\{CSS\.escape\(context\)\}"\]`, \(\) => \{[\s\S]*?this\.#store\.restorePrevious\(\)/u);
+  assert.ok(restore.indexOf("#localCommitFocusGate.run") < restore.indexOf("#store.restorePrevious"));
+  assert.doesNotMatch(restore, /this\.#focusSelector\s*=/u);
+  assert.ok(restore.indexOf("#store.restorePrevious") < restore.indexOf("#requestPersistentStorage"));
+  assert.ok(restore.indexOf("#requestPersistentStorage") < restore.indexOf("this.#announce"));
+  assert.ok(restore.indexOf("this.#announce") < restore.indexOf("this.#toast"));
+  assert.ok(restore.indexOf("this.#toast") < restore.indexOf("} catch (error)"));
+});
+
+test("import focus and preview refresh are bound to the actual commit outcome", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const handler = source.match(/#confirmImport\(\) \{([\s\S]*?)\n  \}\n\n  #announce/u)?.[1] ?? "";
+  const failure = handler.slice(handler.indexOf("} catch (error)"));
+  const refresh = failure.match(/if \(latestState !== pending\.baseState\) \{([\s\S]*?)\n      \}/u)?.[1] ?? "";
+
+  assert.match(handler, /this\.#localCommitFocusGate\.run\("#main-content", \(\) => \{[\s\S]*?this\.#store\.importSnapshot\(pending\.value\)/u);
+  assert.ok(handler.indexOf("this.#pendingImport = null") < handler.indexOf("#localCommitFocusGate.run"));
+  assert.ok(handler.indexOf("#localCommitFocusGate.run") < handler.indexOf("#store.importSnapshot"));
+  assert.doesNotMatch(handler, /this\.#focusSelector\s*=/u);
+  assert.ok(handler.indexOf("#store.importSnapshot") < handler.indexOf("#requestPersistentStorage"));
+  assert.match(failure, /this\.#pendingImport = pending[\s\S]*?const latestState = this\.#store\.getState\(\)/u);
+  assert.match(refresh, /this\.#store\.previewImport\(pending\.value\)/u);
+  assert.match(refresh, /source: pending\.source/u);
+  assert.match(refresh, /pending\.value = pending\.preview\.normalizedSnapshot/u);
+  assert.match(refresh, /pending\.baseState = latestState/u);
+  assert.match(refresh, /pending\.refreshed = true/u);
+  assert.equal(failure.match(/pending\.refreshed = true/gu)?.length, 1);
+  assert.ok(failure.indexOf("this.render()") < failure.indexOf('this.#openDialog("import-preview-dialog")'));
+  assert.ok(failure.indexOf('this.#openDialog("import-preview-dialog")') < failure.indexOf("this.#toast"));
+});
+
 test("manual checkpoint focus is armed only for its successful local commit", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const checkpoint = source.match(/#saveCheckpoint\(data, form\) \{([\s\S]*?)\n  \}\n\n  #reviewQuickCheckpoint/u)?.[1] ?? "";
