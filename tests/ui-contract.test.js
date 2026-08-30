@@ -105,6 +105,7 @@ test("app destruction releases listeners, subscriptions, and toast timers", asyn
   assert.match(source, /if \(this\.#destroyed\) return/u);
   assert.match(source, /this\.#destroyed = true/u);
   assert.match(source, /this\.#renderSequence \+= 1/u);
+  assert.match(source, /this\.#localCommitFocusGate\.clear\(\)/u);
   assert.match(source, /constructor\(root, store\) \{[\s\S]*?try \{[\s\S]*?this\.render\(\);[\s\S]*?catch \(error\) \{[\s\S]*?this\.destroy\(\);[\s\S]*?throw error;/u);
   assert.match(source, /this\.#store\?\.destroy\?\.\(\)/u);
 });
@@ -514,11 +515,10 @@ test("quick checkpoint review targets a programmatically focusable heading", asy
   const storeRender = source.match(/#renderStoreUpdate\(event\) \{([\s\S]*?)\n  \}\n\n  render/u)?.[1] ?? "";
 
   assert.match(source, /<h2 id="reentry-card-heading" tabindex="-1">60 秒复航卡<\/h2>/u);
-  assert.match(review, /const focusSelector = "#reentry-card-heading"/u);
-  assert.match(review, /this\.#pendingLocalCommitFocusSelector = focusSelector/u);
-  assert.ok(review.indexOf("#pendingLocalCommitFocusSelector") < review.indexOf("#store.update"));
-  assert.match(storeRender, /event\?\.source === "local" && this\.#pendingLocalCommitFocusSelector/u);
-  assert.match(storeRender, /this\.#focusSelector = this\.#pendingLocalCommitFocusSelector/u);
+  assert.match(review, /this\.#localCommitFocusGate\.run\("#reentry-card-heading", \(\) => \{/u);
+  assert.ok(review.indexOf("#localCommitFocusGate.run") < review.indexOf("#store.update"));
+  assert.match(storeRender, /this\.#localCommitFocusGate\.consume\(event\?\.source\)/u);
+  assert.match(storeRender, /if \(focusSelector\) this\.#focusSelector = focusSelector/u);
   assert.ok(storeRender.indexOf("#focusSelector") < storeRender.indexOf("this.render"));
 });
 
@@ -527,9 +527,21 @@ test("failed quick checkpoint review cannot leak a later focus request", async (
   const review = source.match(/#reviewQuickCheckpoint\(data, form\) \{([\s\S]*?)\n  \}\n\n  #continueStaleSession/u)?.[1] ?? "";
   const storeRender = source.match(/#renderStoreUpdate\(event\) \{([\s\S]*?)\n  \}\n\n  render/u)?.[1] ?? "";
 
-  assert.match(review, /try \{[\s\S]*?this\.#store\.update/u);
-  assert.match(review, /catch \(error\) \{[\s\S]*?this\.#pendingLocalCommitFocusSelector === focusSelector[\s\S]*?this\.#pendingLocalCommitFocusSelector = null[\s\S]*?throw error/u);
-  assert.doesNotMatch(storeRender, /event\?\.source === "external"[\s\S]*?#focusSelector/u);
+  assert.match(review, /this\.#localCommitFocusGate\.run\("#reentry-card-heading", \(\) => \{[\s\S]*?this\.#store\.update/u);
+  assert.doesNotMatch(review, /this\.#focusSelector\s*=/u);
+  assert.doesNotMatch(storeRender, /event\?\.source === "external"[\s\S]*?this\.#focusSelector/u);
+  assert.match(storeRender, /this\.render\(\{ preserveDialog: event\?\.source === "external" \}\)/u);
+});
+
+test("inline capture focus is armed only for a successful local commit", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const capture = source.match(/#captureCrumb\(data\) \{([\s\S]*?)\n  \}\n\n  #quickCapture/u)?.[1] ?? "";
+  const storeRender = source.match(/#renderStoreUpdate\(event\) \{([\s\S]*?)\n  \}\n\n  render/u)?.[1] ?? "";
+
+  assert.match(capture, /this\.#localCommitFocusGate\.run\('\[data-form="capture-crumb"\] textarea', \(\) => \{/u);
+  assert.ok(capture.indexOf("#localCommitFocusGate.run") < capture.indexOf("#store.update"));
+  assert.doesNotMatch(capture, /this\.#focusSelector\s*=/u);
+  assert.match(storeRender, /this\.#localCommitFocusGate\.consume\(event\?\.source\)/u);
   assert.match(storeRender, /this\.render\(\{ preserveDialog: event\?\.source === "external" \}\)/u);
 });
 

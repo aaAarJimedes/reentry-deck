@@ -105,6 +105,30 @@ export function normalizeTransientSelection(value, start, end) {
   return first <= second ? [first, second] : [second, first];
 }
 
+export function createLocalCommitFocusGate() {
+  let pendingRequest = null;
+  return Object.freeze({
+    run(selector, commit) {
+      const request = Object.freeze({ selector });
+      pendingRequest = request;
+      try {
+        return commit();
+      } finally {
+        if (pendingRequest === request) pendingRequest = null;
+      }
+    },
+    consume(source) {
+      if (source !== "local" || !pendingRequest) return null;
+      const request = pendingRequest;
+      pendingRequest = null;
+      return request.selector;
+    },
+    clear() {
+      pendingRequest = null;
+    }
+  });
+}
+
 export function resolveThemeAppearance(theme, prefersDark = false) {
   const dark = theme === "dark" || (theme === "system" && prefersDark);
   return Object.freeze({ dark, themeColor: dark ? "#111a19" : "#f4efe6" });
@@ -154,7 +178,7 @@ export class ReentryApp {
   #store;
   #timerId;
   #focusSelector = null;
-  #pendingLocalCommitFocusSelector = null;
+  #localCommitFocusGate = createLocalCommitFocusGate();
   #workspaceCounts = null;
   #activeSession = null;
   #noticeQueue = [];
@@ -254,7 +278,7 @@ export class ReentryApp {
     this.#pendingProjectEdit = null;
     this.#newProjectTemplate = null;
     this.#pendingCheckpointSessionId = null;
-    this.#pendingLocalCommitFocusSelector = null;
+    this.#localCommitFocusGate.clear();
     this.#activeSession = null;
     this.#acknowledgedStaleSessionId = null;
     this.#timelineLimits.clear();
@@ -275,10 +299,8 @@ export class ReentryApp {
   }
 
   #renderStoreUpdate(event) {
-    if (event?.source === "local" && this.#pendingLocalCommitFocusSelector) {
-      this.#focusSelector = this.#pendingLocalCommitFocusSelector;
-      this.#pendingLocalCommitFocusSelector = null;
-    }
+    const focusSelector = this.#localCommitFocusGate.consume(event?.source);
+    if (focusSelector) this.#focusSelector = focusSelector;
     this.render({ preserveDialog: event?.source === "external" });
   }
 
@@ -1382,20 +1404,21 @@ export class ReentryApp {
       isoAtOrAfter(Date.now(), session.startedAt, project?.updatedAt)
     );
     if (!crumb.text) throw new Error("先写下一条记录。 ");
-    this.#focusSelector = '[data-form="capture-crumb"] textarea';
-    this.#store.update((next) => {
-      const currentSession = next.sessions[sessionIndex];
-      const currentProject = next.projects[projectIndex];
-      if (currentSession?.id !== session.id || currentSession.status !== "active"
-        || currentProject?.id !== session.projectId || currentProject.status === "archived") {
-        throw new Error("活动现场在保存前已发生变化。 ");
-      }
-      next.crumbs.push(crumb);
-      currentProject.updatedAt = crumb.createdAt;
-      if (crumb.type === "next") {
-        currentProject.nextAction = projectNextActionFromCrumb(crumb);
-        currentProject.nextActionUpdatedAt = crumb.createdAt;
-      }
+    this.#localCommitFocusGate.run('[data-form="capture-crumb"] textarea', () => {
+      this.#store.update((next) => {
+        const currentSession = next.sessions[sessionIndex];
+        const currentProject = next.projects[projectIndex];
+        if (currentSession?.id !== session.id || currentSession.status !== "active"
+          || currentProject?.id !== session.projectId || currentProject.status === "archived") {
+          throw new Error("活动现场在保存前已发生变化。 ");
+        }
+        next.crumbs.push(crumb);
+        currentProject.updatedAt = crumb.createdAt;
+        if (crumb.type === "next") {
+          currentProject.nextAction = projectNextActionFromCrumb(crumb);
+          currentProject.nextActionUpdatedAt = crumb.createdAt;
+        }
+      });
     });
     this.#announce(`${CRUMB_LABELS[crumb.type]}已记录`);
     this.#toast(`${CRUMB_LABELS[crumb.type]}已留在轨迹中。`, "success", false);
@@ -1467,9 +1490,7 @@ export class ReentryApp {
 
   #reviewQuickCheckpoint(data, form) {
     const { checkpoint, projectIndex, projectTitle } = prepareQuickCheckpointReview(this.#store.getState(), data);
-    const focusSelector = "#reentry-card-heading";
-    this.#pendingLocalCommitFocusSelector = focusSelector;
-    try {
+    this.#localCommitFocusGate.run("#reentry-card-heading", () => {
       this.#store.update((state) => {
         const project = state.projects[projectIndex];
         if (!project || project.id !== checkpoint.projectId || project.status === "archived") {
@@ -1480,10 +1501,7 @@ export class ReentryApp {
         project.nextActionUpdatedAt = checkpoint.createdAt;
         project.updatedAt = checkpoint.createdAt;
       }, Date.parse(checkpoint.createdAt));
-    } catch (error) {
-      if (this.#pendingLocalCommitFocusSelector === focusSelector) this.#pendingLocalCommitFocusSelector = null;
-      throw error;
-    }
+    });
     form.closest("dialog")?.close();
     this.#announce("快速检查点已复核为可靠检查点");
     this.#toast(`“${projectTitle}”已建立新的可靠检查点。`, "success", false);
