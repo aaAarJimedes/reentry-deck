@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { AppStore, MemoryStorage } from "../src/core/store.js";
-import { createLocalCommitFocusGate } from "../src/ui/app.js";
+import { createLocalCommitFocusGate, createRouteFocusGate } from "../src/ui/app.js";
 
 test("local commit focus waits through external redraws for the matching local update", () => {
   const gate = createLocalCommitFocusGate();
@@ -48,6 +48,25 @@ test("clearing the gate invalidates an armed request", () => {
     gate.clear();
     assert.equal(gate.consume("local"), null);
   });
+});
+
+test("route focus is one-shot and requires the exact route and session", () => {
+  const gate = createRouteFocusGate();
+
+  gate.arm("#/project/p1", "session-1", "#capture-session-1");
+  assert.equal(gate.consume("#/project/p1", "session-1"), "#capture-session-1");
+  assert.equal(gate.consume("#/project/p1", "session-1"), null);
+
+  gate.arm("#/project/p1", "session-1", "#wrong-route");
+  assert.equal(gate.consume("#/project/p2", "session-1"), null);
+  assert.equal(gate.consume("#/project/p1", "session-1"), null);
+
+  gate.arm("#/project/p1", "session-1", "#wrong-session");
+  assert.equal(gate.consume("#/project/p1", "session-2"), null);
+
+  gate.arm("#/project/p1", "session-1", "#destroyed");
+  gate.clear();
+  assert.equal(gate.consume("#/project/p1", "session-1"), null);
 });
 
 for (const [label, focusSelector] of [

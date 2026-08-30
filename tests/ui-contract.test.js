@@ -557,6 +557,36 @@ test("quick capture focus is armed only for its successful local commit", async 
   assert.ok(capture.indexOf("this.#announce") < capture.indexOf("this.#toast"));
 });
 
+test("session start focus is armed only for its successful local commit", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const start = source.match(/#startSession\(data, form\) \{([\s\S]*?)\n  \}\n\n  #captureCrumb/u)?.[1] ?? "";
+
+  assert.match(start, /const focusSelector = `\[data-form="capture-crumb"\]\[data-session-id="\$\{CSS\.escape\(session\.id\)\}"\] textarea`/u);
+  assert.match(start, /const targetHash = `#\/project\/\$\{encodeURIComponent\(project\.id\)\}`/u);
+  assert.match(start, /const staysOnProject = route\.name === "project" && route\.id === project\.id/u);
+  assert.match(start, /const commit = \(\) => \{[\s\S]*?this\.#store\.update/u);
+  assert.match(start, /if \(staysOnProject\) \{[\s\S]*?this\.#localCommitFocusGate\.run\(focusSelector, commit\)[\s\S]*?\} else \{[\s\S]*?commit\(\)/u);
+  assert.doesNotMatch(start, /this\.#focusSelector\s*=/u);
+  assert.ok(start.indexOf("commit();") < start.indexOf('form.closest("dialog")?.close()'));
+  assert.match(start, /if \(!staysOnProject\) \{[\s\S]*?this\.#routeFocusGate\.arm\(targetHash, session\.id, focusSelector\)[\s\S]*?location\.hash = targetHash/u);
+  assert.ok(start.indexOf('form.closest("dialog")?.close()') < start.indexOf("#routeFocusGate.arm"));
+  assert.ok(start.indexOf("#routeFocusGate.arm") < start.indexOf("location.hash = targetHash"));
+  assert.ok(start.indexOf("location.hash = targetHash") < start.indexOf("this.#announce"));
+  assert.ok(start.indexOf("this.#announce") < start.indexOf("this.#toast"));
+});
+
+test("session-start navigation focus is one-shot and bound to its route and session", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const hashchange = source.match(/window\.addEventListener\("hashchange", \(\) => \{([\s\S]*?)\n      \}, listenerOptions\);/u)?.[1] ?? "";
+  const destroy = source.match(/destroy\(\) \{([\s\S]*?)\n  \}\n\n  #renderStoreUpdate/u)?.[1] ?? "";
+
+  assert.match(source, /<form class="capture-form" data-form="capture-crumb" data-session-id="\$\{attr\(session\.id\)\}"/u);
+  assert.match(hashchange, /const focusSelector = this\.#routeFocusGate\.consume\(location\.hash, this\.#activeSession\?\.id\)/u);
+  assert.match(hashchange, /this\.#focusSelector = focusSelector \?\? "#main-content"/u);
+  assert.ok(hashchange.indexOf("#routeFocusGate.consume") < hashchange.indexOf("this.render()"));
+  assert.match(destroy, /this\.#routeFocusGate\.clear\(\)/u);
+});
+
 test("undo focus is armed only for its successful local restore", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const restore = source.match(/#restorePrevious\(context = "topbar"\) \{([\s\S]*?)\n  \}\n\n  #showMoreTimeline/u)?.[1] ?? "";

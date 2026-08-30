@@ -129,6 +129,24 @@ export function createLocalCommitFocusGate() {
   });
 }
 
+export function createRouteFocusGate() {
+  let pendingRequest = null;
+  return Object.freeze({
+    arm(hash, sessionId, selector) {
+      pendingRequest = Object.freeze({ hash, sessionId, selector });
+    },
+    consume(hash, sessionId) {
+      const request = pendingRequest;
+      pendingRequest = null;
+      if (!request || request.hash !== hash || request.sessionId !== sessionId) return null;
+      return request.selector;
+    },
+    clear() {
+      pendingRequest = null;
+    }
+  });
+}
+
 export function resolveThemeAppearance(theme, prefersDark = false) {
   const dark = theme === "dark" || (theme === "system" && prefersDark);
   return Object.freeze({ dark, themeColor: dark ? "#111a19" : "#f4efe6" });
@@ -179,6 +197,7 @@ export class ReentryApp {
   #timerId;
   #focusSelector = null;
   #localCommitFocusGate = createLocalCommitFocusGate();
+  #routeFocusGate = createRouteFocusGate();
   #workspaceCounts = null;
   #activeSession = null;
   #noticeQueue = [];
@@ -232,7 +251,8 @@ export class ReentryApp {
         if (event.target.id === "checkpoint-dialog") this.#pendingCheckpointSessionId = null;
       }, { ...listenerOptions, capture: true });
       window.addEventListener("hashchange", () => {
-        this.#focusSelector = "#main-content";
+        const focusSelector = this.#routeFocusGate.consume(location.hash, this.#activeSession?.id);
+        this.#focusSelector = focusSelector ?? "#main-content";
         this.render();
       }, listenerOptions);
       window.addEventListener("keydown", (event) => this.#runUserAction(() => this.#onKeydown(event)), listenerOptions);
@@ -279,6 +299,7 @@ export class ReentryApp {
     this.#newProjectTemplate = null;
     this.#pendingCheckpointSessionId = null;
     this.#localCommitFocusGate.clear();
+    this.#routeFocusGate.clear();
     this.#activeSession = null;
     this.#acknowledgedStaleSessionId = null;
     this.#timelineLimits.clear();
@@ -814,7 +835,7 @@ export class ReentryApp {
           ${showStaleWarning ? this.#renderStaleSessionWarning(project, session, health) : ""}
           <div class="session-timer js-session-timer" role="timer" aria-label="本次会话用时" data-started-at="${attr(session.startedAt)}">${formatDuration(elapsedSeconds(session.startedAt))}</div>
           <p class="session-intention"><span class="muted">本次意图：</span> <strong>${escapeHTML(session.intention || project.nextAction || "先推进一个清楚的下一步")}</strong></p>
-          <form class="capture-form" data-form="capture-crumb" autocomplete="off">
+          <form class="capture-form" data-form="capture-crumb" data-session-id="${attr(session.id)}" autocomplete="off">
             <label class="field"><span>留下工作面包屑</span><textarea name="text" rows="3" maxlength="${IMPORT_LIMITS.crumbText}" placeholder="一句话就够：刚发现了什么、做了什么决定、卡在哪里…" required></textarea></label>
             <div class="capture-row">
               <label class="field"><span class="sr-only">记录类型</span><select name="type" aria-label="记录类型">${Object.entries(CRUMB_LABELS).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></label>
@@ -1377,19 +1398,32 @@ export class ReentryApp {
       { projectId: project.id, intention: data.intention, sourceCheckpointId: sourceCheckpoint?.id ?? null },
       isoAtOrAfter(Date.now(), project.updatedAt, sourceCheckpoint?.createdAt)
     );
-    this.#focusSelector = '[data-form="capture-crumb"] textarea';
-    this.#store.update((next) => {
-      const item = next.projects[projectIndex];
-      if (!item || item.id !== project.id || item.status === "archived") {
-        throw new Error("项目在开始会话前已不可用。 ");
-      }
-      next.sessions.push(session);
-      item.lastOpenedAt = session.startedAt;
-      item.updatedAt = session.startedAt;
-      if (item.status === "paused") item.status = "active";
-    });
+    const focusSelector = `[data-form="capture-crumb"][data-session-id="${CSS.escape(session.id)}"] textarea`;
+    const targetHash = `#/project/${encodeURIComponent(project.id)}`;
+    const route = parseRoute(location.hash);
+    const staysOnProject = route.name === "project" && route.id === project.id;
+    const commit = () => {
+      this.#store.update((next) => {
+        const item = next.projects[projectIndex];
+        if (!item || item.id !== project.id || item.status === "archived") {
+          throw new Error("项目在开始会话前已不可用。 ");
+        }
+        next.sessions.push(session);
+        item.lastOpenedAt = session.startedAt;
+        item.updatedAt = session.startedAt;
+        if (item.status === "paused") item.status = "active";
+      });
+    };
+    if (staysOnProject) {
+      this.#localCommitFocusGate.run(focusSelector, commit);
+    } else {
+      commit();
+    }
     form.closest("dialog")?.close();
-    location.hash = `#/project/${encodeURIComponent(project.id)}`;
+    if (!staysOnProject) {
+      this.#routeFocusGate.arm(targetHash, session.id, focusSelector);
+      location.hash = targetHash;
+    }
     this.#announce("会话已开始");
     this.#toast("工作现场已展开。 ", "success", false);
   }
