@@ -1427,18 +1427,19 @@ export class ReentryApp {
   #quickCapture(data, form) {
     const state = this.#store.getState();
     const { crumb, projectIndex, projectTitle, linkedToActiveSession } = prepareQuickCapture(state, data);
-    this.#focusSelector = '[data-action="open-quick-capture"]';
-    this.#store.update((next) => {
-      const target = next.projects[projectIndex];
-      if (!target || target.id !== crumb.projectId || target.status === "archived") {
-        throw new Error("目标项目在保存前已不可用。 ");
-      }
-      next.crumbs.push(crumb);
-      target.updatedAt = crumb.createdAt;
-      if (crumb.type === "next") {
-        target.nextAction = projectNextActionFromCrumb(crumb);
-        target.nextActionUpdatedAt = crumb.createdAt;
-      }
+    this.#localCommitFocusGate.run('[data-action="open-quick-capture"]', () => {
+      this.#store.update((next) => {
+        const target = next.projects[projectIndex];
+        if (!target || target.id !== crumb.projectId || target.status === "archived") {
+          throw new Error("目标项目在保存前已不可用。 ");
+        }
+        next.crumbs.push(crumb);
+        target.updatedAt = crumb.createdAt;
+        if (crumb.type === "next") {
+          target.nextAction = projectNextActionFromCrumb(crumb);
+          target.nextActionUpdatedAt = crumb.createdAt;
+        }
+      });
     });
     form.closest("dialog")?.close();
     this.#announce(`${projectTitle}的${CRUMB_LABELS[crumb.type]}已记录`);

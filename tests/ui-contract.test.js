@@ -545,6 +545,18 @@ test("inline capture focus is armed only for a successful local commit", async (
   assert.match(storeRender, /this\.render\(\{ preserveDialog: event\?\.source === "external" \}\)/u);
 });
 
+test("quick capture focus is armed only for its successful local commit", async () => {
+  const source = await readFile(APP_SOURCE_URL, "utf8");
+  const capture = source.match(/#quickCapture\(data, form\) \{([\s\S]*?)\n  \}\n\n  #saveCheckpoint/u)?.[1] ?? "";
+
+  assert.match(capture, /this\.#localCommitFocusGate\.run\('\[data-action="open-quick-capture"\]', \(\) => \{[\s\S]*?this\.#store\.update/u);
+  assert.ok(capture.indexOf("#localCommitFocusGate.run") < capture.indexOf("#store.update"));
+  assert.doesNotMatch(capture, /this\.#focusSelector\s*=/u);
+  assert.ok(capture.indexOf("#store.update") < capture.indexOf('form.closest("dialog")?.close()'));
+  assert.ok(capture.indexOf('form.closest("dialog")?.close()') < capture.indexOf("this.#announce"));
+  assert.ok(capture.indexOf("this.#announce") < capture.indexOf("this.#toast"));
+});
+
 test("manual checkpoint focus is armed only for its successful local commit", async () => {
   const source = await readFile(APP_SOURCE_URL, "utf8");
   const checkpoint = source.match(/#saveCheckpoint\(data, form\) \{([\s\S]*?)\n  \}\n\n  #reviewQuickCheckpoint/u)?.[1] ?? "";

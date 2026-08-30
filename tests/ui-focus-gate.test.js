@@ -52,7 +52,8 @@ test("clearing the gate invalidates an armed request", () => {
 
 for (const [label, focusSelector] of [
   ["main content", "#main-content"],
-  ["follow-up capture", '[data-form="capture-crumb"] textarea']
+  ["follow-up capture", '[data-form="capture-crumb"] textarea'],
+  ["quick capture trigger", '[data-action="open-quick-capture"]']
 ]) {
   test(`a real stale-tab rejection cannot transfer ${label} focus to the adopted workspace`, () => {
     const storage = new MemoryStorage();
